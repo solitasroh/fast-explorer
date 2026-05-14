@@ -102,8 +102,15 @@ add_executable(core-tests
   tests/file-model-store-tests.cpp
   tests/directory-enumerator-tests.cpp
   tests/bench-cli-tests.cpp
+  tests/dataset-generator-tests.cpp
+  tests/enumeration-bench-tests.cpp
+  tests/bench-fs-helper.h
   src/bench/bench-cli.cpp
   src/bench/bench-cli.h
+  src/bench/dataset-generator.cpp
+  src/bench/dataset-generator.h
+  src/bench/enumeration-bench.cpp
+  src/bench/enumeration-bench.h
   src/core/directory-enumerator.cpp
   src/core/directory-enumerator.h
   src/core/file-entry.h
@@ -136,9 +143,32 @@ add_executable(FastExplorerBench
   src/bench/main.cpp
   src/bench/bench-cli.cpp
   src/bench/bench-cli.h
+  src/bench/dataset-generator.cpp
+  src/bench/dataset-generator.h
+  src/bench/enumeration-bench.cpp
+  src/bench/enumeration-bench.h
+  src/core/directory-enumerator.cpp
+  src/core/directory-enumerator.h
+  src/core/file-entry.h
+  src/core/file-model-store.cpp
+  src/core/file-model-store.h
+  src/core/fs-backend.h
+  src/core/name-arena.cpp
+  src/core/name-arena.h
+  src/core/path-utils.cpp
+  src/core/path-utils.h
+  src/core/ring-logger.cpp
+  src/core/ring-logger.h
+  src/core/win32-fs-backend.cpp
+  src/core/win32-fs-backend.h
 )
 
 target_include_directories(FastExplorerBench PRIVATE src)
+
+target_link_libraries(FastExplorerBench PRIVATE
+  shell32
+  ole32
+)
 
 enable_testing()
 add_test(NAME core-tests COMMAND core-tests)
