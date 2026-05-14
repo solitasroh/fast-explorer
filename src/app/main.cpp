@@ -12,7 +12,6 @@
 #include "core/process-memory.h"
 #include "core/ring-logger.h"
 #include "ui/main-window.h"
-#include "ui/pane-controller.h"
 
 namespace {
 
@@ -133,9 +132,8 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance,
 
       fast_explorer::ui::MainWindow window(services.memory());
       if (window.create(instance, showCommand)) {
-        fast_explorer::ui::PaneController pane(window.handle());
         if (!openPath.empty()) {
-          if (!pane.openFolder(openPath)) {
+          if (!window.openFolder(openPath)) {
             logger.error(L"--open path invalid: %ls", openPath.c_str());
           } else {
             logger.info(L"--open: enumerating %ls", openPath.c_str());

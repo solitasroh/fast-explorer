@@ -2,11 +2,16 @@
 
 #include <windows.h>
 
+#include <memory>
+#include <string>
+
 namespace fast_explorer::core {
 class ProcessMemoryService;
 }
 
 namespace fast_explorer::ui {
+
+class PaneController;
 
 class MainWindow {
  public:
@@ -20,9 +25,14 @@ class MainWindow {
   bool create(HINSTANCE instance, int showCommand);
   HWND handle() const noexcept { return hwnd_; }
 
+  // Forwards to the owned PaneController. Returns false if the window
+  // is not yet created or the path is invalid.
+  bool openFolder(const std::wstring& path);
+
  private:
   static LRESULT CALLBACK wndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam);
   LRESULT handleMessage(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam);
+  LRESULT handleListViewNotify(NMHDR* hdr);
 
   static constexpr const wchar_t* kClassName = L"FastExplorer.MainWindow";
   static constexpr int kDefaultWidth = 1280;
@@ -32,6 +42,7 @@ class MainWindow {
   HINSTANCE instance_ = nullptr;
   HWND hwnd_ = nullptr;
   HWND listView_ = nullptr;
+  std::unique_ptr<PaneController> pane_;
 };
 
 }  // namespace fast_explorer::ui

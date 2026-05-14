@@ -2,10 +2,16 @@
 
 #include <commctrl.h>
 
+#include <algorithm>
+#include <cstring>
 #include <iterator>
 
+#include "core/file-entry.h"
+#include "core/file-model-store.h"
 #include "core/process-memory.h"
+#include "ui/column-formatter.h"
 #include "ui/messages.h"
+#include "ui/pane-controller.h"
 
 namespace fast_explorer::ui {
 
@@ -46,6 +52,18 @@ bool addColumns(HWND lv) {
   return true;
 }
 
+void writeCellText(NMLVDISPINFOW& disp, const std::wstring& text) {
+  if (disp.item.pszText == nullptr || disp.item.cchTextMax <= 0) {
+    return;
+  }
+  const size_t cap = static_cast<size_t>(disp.item.cchTextMax) - 1;
+  const size_t copyChars = std::min(text.size(), cap);
+  if (copyChars > 0) {
+    std::wmemcpy(disp.item.pszText, text.data(), copyChars);
+  }
+  disp.item.pszText[copyChars] = L'\0';
+}
+
 bool registerClassOnce(HINSTANCE instance, const wchar_t* className, WNDPROC proc) {
   WNDCLASSEXW existing{};
   if (GetClassInfoExW(instance, className, &existing)) {
@@ -74,6 +92,13 @@ MainWindow::~MainWindow() {
     DestroyWindow(hwnd_);
     // hwnd_ is cleared in WM_NCDESTROY.
   }
+}
+
+bool MainWindow::openFolder(const std::wstring& path) {
+  if (!pane_) {
+    return false;
+  }
+  return pane_->openFolder(path);
 }
 
 bool MainWindow::create(HINSTANCE instance, int showCommand) {
@@ -128,7 +153,10 @@ LRESULT MainWindow::handleMessage(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPa
         return -1;
       }
       ListView_SetItemCountEx(listView_, 0, 0);
+      pane_ = std::make_unique<PaneController>(hwnd);
       return 0;
+    case WM_NOTIFY:
+      return handleListViewNotify(reinterpret_cast<NMHDR*>(lParam));
     case WM_DPICHANGED: {
       const auto* rect = reinterpret_cast<const RECT*>(lParam);
       SetWindowPos(hwnd, nullptr, rect->left, rect->top,
@@ -168,6 +196,41 @@ LRESULT MainWindow::handleMessage(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPa
     default:
       return DefWindowProcW(hwnd, msg, wParam, lParam);
   }
+}
+
+LRESULT MainWindow::handleListViewNotify(NMHDR* hdr) {
+  if (hdr == nullptr || hdr->code != LVN_GETDISPINFOW || !pane_) {
+    return 0;
+  }
+  auto* disp = reinterpret_cast<NMLVDISPINFOW*>(hdr);
+  if ((disp->item.mask & LVIF_TEXT) == 0 || disp->item.iItem < 0) {
+    return 0;
+  }
+  const auto& store = pane_->store();
+  const size_t row = static_cast<size_t>(disp->item.iItem);
+  if (row >= store.itemCount()) {
+    return 0;
+  }
+  const auto& entry = store.entryAt(row);
+  switch (disp->item.iSubItem) {
+    case 0: {
+      const auto view = fast_explorer::core::nameView(entry);
+      writeCellText(*disp, std::wstring(view));
+      break;
+    }
+    case 1:
+      writeCellText(*disp, formatSizeForEntry(entry));
+      break;
+    case 2:
+      writeCellText(*disp, formatTypeForEntry(entry));
+      break;
+    case 3:
+      writeCellText(*disp, formatModified(entry.modifiedTime100ns));
+      break;
+    default:
+      break;
+  }
+  return 0;
 }
 
 }  // namespace fast_explorer::ui

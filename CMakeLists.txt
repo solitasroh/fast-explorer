@@ -32,6 +32,8 @@ set(FE_APP_SOURCES
   src/ui/main-window.cpp
   src/ui/main-window.h
   src/ui/messages.h
+  src/ui/column-formatter.cpp
+  src/ui/column-formatter.h
   src/ui/pane-controller.cpp
   src/ui/pane-controller.h
   src/core/directory-enumerator.cpp
@@ -110,8 +112,11 @@ add_executable(core-tests
   tests/head-to-head-bench-tests.cpp
   tests/ui-messages-tests.cpp
   tests/pane-controller-tests.cpp
+  tests/column-formatter-tests.cpp
   tests/bench-fs-helper.h
   src/ui/messages.h
+  src/ui/column-formatter.cpp
+  src/ui/column-formatter.h
   src/ui/pane-controller.cpp
   src/ui/pane-controller.h
   src/bench/bench-cli.cpp
