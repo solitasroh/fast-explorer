@@ -2,6 +2,7 @@
 #include <ole2.h>
 
 #include "core/perf-tracker.h"
+#include "core/ring-logger.h"
 #include "ui/main-window.h"
 
 namespace {
@@ -48,9 +49,18 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance,
                      _In_ PWSTR /*cmdLine*/,
                      _In_ int showCommand) {
   using fast_explorer::core::PerfTracker;
+  using fast_explorer::core::RingLogger;
   using fast_explorer::core::recordPerf;
 
   recordPerf(PerfTracker::EventId::AppLaunchStart);
+
+  RingLogger& logger = RingLogger::instance();
+  const bool loggerOk = logger.start();
+  if (loggerOk) {
+    logger.info(L"app launched (showCmd=%d)", showCommand);
+  } else {
+    OutputDebugStringW(L"[fast-explorer] RingLogger failed to start\n");
+  }
 
   int exitCode = 1;
   {
@@ -59,11 +69,17 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance,
       fast_explorer::ui::MainWindow window;
       if (window.create(instance, showCommand)) {
         exitCode = runMessageLoop();
+      } else {
+        logger.error(L"MainWindow::create failed (lastError=%lu)", GetLastError());
       }
+    } else {
+      logger.error(L"OleInitialize failed (hr=0x%08lX)", ole.hr());
     }
     recordPerf(PerfTracker::EventId::AppShutdownStart);
     PerfTracker::instance().dumpToDebugOutput();
+    logger.info(L"app shutdown (exitCode=%d)", exitCode);
   }
 
+  logger.stop();
   return exitCode;
 }
