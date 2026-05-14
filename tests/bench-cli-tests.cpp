@@ -226,3 +226,35 @@ FE_TEST_CASE(BenchCli_Enumerate_PositionalRejected) {
   FE_ASSERT_EQ(p.kind, CommandKind::None);
   FE_ASSERT_TRUE(p.errorMessage.find(L"positional") != std::wstring::npos);
 }
+
+FE_TEST_CASE(BenchCli_HeadToHead_PathOnly_DefaultRuns) {
+  const wchar_t* argv[] = {L"FastExplorerBench.exe", L"head-to-head",
+                           L"--path", L"C:\\tmp"};
+  auto p = parseCommandLine(4, argv);
+  FE_ASSERT_EQ(p.kind, CommandKind::HeadToHead);
+  FE_ASSERT_WSTREQ(p.headToHead.path, L"C:\\tmp");
+  FE_ASSERT_EQ(p.headToHead.runs, 5);
+}
+
+FE_TEST_CASE(BenchCli_HeadToHead_WithRuns) {
+  const wchar_t* argv[] = {L"FastExplorerBench.exe", L"head-to-head",
+                           L"--path=C:\\tmp", L"--runs=10"};
+  auto p = parseCommandLine(4, argv);
+  FE_ASSERT_EQ(p.kind, CommandKind::HeadToHead);
+  FE_ASSERT_EQ(p.headToHead.runs, 10);
+}
+
+FE_TEST_CASE(BenchCli_HeadToHead_MissingPath) {
+  const wchar_t* argv[] = {L"FastExplorerBench.exe", L"head-to-head"};
+  auto p = parseCommandLine(2, argv);
+  FE_ASSERT_EQ(p.kind, CommandKind::None);
+  FE_ASSERT_TRUE(p.errorMessage.find(L"--path") != std::wstring::npos);
+}
+
+FE_TEST_CASE(BenchCli_HeadToHead_UnknownOption) {
+  const wchar_t* argv[] = {L"FastExplorerBench.exe", L"head-to-head",
+                           L"--path=X", L"--bogus=1"};
+  auto p = parseCommandLine(4, argv);
+  FE_ASSERT_EQ(p.kind, CommandKind::None);
+  FE_ASSERT_TRUE(p.errorMessage.find(L"unknown option") != std::wstring::npos);
+}

@@ -13,6 +13,7 @@ enum class CommandKind {
   Version,
   Generate,
   Enumerate,
+  HeadToHead,
 };
 
 enum class PresetKind : uint8_t {
@@ -37,11 +38,17 @@ struct EnumerateArgs {
   int runs = 5;
 };
 
+struct HeadToHeadArgs {
+  std::wstring path;
+  int runs = 5;
+};
+
 struct ParsedCommand {
   CommandKind kind = CommandKind::None;
   std::wstring errorMessage;
   GenerateArgs generate;
   EnumerateArgs enumerate;
+  HeadToHeadArgs headToHead;
 };
 
 inline constexpr int kExitOk = 0;

@@ -104,6 +104,7 @@ add_executable(core-tests
   tests/bench-cli-tests.cpp
   tests/dataset-generator-tests.cpp
   tests/enumeration-bench-tests.cpp
+  tests/head-to-head-bench-tests.cpp
   tests/bench-fs-helper.h
   src/bench/bench-cli.cpp
   src/bench/bench-cli.h
@@ -111,6 +112,8 @@ add_executable(core-tests
   src/bench/dataset-generator.h
   src/bench/enumeration-bench.cpp
   src/bench/enumeration-bench.h
+  src/bench/head-to-head-bench.cpp
+  src/bench/head-to-head-bench.h
   src/core/directory-enumerator.cpp
   src/core/directory-enumerator.h
   src/core/file-entry.h
@@ -147,6 +150,8 @@ add_executable(FastExplorerBench
   src/bench/dataset-generator.h
   src/bench/enumeration-bench.cpp
   src/bench/enumeration-bench.h
+  src/bench/head-to-head-bench.cpp
+  src/bench/head-to-head-bench.h
   src/core/directory-enumerator.cpp
   src/core/directory-enumerator.h
   src/core/file-entry.h

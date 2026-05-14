@@ -6,6 +6,7 @@
 
 #include "bench/dataset-generator.h"
 #include "bench/enumeration-bench.h"
+#include "bench/head-to-head-bench.h"
 
 namespace fast_explorer::bench {
 
@@ -22,11 +23,13 @@ constexpr const wchar_t* kHelpText =
     L"  FastExplorerBench.exe --version\n"
     L"\n"
     L"Commands:\n"
-    L"  generate   --preset NAME --out DIR [--seed N]\n"
-    L"             NAME: small | medium | large-flat | mixed-names |\n"
-    L"                   mixed-types | many-dirs | deep-tree\n"
-    L"  enumerate  --path DIR [--runs N]\n"
-    L"             default --runs 5; range 1..10000\n"
+    L"  generate     --preset NAME --out DIR [--seed N]\n"
+    L"               NAME: small | medium | large-flat | mixed-names |\n"
+    L"                     mixed-types | many-dirs | deep-tree\n"
+    L"  enumerate    --path DIR [--runs N]\n"
+    L"               production-stack timing; --runs 1..10000, default 5\n"
+    L"  head-to-head --path DIR [--runs N]\n"
+    L"               raw FindFirstFileExW vs GetFileInformationByHandleEx\n"
     L"\n"
     L"Global options:\n"
     L"  -h, --help     show this help and exit\n"
@@ -169,8 +172,9 @@ bool parseGenerateArgs(int argc, const wchar_t* const* argv,
   return true;
 }
 
-bool parseEnumerateArgs(int argc, const wchar_t* const* argv,
-                        ParsedCommand& result) {
+bool parsePathAndRunsArgs(int argc, const wchar_t* const* argv,
+                          ParsedCommand& result, const wchar_t* cmdName,
+                          std::wstring& pathOut, int& runsOut) {
   bool gotPath = false;
   for (int i = 2; i < argc; ++i) {
     const OptionToken tok = readOption(argc, argv, &i, result);
@@ -182,7 +186,7 @@ bool parseEnumerateArgs(int argc, const wchar_t* const* argv,
         setUsageError(result, L"--path cannot be empty");
         return false;
       }
-      result.enumerate.path.assign(tok.value);
+      pathOut.assign(tok.value);
       gotPath = true;
     } else if (tok.name == L"runs") {
       int runs = 0;
@@ -190,17 +194,35 @@ bool parseEnumerateArgs(int argc, const wchar_t* const* argv,
         setUsageError(result, L"invalid --runs value (1..10000): ", tok.value);
         return false;
       }
-      result.enumerate.runs = runs;
+      runsOut = runs;
     } else {
-      setUsageError(result, L"unknown option for enumerate: --", tok.name);
+      std::wstring prefix(L"unknown option for ");
+      prefix.append(cmdName);
+      prefix.append(L": --");
+      setUsageError(result, prefix, tok.name);
       return false;
     }
   }
   if (!gotPath) {
-    setUsageError(result, L"enumerate requires --path");
+    std::wstring msg(cmdName);
+    msg.append(L" requires --path");
+    setUsageError(result, msg);
     return false;
   }
   return true;
+}
+
+bool parseEnumerateArgs(int argc, const wchar_t* const* argv,
+                        ParsedCommand& result) {
+  return parsePathAndRunsArgs(argc, argv, result, L"enumerate",
+                              result.enumerate.path, result.enumerate.runs);
+}
+
+bool parseHeadToHeadArgs(int argc, const wchar_t* const* argv,
+                         ParsedCommand& result) {
+  return parsePathAndRunsArgs(argc, argv, result, L"head-to-head",
+                              result.headToHead.path,
+                              result.headToHead.runs);
 }
 
 int runGenerate(const GenerateArgs& args, std::FILE* out, std::FILE* err) {
@@ -217,6 +239,44 @@ int runGenerate(const GenerateArgs& args, std::FILE* out, std::FILE* err) {
   std::fwprintf(out, L"created files=%llu dirs=%llu\n",
                 static_cast<unsigned long long>(r.filesCreated),
                 static_cast<unsigned long long>(r.dirsCreated));
+  return kExitOk;
+}
+
+void printMethodBlock(std::FILE* out, const wchar_t* label,
+                      const std::vector<EnumerationRun>& runs,
+                      uint64_t medianUs, uint64_t p95Us) {
+  std::fwprintf(out, L"[%ls]\n", label);
+  for (size_t i = 0; i < runs.size(); ++i) {
+    std::fwprintf(out, L"  run[%zu] %llu us  entries=%llu\n", i,
+                  static_cast<unsigned long long>(runs[i].microseconds),
+                  static_cast<unsigned long long>(runs[i].entriesObserved));
+  }
+  std::fwprintf(out, L"  median=%llu us  p95=%llu us\n",
+                static_cast<unsigned long long>(medianUs),
+                static_cast<unsigned long long>(p95Us));
+}
+
+int runHeadToHead(const HeadToHeadArgs& args, std::FILE* out, std::FILE* err) {
+  std::fwprintf(out, L"head-to-head path=%ls runs=%d\n", args.path.c_str(),
+                args.runs);
+  const HeadToHeadResult r = runHeadToHeadBench(args.path, args.runs);
+  if (r.error != EnumerationBenchError::None) {
+    std::fwprintf(err, L"head-to-head failed: %ls (%ls)\n",
+                  enumerationBenchErrorName(r.error),
+                  r.errorDetail.empty() ? L"" : r.errorDetail.c_str());
+    return kExitFailure;
+  }
+  printMethodBlock(out, L"FindFirstFileExW", r.findRuns, r.findMedianUs,
+                   r.findP95Us);
+  printMethodBlock(out, L"GetFileInformationByHandleEx", r.gfibheRuns,
+                   r.gfibheMedianUs, r.gfibheP95Us);
+
+  const int32_t pct = r.gfibhePercentFasterX100;
+  std::fwprintf(out, L"gfibhe vs find (median): %ls%d.%02d%% (%ls)\n",
+                pct >= 0 ? L"+" : L"",
+                pct / 100,
+                pct >= 0 ? (pct % 100) : (-pct % 100),
+                pct >= 0 ? L"gfibhe faster" : L"find faster");
   return kExitOk;
 }
 
@@ -301,6 +361,13 @@ ParsedCommand parseCommandLine(int argc, const wchar_t* const* argv) {
     }
     return result;
   }
+  if (first == L"head-to-head") {
+    result.kind = CommandKind::HeadToHead;
+    if (!parseHeadToHeadArgs(argc, argv, result)) {
+      return result;
+    }
+    return result;
+  }
 
   result.errorMessage = L"unknown command: ";
   result.errorMessage.append(first);
@@ -320,6 +387,8 @@ int runCommand(const ParsedCommand& cmd, std::FILE* out, std::FILE* err) {
       return runGenerate(cmd.generate, out, err);
     case CommandKind::Enumerate:
       return runEnumerate(cmd.enumerate, out, err);
+    case CommandKind::HeadToHead:
+      return runHeadToHead(cmd.headToHead, out, err);
     case CommandKind::None:
       if (!cmd.errorMessage.empty()) {
         std::fputws(L"error: ", err);
