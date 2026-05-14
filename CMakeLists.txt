@@ -101,6 +101,9 @@ add_executable(core-tests
   tests/win32-fs-backend-tests.cpp
   tests/file-model-store-tests.cpp
   tests/directory-enumerator-tests.cpp
+  tests/bench-cli-tests.cpp
+  src/bench/bench-cli.cpp
+  src/bench/bench-cli.h
   src/core/directory-enumerator.cpp
   src/core/directory-enumerator.h
   src/core/file-entry.h
@@ -124,6 +127,18 @@ target_link_libraries(core-tests PRIVATE
   shell32
   ole32
 )
+
+# ---------------------------------------------------------------------------
+# FastExplorerBench: console-mode CLI for synthetic dataset generation and
+# enumeration timing measurements. Subcommands are stubs at this scaffold step.
+# ---------------------------------------------------------------------------
+add_executable(FastExplorerBench
+  src/bench/main.cpp
+  src/bench/bench-cli.cpp
+  src/bench/bench-cli.h
+)
+
+target_include_directories(FastExplorerBench PRIVATE src)
 
 enable_testing()
 add_test(NAME core-tests COMMAND core-tests)
