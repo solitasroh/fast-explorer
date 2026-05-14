@@ -25,15 +25,24 @@ void removeIfExists(const wchar_t* path) {
 class EnvOverride {
  public:
   EnvOverride(const wchar_t* name, const wchar_t* value) : name_(name) {
-    wchar_t prev[MAX_PATH] = {};
-    const DWORD len = GetEnvironmentVariableW(name, prev, _countof(prev));
-    if (len > 0 && len < _countof(prev)) {
-      previous_.assign(prev, len);
-      hadPrevious_ = true;
+    // Two-pass query so we capture environment values up to the Win32 limit
+    // (32767 wchars) instead of silently dropping anything longer than
+    // MAX_PATH.
+    const DWORD needed = GetEnvironmentVariableW(name, nullptr, 0);
+    if (needed > 0) {
+      previous_.resize(needed - 1);
+      const DWORD copied = GetEnvironmentVariableW(
+          name, previous_.data(), static_cast<DWORD>(previous_.size() + 1));
+      if (copied > 0 && copied <= previous_.size()) {
+        previous_.resize(copied);
+        hadPrevious_ = true;
+      } else {
+        previous_.clear();
+      }
     }
     SetEnvironmentVariableW(name, value);
   }
-  ~EnvOverride() {
+  ~EnvOverride() noexcept {
     SetEnvironmentVariableW(name_, hadPrevious_ ? previous_.c_str() : nullptr);
   }
   EnvOverride(const EnvOverride&) = delete;
@@ -186,4 +195,44 @@ FE_TEST_CASE(isUncPath_rejects_extended_drive) {
 
 FE_TEST_CASE(isUncPath_rejects_plain_drive) {
   FE_ASSERT_FALSE(isUncPath(L"C:\\Users\\me"));
+}
+
+// Regression: forward-slash UNC must be classified as UNC, not Relative.
+FE_TEST_CASE(toInternal_rejects_forward_slash_unc) {
+  std::wstring out;
+  FE_ASSERT_EQ(toInternal(L"//server/share", out), PathConvertError::UncUnsupported);
+}
+
+FE_TEST_CASE(isUncPath_detects_forward_slash) {
+  FE_ASSERT_TRUE(isUncPath(L"//server/share"));
+}
+
+// Regression: ADS-style colon inside the body must be rejected.
+FE_TEST_CASE(toInternal_rejects_colon_in_body) {
+  std::wstring out;
+  FE_ASSERT_EQ(toInternal(L"C:\\bad:stream", out), PathConvertError::InvalidSyntax);
+}
+
+FE_TEST_CASE(toInternal_rejects_colon_in_prefixed_body) {
+  std::wstring out;
+  FE_ASSERT_EQ(toInternal(L"\\\\?\\C:\\bad:stream", out),
+               PathConvertError::InvalidSyntax);
+}
+
+// Regression: a bare drive ("C:" without a backslash) must not be accepted,
+// with or without the \\?\ prefix.
+FE_TEST_CASE(toInternal_rejects_bare_drive) {
+  std::wstring out;
+  FE_ASSERT_EQ(toInternal(L"C:", out), PathConvertError::RelativeUnsupported);
+}
+
+FE_TEST_CASE(toInternal_rejects_prefixed_bare_drive) {
+  std::wstring out;
+  FE_ASSERT_EQ(toInternal(L"\\\\?\\C:", out), PathConvertError::InvalidSyntax);
+}
+
+FE_TEST_CASE(toInternal_accepts_drive_root) {
+  std::wstring out;
+  FE_ASSERT_EQ(toInternal(L"C:\\", out), PathConvertError::None);
+  FE_ASSERT_WSTREQ(out, L"\\\\?\\C:\\");
 }

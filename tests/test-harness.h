@@ -7,6 +7,7 @@
 
 #include <cstdio>
 #include <cwchar>
+#include <exception>
 #include <functional>
 #include <string>
 #include <vector>
@@ -31,17 +32,36 @@ struct Registrar {
   }
 };
 
-// Exceptions only flow up to the runner; tests must not be marked noexcept.
-class AssertionFailure {
+// Inherits std::exception so generic catch handlers (and the runner) see it
+// uniformly. what() owns its storage to avoid pointer lifetime issues when
+// the throwing scope unwinds.
+class AssertionFailure : public std::exception {
  public:
   explicit AssertionFailure(std::string msg) : msg_(std::move(msg)) {}
-  const std::string& what() const noexcept { return msg_; }
+  const char* what() const noexcept override { return msg_.c_str(); }
+
  private:
   std::string msg_;
 };
 
+// Single helper that builds the location string and throws. Centralizing the
+// throw site keeps the FE_ASSERT_* macros tiny and avoids the prior shotgun
+// surgery where each macro carried its own copy of the throw block.
+[[noreturn]] inline void failAssertion(const char* expression,
+                                       const char* file,
+                                       int line) {
+  std::string msg(expression);
+  msg.append(" at ");
+  msg.append(file);
+  msg.append(":");
+  msg.append(std::to_string(line));
+  throw AssertionFailure(std::move(msg));
+}
+
 }  // namespace fast_explorer::tests
 
+// Argument names are intentionally namespaced (fe_lhs__ / fe_rhs__) so that
+// user expressions cannot collide with the macro's locals.
 #define FE_TEST_CASE(name)                                                      \
   static void name();                                                           \
   static ::fast_explorer::tests::Registrar                                      \
@@ -51,9 +71,8 @@ class AssertionFailure {
 #define FE_ASSERT_TRUE(expr)                                                    \
   do {                                                                          \
     if (!(expr)) {                                                              \
-      throw ::fast_explorer::tests::AssertionFailure(                           \
-          std::string("FE_ASSERT_TRUE(" #expr ") at ") + __FILE__ + ":" +       \
-          std::to_string(__LINE__));                                            \
+      ::fast_explorer::tests::failAssertion("FE_ASSERT_TRUE(" #expr ")",         \
+                                            __FILE__, __LINE__);                \
     }                                                                           \
   } while (0)
 
@@ -61,33 +80,33 @@ class AssertionFailure {
 
 #define FE_ASSERT_EQ(a, b)                                                      \
   do {                                                                          \
-    auto _a = (a);                                                              \
-    auto _b = (b);                                                              \
-    if (!(_a == _b)) {                                                          \
-      throw ::fast_explorer::tests::AssertionFailure(                           \
-          std::string("FE_ASSERT_EQ(" #a ", " #b ") at ") + __FILE__ + ":" +    \
-          std::to_string(__LINE__));                                            \
+    const auto fe_lhs__ = (a);                                                  \
+    const auto fe_rhs__ = (b);                                                  \
+    if (!(fe_lhs__ == fe_rhs__)) {                                              \
+      ::fast_explorer::tests::failAssertion(                                    \
+          "FE_ASSERT_EQ(" #a ", " #b ")", __FILE__, __LINE__);                  \
     }                                                                           \
   } while (0)
 
 #define FE_ASSERT_NE(a, b)                                                      \
   do {                                                                          \
-    auto _a = (a);                                                              \
-    auto _b = (b);                                                              \
-    if (!(_a != _b)) {                                                          \
-      throw ::fast_explorer::tests::AssertionFailure(                           \
-          std::string("FE_ASSERT_NE(" #a ", " #b ") at ") + __FILE__ + ":" +    \
-          std::to_string(__LINE__));                                            \
+    const auto fe_lhs__ = (a);                                                  \
+    const auto fe_rhs__ = (b);                                                  \
+    if (!(fe_lhs__ != fe_rhs__)) {                                              \
+      ::fast_explorer::tests::failAssertion(                                    \
+          "FE_ASSERT_NE(" #a ", " #b ")", __FILE__, __LINE__);                  \
     }                                                                           \
   } while (0)
 
+// Use this instead of FE_ASSERT_EQ for wide-character string comparisons.
+// Comparing wide-string literals through FE_ASSERT_EQ would compare pointers
+// (array-to-pointer decay), not contents.
 #define FE_ASSERT_WSTREQ(actual, expected)                                      \
   do {                                                                          \
-    std::wstring _act = (actual);                                               \
-    std::wstring _exp = (expected);                                             \
-    if (_act != _exp) {                                                         \
-      throw ::fast_explorer::tests::AssertionFailure(                           \
-          std::string("FE_ASSERT_WSTREQ at ") + __FILE__ + ":" +                \
-          std::to_string(__LINE__));                                            \
+    const std::wstring fe_actual__ = (actual);                                  \
+    const std::wstring fe_expected__ = (expected);                              \
+    if (fe_actual__ != fe_expected__) {                                         \
+      ::fast_explorer::tests::failAssertion(                                    \
+          "FE_ASSERT_WSTREQ", __FILE__, __LINE__);                              \
     }                                                                           \
   } while (0)

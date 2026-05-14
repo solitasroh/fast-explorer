@@ -12,7 +12,7 @@ int main() {
       printf("[ ok ] %s\n", tc.name);
       ++passed;
     } catch (const fast_explorer::tests::AssertionFailure& f) {
-      printf("[FAIL] %s\n       %s\n", tc.name, f.what().c_str());
+      printf("[FAIL] %s\n       %s\n", tc.name, f.what());
       ++failed;
     } catch (const std::exception& e) {
       printf("[FAIL] %s\n       std::exception: %s\n", tc.name, e.what());
