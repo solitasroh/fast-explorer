@@ -29,6 +29,8 @@ set(FE_APP_SOURCES
   src/app/main.cpp
   src/ui/main-window.cpp
   src/ui/main-window.h
+  src/core/perf-tracker.cpp
+  src/core/perf-tracker.h
 )
 
 set(FE_RESOURCES
