@@ -3,6 +3,7 @@
 #include <windows.h>
 
 #include <string>
+#include <string_view>
 
 namespace fast_explorer::core {
 
@@ -19,5 +20,31 @@ bool ensureDirectoryRecursive(const wchar_t* path) noexcept;
 // Returns true if the path could be built; the directory is NOT created here
 // (callers may want to defer creation until they need to write).
 bool resolveAppDataSubdir(const wchar_t* sub, std::wstring& out);
+
+// Conversion between display and internal path forms (Design §7.3.1).
+//
+// Internal form is always prefixed with \\?\ so the OS skips path
+// normalization, which lets us address > MAX_PATH paths reliably.
+// Display form is what the user sees in the address bar.
+
+enum class PathConvertError {
+  None = 0,
+  Empty,                // input was nullptr / empty
+  RelativeUnsupported,  // no drive letter, no \\?\ prefix
+  UncUnsupported,       // UNC paths are out of MVP scope (§7.3.3)
+  InvalidSyntax,        // contains characters that cannot appear in a path
+};
+
+// True for any UNC path, including the \\?\UNC\... DOS prefix form.
+bool isUncPath(std::wstring_view path) noexcept;
+
+// Converts a user-facing path into the internal \\?\-prefixed form.
+// Returns PathConvertError::None on success and writes the canonical form
+// to `out`. On error `out` is left in a valid but unspecified state.
+PathConvertError toInternal(std::wstring_view displayPath, std::wstring& out);
+
+// Strips a leading \\?\ prefix if present. Pure function; does no I/O and
+// does not validate the rest of the path.
+std::wstring toDisplay(std::wstring_view internalPath);
 
 }  // namespace fast_explorer::core

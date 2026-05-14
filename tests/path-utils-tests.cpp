@@ -5,7 +5,11 @@
 #include "core/path-utils.h"
 
 using fast_explorer::core::ensureDirectoryRecursive;
+using fast_explorer::core::isUncPath;
+using fast_explorer::core::PathConvertError;
 using fast_explorer::core::resolveAppDataSubdir;
+using fast_explorer::core::toDisplay;
+using fast_explorer::core::toInternal;
 
 namespace {
 
@@ -110,4 +114,76 @@ FE_TEST_CASE(ensureDirectoryRecursive_idempotent_on_existing) {
 FE_TEST_CASE(ensureDirectoryRecursive_rejects_null_and_empty) {
   FE_ASSERT_FALSE(ensureDirectoryRecursive(nullptr));
   FE_ASSERT_FALSE(ensureDirectoryRecursive(L""));
+}
+
+// ---------------- toInternal / toDisplay / isUncPath ----------------
+
+FE_TEST_CASE(toInternal_adds_prefix_to_drive_path) {
+  std::wstring out;
+  FE_ASSERT_EQ(toInternal(L"C:\\Users\\me", out), PathConvertError::None);
+  FE_ASSERT_WSTREQ(out, L"\\\\?\\C:\\Users\\me");
+}
+
+FE_TEST_CASE(toInternal_converts_forward_slashes) {
+  std::wstring out;
+  FE_ASSERT_EQ(toInternal(L"C:/Users/me/Downloads", out), PathConvertError::None);
+  FE_ASSERT_WSTREQ(out, L"\\\\?\\C:\\Users\\me\\Downloads");
+}
+
+FE_TEST_CASE(toInternal_idempotent_on_already_prefixed) {
+  std::wstring out;
+  FE_ASSERT_EQ(toInternal(L"\\\\?\\C:\\Users\\me", out), PathConvertError::None);
+  FE_ASSERT_WSTREQ(out, L"\\\\?\\C:\\Users\\me");
+}
+
+FE_TEST_CASE(toInternal_rejects_unc) {
+  std::wstring out;
+  FE_ASSERT_EQ(toInternal(L"\\\\server\\share", out), PathConvertError::UncUnsupported);
+  FE_ASSERT_EQ(toInternal(L"\\\\?\\UNC\\server\\share", out), PathConvertError::UncUnsupported);
+}
+
+FE_TEST_CASE(toInternal_rejects_empty) {
+  std::wstring out;
+  FE_ASSERT_EQ(toInternal(L"", out), PathConvertError::Empty);
+}
+
+FE_TEST_CASE(toInternal_rejects_relative) {
+  std::wstring out;
+  FE_ASSERT_EQ(toInternal(L"relative\\path", out), PathConvertError::RelativeUnsupported);
+  FE_ASSERT_EQ(toInternal(L"file.txt", out), PathConvertError::RelativeUnsupported);
+}
+
+FE_TEST_CASE(toInternal_rejects_invalid_syntax) {
+  std::wstring out;
+  FE_ASSERT_EQ(toInternal(L"C:\\bad<name>.txt", out), PathConvertError::InvalidSyntax);
+  FE_ASSERT_EQ(toInternal(L"C:\\bad|pipe", out), PathConvertError::InvalidSyntax);
+}
+
+FE_TEST_CASE(toDisplay_strips_prefix) {
+  FE_ASSERT_WSTREQ(toDisplay(L"\\\\?\\C:\\Users\\me"), L"C:\\Users\\me");
+}
+
+FE_TEST_CASE(toDisplay_passes_through_unprefixed) {
+  FE_ASSERT_WSTREQ(toDisplay(L"C:\\Users\\me"), L"C:\\Users\\me");
+  FE_ASSERT_WSTREQ(toDisplay(L""), L"");
+}
+
+FE_TEST_CASE(toDisplay_unfolds_unc_dos_prefix) {
+  FE_ASSERT_WSTREQ(toDisplay(L"\\\\?\\UNC\\server\\share"), L"\\\\server\\share");
+}
+
+FE_TEST_CASE(isUncPath_detects_raw_unc) {
+  FE_ASSERT_TRUE(isUncPath(L"\\\\server\\share"));
+}
+
+FE_TEST_CASE(isUncPath_detects_dos_unc_prefix) {
+  FE_ASSERT_TRUE(isUncPath(L"\\\\?\\UNC\\server\\share"));
+}
+
+FE_TEST_CASE(isUncPath_rejects_extended_drive) {
+  FE_ASSERT_FALSE(isUncPath(L"\\\\?\\C:\\Users\\me"));
+}
+
+FE_TEST_CASE(isUncPath_rejects_plain_drive) {
+  FE_ASSERT_FALSE(isUncPath(L"C:\\Users\\me"));
 }

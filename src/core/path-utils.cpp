@@ -3,7 +3,57 @@
 #include <shlobj.h>
 #include <stdio.h>
 
+#include <cwctype>
+
 namespace fast_explorer::core {
+
+namespace {
+
+constexpr std::wstring_view kDosPrefix = L"\\\\?\\";
+constexpr std::wstring_view kDosUncPrefix = L"\\\\?\\UNC\\";
+
+bool startsWith(std::wstring_view s, std::wstring_view prefix) noexcept {
+  return s.size() >= prefix.size() &&
+         s.compare(0, prefix.size(), prefix) == 0;
+}
+
+bool hasDriveLetterRoot(std::wstring_view s) noexcept {
+  // e.g. "C:\foo" or "C:" (root only). Drive letter + ':' is required.
+  if (s.size() < 2) {
+    return false;
+  }
+  const wchar_t c = s[0];
+  const bool letter = (c >= L'A' && c <= L'Z') || (c >= L'a' && c <= L'z');
+  return letter && s[1] == L':';
+}
+
+bool containsInvalidPathChar(std::wstring_view s) noexcept {
+  // Characters forbidden by NTFS / Win32 path syntax. Backslash and colon are
+  // allowed because they are path syntax. The trailing-NUL is implicit.
+  for (wchar_t c : s) {
+    switch (c) {
+      case L'<': case L'>': case L'"':
+      case L'|': case L'?': case L'*':
+        return true;
+      default:
+        if (c < 0x20) {
+          return true;
+        }
+        break;
+    }
+  }
+  return false;
+}
+
+void normalizeSeparators(std::wstring& s) noexcept {
+  for (auto& c : s) {
+    if (c == L'/') {
+      c = L'\\';
+    }
+  }
+}
+
+}  // namespace
 
 bool ensureDirectoryRecursive(const wchar_t* path) noexcept {
   if (path == nullptr || path[0] == L'\0') {
@@ -41,6 +91,76 @@ bool ensureDirectoryRecursive(const wchar_t* path) noexcept {
     return false;
   }
   return CreateDirectoryW(path, nullptr) || GetLastError() == ERROR_ALREADY_EXISTS;
+}
+
+bool isUncPath(std::wstring_view path) noexcept {
+  if (startsWith(path, kDosUncPrefix)) {
+    return true;
+  }
+  if (path.size() >= 2 && path[0] == L'\\' && path[1] == L'\\') {
+    // \\?\ followed by a drive (e.g. \\?\C:\) is NOT UNC, just an extended
+    // local path. The dedicated DOS UNC prefix handled above is the only UNC
+    // form once \\?\ is in play.
+    return !startsWith(path, kDosPrefix);
+  }
+  return false;
+}
+
+PathConvertError toInternal(std::wstring_view displayPath, std::wstring& out) {
+  if (displayPath.empty()) {
+    return PathConvertError::Empty;
+  }
+  if (isUncPath(displayPath)) {
+    return PathConvertError::UncUnsupported;
+  }
+
+  // Copy + normalize separators first so the rest of the routine works on
+  // backslashes only.
+  out.assign(displayPath);
+  normalizeSeparators(out);
+
+  if (startsWith(out, kDosPrefix)) {
+    // Already in internal form; only validate the residual after the prefix.
+    std::wstring_view tail(out.data() + kDosPrefix.size(),
+                           out.size() - kDosPrefix.size());
+    if (tail.empty() || !hasDriveLetterRoot(tail)) {
+      return PathConvertError::InvalidSyntax;
+    }
+    if (containsInvalidPathChar(tail)) {
+      return PathConvertError::InvalidSyntax;
+    }
+    return PathConvertError::None;
+  }
+
+  if (!hasDriveLetterRoot(out)) {
+    return PathConvertError::RelativeUnsupported;
+  }
+  if (containsInvalidPathChar(out)) {
+    return PathConvertError::InvalidSyntax;
+  }
+
+  std::wstring prefixed;
+  prefixed.reserve(kDosPrefix.size() + out.size());
+  prefixed.append(kDosPrefix);
+  prefixed.append(out);
+  out.swap(prefixed);
+  return PathConvertError::None;
+}
+
+std::wstring toDisplay(std::wstring_view internalPath) {
+  if (startsWith(internalPath, kDosUncPrefix)) {
+    // \\?\UNC\server\share -> \\server\share. We do not produce these
+    // internally, but the helper is symmetric for completeness.
+    std::wstring out;
+    out.reserve(internalPath.size());
+    out.append(L"\\\\");
+    out.append(internalPath.substr(kDosUncPrefix.size()));
+    return out;
+  }
+  if (startsWith(internalPath, kDosPrefix)) {
+    return std::wstring(internalPath.substr(kDosPrefix.size()));
+  }
+  return std::wstring(internalPath);
 }
 
 bool resolveAppDataSubdir(const wchar_t* sub, std::wstring& out) {
