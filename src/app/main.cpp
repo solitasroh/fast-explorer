@@ -1,6 +1,7 @@
 #include <windows.h>
 #include <ole2.h>
 
+#include "core/crash-handler.h"
 #include "core/perf-tracker.h"
 #include "core/ring-logger.h"
 #include "ui/main-window.h"
@@ -46,7 +47,7 @@ int runMessageLoop() {
 
 int APIENTRY wWinMain(_In_ HINSTANCE instance,
                      _In_opt_ HINSTANCE /*prev*/,
-                     _In_ PWSTR /*cmdLine*/,
+                     _In_ PWSTR cmdLine,
                      _In_ int showCommand) {
   using fast_explorer::core::PerfTracker;
   using fast_explorer::core::RingLogger;
@@ -60,6 +61,23 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance,
     logger.info(L"app launched (showCmd=%d)", showCommand);
   } else {
     OutputDebugStringW(L"[fast-explorer] RingLogger failed to start\n");
+  }
+
+  if (!fast_explorer::core::CrashHandler::install()) {
+    logger.warn(L"crash handler failed to install");
+  }
+
+  // Diagnostic switch: --crash-test writes a manual dump and exits.
+  // Real unhandled-exception path is exercised in QA, not in CI smoke runs.
+  if (cmdLine != nullptr && wcsstr(cmdLine, L"--crash-test") != nullptr) {
+    const wchar_t* path = fast_explorer::core::CrashHandler::writeManualDump(L"--crash-test");
+    if (path && path[0] != L'\0') {
+      logger.info(L"manual dump created: %s", path);
+    } else {
+      logger.error(L"manual dump failed");
+    }
+    logger.stop();
+    return 0;
   }
 
   int exitCode = 1;

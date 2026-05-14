@@ -33,6 +33,8 @@ set(FE_APP_SOURCES
   src/core/perf-tracker.h
   src/core/ring-logger.cpp
   src/core/ring-logger.h
+  src/core/crash-handler.cpp
+  src/core/crash-handler.h
 )
 
 set(FE_RESOURCES
