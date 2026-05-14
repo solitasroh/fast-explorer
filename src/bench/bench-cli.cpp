@@ -299,6 +299,12 @@ int runEnumerate(const EnumerateArgs& args, std::FILE* out, std::FILE* err) {
                 static_cast<unsigned long long>(r.medianMicroseconds),
                 static_cast<unsigned long long>(r.p95Microseconds),
                 static_cast<unsigned long long>(r.totalEntries));
+  const uint64_t storeTotal = r.lastRunEntriesBytes +
+                              r.lastRunArenaCommittedBytes;
+  std::fwprintf(out, L"memory: entries=%llu B  arena=%llu B  total=%llu B\n",
+                static_cast<unsigned long long>(r.lastRunEntriesBytes),
+                static_cast<unsigned long long>(r.lastRunArenaCommittedBytes),
+                static_cast<unsigned long long>(storeTotal));
   return kExitOk;
 }
 

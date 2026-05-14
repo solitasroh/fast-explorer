@@ -28,6 +28,9 @@ struct EnumerationBenchResult {
   uint64_t medianMicroseconds = 0;
   uint64_t p95Microseconds = 0;
   uint64_t totalEntries = 0;
+  // Last run's FileModelStore footprint.
+  uint64_t lastRunEntriesBytes = 0;
+  uint64_t lastRunArenaCommittedBytes = 0;
   EnumerationBenchError error = EnumerationBenchError::None;
   std::wstring errorDetail;
 };

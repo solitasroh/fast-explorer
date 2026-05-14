@@ -88,4 +88,6 @@ FE_TEST_CASE(EnumerationBench_SmallDataset_ReportsTwoHundredEntries) {
   FE_ASSERT_EQ(r.totalEntries, 200ULL);
   FE_ASSERT_TRUE(r.medianMicroseconds > 0);
   FE_ASSERT_TRUE(r.p95Microseconds >= r.medianMicroseconds);
+  FE_ASSERT_TRUE(r.lastRunEntriesBytes > 0);
+  FE_ASSERT_TRUE(r.lastRunArenaCommittedBytes > 0);
 }

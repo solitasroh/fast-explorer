@@ -37,6 +37,8 @@ uint64_t ticksToMicros(uint64_t deltaTicks) {
 
 struct RunOutcome {
   EnumerationRun run;
+  uint64_t storeEntriesBytes = 0;
+  uint64_t storeArenaCommittedBytes = 0;
   fast_explorer::core::EnumerationError err =
       fast_explorer::core::EnumerationError::None;
 };
@@ -64,6 +66,8 @@ RunOutcome runOnce(fast_explorer::core::IFsBackend& backend,
   out.run.microseconds = ticksToMicros(
       static_cast<uint64_t>(t1.QuadPart - t0.QuadPart));
   out.run.entriesObserved = observed;
+  out.storeEntriesBytes = store.entriesBytes();
+  out.storeArenaCommittedBytes = store.nameArenaCommittedBytes();
   return out;
 }
 
@@ -138,6 +142,8 @@ EnumerationBenchResult runEnumerationBench(const std::wstring& path,
     }
     result.runs.push_back(outcome.run);
     result.totalEntries = outcome.run.entriesObserved;
+    result.lastRunEntriesBytes = outcome.storeEntriesBytes;
+    result.lastRunArenaCommittedBytes = outcome.storeArenaCommittedBytes;
   }
 
   std::vector<uint64_t> samples;
