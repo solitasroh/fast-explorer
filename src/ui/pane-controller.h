@@ -19,6 +19,8 @@ class PaneController {
 
   PaneController(const PaneController&) = delete;
   PaneController& operator=(const PaneController&) = delete;
+  PaneController(PaneController&&) noexcept = default;
+  PaneController& operator=(PaneController&&) noexcept = default;
 
   // Validates `path` and resets the underlying store on success.
   // Returns false on invalid path (empty / relative / UNC / etc.)
