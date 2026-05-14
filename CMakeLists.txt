@@ -32,6 +32,8 @@ set(FE_APP_SOURCES
   src/ui/main-window.cpp
   src/ui/main-window.h
   src/core/file-entry.h
+  src/core/name-arena.cpp
+  src/core/name-arena.h
   src/core/path-utils.cpp
   src/core/path-utils.h
   src/core/perf-tracker.cpp
@@ -84,8 +86,13 @@ add_executable(core-tests
   tests/test-main.cpp
   tests/path-utils-tests.cpp
   tests/file-entry-tests.cpp
+  tests/name-arena-tests.cpp
   src/core/file-entry.h
+  src/core/name-arena.cpp
+  src/core/name-arena.h
   src/core/path-utils.cpp
+  src/core/ring-logger.cpp
+  src/core/ring-logger.h
 )
 
 target_include_directories(core-tests PRIVATE src tests)
