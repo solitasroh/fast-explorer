@@ -8,11 +8,14 @@
 namespace fast_explorer::core {
 
 // PerfTracker records ordered timestamped events using QueryPerformanceCounter.
-// Lock-free SPMC ring (single writer per event-id is not enforced; multiple
-// threads may emit, contention resolved via atomic fetch_add on cursor).
+//
+// Concurrency model: MPSC (multiple producers via record(), single consumer
+// via dumpToDebugOutput() at process shutdown). Producers publish to a
+// per-slot sequence counter so that a reader can distinguish a torn slot
+// (write-in-progress) from a fully published slot. See record() / readSlot().
 //
 // MVP scope: ~10k event capacity, dump to OutputDebugString on shutdown.
-// Async file writer integration: deferred until RingLogger lands.
+// Async file writer integration is deferred until RingLogger lands.
 class PerfTracker {
  public:
   static constexpr size_t kCapacity = 10'000;
@@ -31,30 +34,41 @@ class PerfTracker {
     EventId id;              // event type
     uint16_t reserved;
   };
-  static_assert(sizeof(Event) == 24);
+  static_assert(sizeof(Event) == 24, "Event packed to 24 bytes for cache locality");
 
-  static PerfTracker& instance();
+  static PerfTracker& instance() noexcept;
 
-  // Lock-free emit. Safe from any thread.
+  // Lock-free emit. Safe from any thread. Producers publish ordering with
+  // release stores so the consumer can observe a consistent slot.
   void record(EventId id, uint64_t auxiliary = 0) noexcept;
 
   // Convert QPC ticks to milliseconds using cached frequency.
   double ticksToMs(int64_t ticks) const noexcept;
 
-  // Dump captured events to OutputDebugString (called from main thread on shutdown).
+  // Dump captured events to OutputDebugString. Caller must guarantee that
+  // no producers are still running (e.g. after the message loop returns).
   void dumpToDebugOutput() const;
 
   // Snapshot count of recorded events (clamped to kCapacity if wrapped).
   size_t recordedCount() const noexcept;
 
  private:
+  // Per-slot publication sequence. record() reserves a slot N by incrementing
+  // cursor_, then writes seq = N*2+1 (odd = in progress), payload, seq = N*2+2
+  // (even = published) with release ordering. dumpToDebugOutput() reads with
+  // acquire ordering and skips slots whose seq is still odd.
+  struct PublishedSlot {
+    std::atomic<uint64_t> seq{0};
+    Event event{};
+  };
+
   PerfTracker();
   PerfTracker(const PerfTracker&) = delete;
   PerfTracker& operator=(const PerfTracker&) = delete;
 
   int64_t qpcFrequency_ = 0;
   std::atomic<uint64_t> cursor_{0};
-  Event events_[kCapacity]{};
+  PublishedSlot slots_[kCapacity]{};
 };
 
 // Convenience inline helper to keep call sites short.
