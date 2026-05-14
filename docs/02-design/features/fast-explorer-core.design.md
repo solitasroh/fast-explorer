@@ -5,7 +5,7 @@
 > **Author**: Codex
 > **Created**: 2026-05-14
 > **Status**: Review
-> **Version**: 1.0.1
+> **Version**: 1.0.2
 > **Level**: Starter
 
 ---
@@ -16,6 +16,7 @@
 |---------|------|---------|--------|
 | 1.0.0 | 2026-05-14 | Initial technical design document | Codex |
 | 1.0.1 | 2026-05-14 | Teammate review 결과 반영: COM apartment 명시, cancellation 3계층, IFileOperation 운영 디테일, long path/reparse/UNC/cloud placeholder 정책, manifest/CRT/MSVC toolset, FileEntry 메모리 제약, ReadDirectoryChangesW MVP 포함, LVN_GETDISPINFO 예산, crash dump + 로깅 backend, ETW/QPC 측정 결정, milestone 성능 게이트 분산, deferred decisions 확장 | Claude |
+| 1.0.2 | 2026-05-14 | 메모리 최적화 전략 전면 반영: FileEntry 40 B 압축, name arena `VirtualAlloc` chunk, ImageList process-global 공유, Format LRU bounded, CRT/컴파일 옵션 (`/GR-` 검토, `/GL+LTCG`, `/Gw/Gy`), Working Set 핸들러 (`SetProcessWorkingSetSizeEx`, `EmptyWorkingSet`, low-memory notification → caches drop), generation 교체 시 즉시 회수, 메모리 enforcement (static_assert + bench gate), 예상 process 총 메모리 ~50 MB target (100 MB budget 대비 2× 마진) | Claude |
 
 ## Related Documents
 
@@ -61,6 +62,32 @@ MVP에서 가장 중요한 기술 명제는 다음과 같다.
 | Custom render | Deferred | List-View 한계가 측정될 때 Direct2D/DirectWrite로 이동 |
 | External dependencies | Avoid by default | 성능/빌드 복잡도 리스크를 낮춤 |
 | Code signing | Unsigned MVP (SmartScreen 경고 허용) | 상용 배포 단계가 아님. signing은 Phase 9 deployment에서 결정. |
+
+### 2.1.0 Compiler / Linker Options (Memory + Size Optimization)
+
+Release build:
+
+| Option | Decision | Reason |
+|--------|----------|--------|
+| `/O2` | enabled | 속도 우선. PGO는 M7 이후 검토. |
+| `/Gw` | enabled | global data COMDAT → linker dead-strip |
+| `/Gy` | enabled | function-level linking → dead-strip |
+| `/GL` (whole-program opt) | enabled | inlining, cross-TU dead-code elim |
+| `/LTCG` (link-time codegen) | enabled | `/GL` 짝. final binary 축소 |
+| `/GR-` (RTTI off) | **검토** (M2 결정) | COM/Win32는 IID 기반, `dynamic_cast` 미사용 시 가능. exe ~1–2 KB + per-vtable RTTI 제거 |
+| `/EHsc` (C++ exceptions) | enabled | std lib 일부 사용. SEH는 thread 경계만. |
+| `/permissive-` | enabled | strict ISO 준수 |
+| `/Zc:__cplusplus` | enabled | `__cplusplus` 매크로 정확성 |
+| `/utf-8` | enabled | source + execution charset UTF-8 |
+| `/W4 /WX` | enabled | warnings as errors (현재 M1은 `/W4`만, `/WX`는 M2에서 추가) |
+| `/sdl` | enabled | additional security checks |
+| `/guard:cf` | enabled | Control Flow Guard |
+| `/Qspectre` | enabled | Spectre mitigation (size 부담 작음) |
+| `/DEBUG:FULL` | Release에도 enabled (별 PDB) | crash dump 분석 위한 PDB 보관 (배포본에는 미포함) |
+| `/OPT:REF /OPT:ICF` | enabled | linker dead code + identical-COMDAT folding |
+| iostream | **excluded** | 60+ KB CRT bloat 회피 |
+| `std::regex` | **excluded** | 큰 정적 코드 |
+| `std::filesystem` | **excluded** | heap intensive, Win32 직접 호출이 더 빠르고 가벼움 |
 
 ### 2.1.1 Application Manifest (필수)
 
@@ -112,8 +139,12 @@ MVP에서 가장 중요한 기술 명제는 다음과 같다.
 | **Scroll frame p95** | **<= 16.7 ms (60 Hz)** | `ui.scroll.frame` 샘플의 p95 |
 | **LVN_GETDISPINFO callback budget** | **<= 50 µs / row** | per-callback QPC 샘플 |
 | Folder switch cancellation | <= 50 ms | `pane.cancel.requested` → `pane.cancel.observed` |
-| 100k base entries incremental memory | <= 100 MB excluding icons/thumbnails | `FileModelStore` 자체 메모리 추정 |
-| **FileEntry sizeof bound** | **<= 128 B / entry** | static_assert로 강제 |
+| 100k base entries incremental memory (budget) | <= 100 MB excluding icons/thumbnails | working set delta |
+| **100k base entries incremental memory (target)** | **<= 50 MB total process working set** | aspirational, 2× margin (§5.4 분석 기반) |
+| **FileEntry sizeof bound** | **== 40 B / entry** (was: <= 128, then <= 64) | static_assert로 강제 (v1.0.2 추가 압축) |
+| **Per-pane FileModelStore total** | **<= 10 MB @ 100k entries** | entries 4 MB + name arena ~4.8 MB + visibleOrder 0.4 MB |
+| **ImageList process-global cap** | **<= 3 MB** | 500 ext + 200 per-file × 32×32 BGRA |
+| **Working set after generation drop** | **drop within 200 ms** | `VirtualFree` + `EmptyWorkingSet` |
 
 Budget을 만족하지 못하는 기능은 MVP에 들어가지 않는다.
 
@@ -343,33 +374,40 @@ Required columns:
 
 ```cpp
 struct FileEntry {
-  uint32_t id;                    // pane-local stable id (index into entries)
-  uint32_t generation;            // pane generation snapshot
-  uint64_t size;                  // 0 for directories
-  FILETIME modifiedTime;          // 8 bytes
-  FILETIME createdTime;           // 8 bytes
-  uint32_t attributes;            // raw FILE_ATTRIBUTE_* mask
-  uint16_t nameLength;            // wide-char count
-  uint16_t extensionOffset;       // offset into name (UINT16_MAX if no extension)
-  uint8_t  flags;                 // bit0=isDir, bit1=isHidden, bit2=isSystem,
-                                  // bit3=isReparse, bit4=isCloudPlaceholder, bit5..7 reserved
-  uint8_t  iconState;             // IconState enum (Placeholder|Loading|Loaded|Failed)
-  uint8_t  metadataState;         // MetadataState enum
-  uint8_t  errorCode;             // ErrorCode enum (0 = no error)
-  const wchar_t* namePtr;         // points into FileModelStore::nameArena (interned)
+  const wchar_t* namePtr;    // 8 B — points into FileModelStore::nameArena
+  uint64_t size;             // 8 B — 0 for directories
+  FILETIME modifiedTime;     // 8 B
+  uint32_t attributes;       // 4 B — raw FILE_ATTRIBUTE_* mask
+  uint16_t nameLength;       // 2 B — wide-char count
+  uint16_t extensionOffset;  // 2 B — offset into name (UINT16_MAX if none)
+  uint8_t  flags;            // 1 B — bit0=isDir, bit1=isHidden, bit2=isSystem,
+                             //        bit3=isReparse, bit4=isCloudPlaceholder
+  uint8_t  states;           // 1 B — icon nibble (low 4) + metadata nibble (high 4)
+  uint8_t  errorCode;        // 1 B — ErrorCode enum (0 = no error)
+  uint8_t  reserved;         // 1 B — padding / future
 };
-static_assert(sizeof(FileEntry) <= 64, "FileEntry must stay <= 64 B");
-// 100k entries * 64 B = 6.4 MB structural + name arena (avg 24 B/name → ~2.4 MB) = ~9 MB total
+static_assert(sizeof(FileEntry) == 40, "FileEntry must be exactly 40 B for memory budget");
+static_assert(alignof(FileEntry) == 8);
+// 100k entries × 40 B = 4 MB structural + name arena (~4.8 MB) + visibleOrder (400 KB) = ~9.5 MB per pane.
 ```
+
+Removed vs v1.0.1 (-24 B):
+
+| Field | Reason for removal |
+|-------|--------------------|
+| `id` (uint32) | entries vector index 가 id 역할. 별도 저장 불필요. |
+| `generation` (uint32) | FileModelStore가 단일 generation 보유, entry당 중복 불필요. 결과 폐기는 store-level 체크. |
+| `createdTime` (FILETIME 8 B) | UI 컬럼에서 표시 안 함. 필요 시 cold side-arena에서 `id` 기반 lookup. |
+| `iconState` + `metadataState` separate bytes | 4 bit + 4 bit 결합 → 1 B 절약. enum max 16 상태 충분. |
 
 Key design rules:
 
-- **No `std::wstring` per entry**. Names are interned into a per-pane arena (`FileModelStore::nameArena`, contiguous `std::wstring` backing buffer). `namePtr` + `nameLength` point into it. Arena grows in 64 KB chunks.
+- **No `std::wstring` per entry**. Names are interned into a per-pane arena (§5.2.1). `namePtr` + `nameLength` define an implicit `wstring_view`.
 - **Extension is offset+length within name**, not separate string. `extensionView()` returns `wstring_view(namePtr + extensionOffset, nameLength - extensionOffset)`.
 - **Bit-packed flags** instead of `bool` fields.
-- **No `EntryId` typedef wrapping uint32_t** in MVP (simpler, no allocator pressure).
-
-Total memory for 100k entries: **~9 MB** (structural) + icon cache (bounded LRU, configurable cap) + formatted-string LRU (configurable cap). 100 MB budget에 안전한 마진.
+- **Icon image index 미저장**. ImageList lookup은 extension hash 기반 (§9.2 참고). entry당 0 B 추가 비용.
+- **No `EntryId` typedef** in MVP (단순화, allocator 부담 회피).
+- **POD-like**: no virtual fns, no smart pointers, trivially copyable for memmove batch ops.
 
 Full path construction:
 
@@ -409,7 +447,139 @@ FileModelStore
 
 For unsorted initial load, `visibleOrder` may be identity or omitted. For sorted view, it stores indices into `entries`.
 
-### 5.3 Result Model
+### 5.2.1 Name Arena
+
+Per-pane contiguous wide-char buffer used to intern entry names.
+
+| Item | Decision |
+|------|----------|
+| Backing | `VirtualAlloc(MEM_RESERVE)` reserve 16 MB, `MEM_COMMIT` per 64 KB chunk as needed |
+| Growth | append-only. names stored back-to-back, no separator (length tracked) |
+| Decommit | generation reset 시 모든 committed chunks `VirtualFree(MEM_DECOMMIT)` 즉시 |
+| Cap | hard cap 64 MB reserve (overflow 시 enumeration error, pane은 partial result로 표시) |
+| Stability | committed memory의 `namePtr`는 store lifetime 동안 invalid 안 됨 (`VirtualAlloc` 영역 이동 안 함) |
+| SSO 미적용 | MVP 단순화. 평균 wide name 24 char → 48 B/name. 100k * 48 B = ~4.8 MB |
+
+```cpp
+class NameArena {
+public:
+  NameArena();
+  ~NameArena();  // VirtualFree(MEM_RELEASE) entire reservation
+  std::wstring_view intern(std::wstring_view name);  // commits page if needed
+  void reset();  // decommit all, keep reservation
+  size_t committedBytes() const;
+private:
+  wchar_t* base_;       // VirtualAlloc(reserved, 16 MB)
+  size_t committed_;    // bytes committed
+  size_t used_;         // bytes used
+};
+```
+
+### 5.2.2 Memory Layout Summary (per pane, 100k entries)
+
+| Component | Size |
+|-----------|------|
+| `entries: vector<FileEntry>` (capacity == count) | 4.0 MB |
+| `nameArena` (committed) | ~4.8 MB |
+| `visibleOrder: vector<uint32_t>` | 0.4 MB |
+| `selectionState` (bitset 100k bits) | 12 KB |
+| Format LRU (size/date strings, 1k cap) | ~128 KB |
+| **Per-pane total** | **~9.5 MB** |
+
+### 5.3 Memory Optimization Strategy
+
+이 절은 100 MB budget 대비 **2× 마진 (~50 MB target)** 을 위한 통합 전략이다.
+
+#### 5.3.1 Process-Global Shared State
+
+| State | Scope | Why shared |
+|-------|:-----:|------------|
+| `IconImageList` (`HIMAGELIST`) | process | 모든 pane이 동일 extension에서 동일 icon 재사용 |
+| `FormatService` LRU (size string, date string) | process | locale 변경 시 invalidate. 모든 pane 공유 |
+| `RingLogger` | process | 1개 ring + async writer thread |
+| `PerfTracker` ring (~10k events, 640 KB) | process | 1개 |
+| `IconExtensionCache` (ext → image idx) | process | 500 ext + 200 per-file LRU |
+
+#### 5.3.2 Per-Pane Lifetime
+
+| State | Lifetime |
+|-------|----------|
+| `FileModelStore` (entries + nameArena + visibleOrder + selectionState) | pane open ~ pane close 또는 generation reset |
+| Active enumeration `stop_source`, `std::vector<FileEntry> batchBuilder` | enumeration 1회 (소멸 시 release) |
+| In-flight Shell op payloads | op 완료 또는 cancel |
+
+**Generation 전환 시 즉시 회수**: `FileModelStore::resetForNewPath()` 가 호출되면:
+1. `stop_source.request_stop()`
+2. `nameArena.reset()` → `VirtualFree(MEM_DECOMMIT)` 모든 committed page
+3. `entries.clear()` + `shrink_to_fit()` (대용량 vector capacity 회수)
+4. `visibleOrder.clear()` + `shrink_to_fit()`
+5. `selectionState.reset()`
+6. `EmptyWorkingSet(GetCurrentProcess())` 호출 (선택, throttled to 1/sec)
+
+100k → 0 회수는 보통 100 ms 이내 (commit 해제는 lazy하지만 working set 즉시 감소).
+
+#### 5.3.3 Heap / Allocator Rules
+
+- **STL 사용 제한**:
+  - `std::filesystem` ❌ (heap intensive, Win32 직접 호출이 가볍고 빠름)
+  - `std::regex` ❌ (대형 정적 코드)
+  - `std::iostream` ❌ (CRT bloat 60+ KB)
+  - `std::wstring` minimal — `std::wstring_view` 우선 사용
+- **Reserve 정책**: `entries.reserve(prev_entry_count or 4096)` enumeration 시작 시. realloc 회피.
+- **Small vector**: batch payload (256 entries inline) — heap alloc 회피. `core/small-vector.h` 자체 구현.
+- **Pool allocator**: M5 sort worker가 임시 `vector<uint32_t> tmpOrder` 매번 할당하지 않도록 pane-local pool.
+
+#### 5.3.4 OS Working-Set Tuning
+
+| Mechanism | Use | Timing |
+|-----------|-----|--------|
+| `SetProcessWorkingSetSizeEx(min=8MB, max=128MB, QUOTA_LIMITS_HARDWS_MIN_DISABLE \| QUOTA_LIMITS_HARDWS_MAX_DISABLE)` | hint only | startup 시 1회 |
+| `EmptyWorkingSet(GetCurrentProcess())` | physical 강제 회수 | window minimize 또는 generation drop, throttled 1/sec |
+| `CreateMemoryResourceNotification(LowMemoryResourceNotification)` | 시스템 low memory 이벤트 등록 | startup |
+| `QueryMemoryResourceNotification` | low memory 시 → ImageList shrink + Format LRU clear + Icon per-file cache evict | periodic 1s tick + event |
+| `SetPriorityClass(PROCESS_MODE_BACKGROUND_BEGIN)` | minimize 후 background priority | WM_SIZE SIZE_MINIMIZED |
+| `SetPriorityClass(PROCESS_MODE_BACKGROUND_END)` | restore | WM_SIZE SIZE_RESTORED |
+
+#### 5.3.5 ImageList Strategy
+
+| Item | Decision |
+|------|----------|
+| Storage | `ImageList_Create(32, 32, ILC_COLOR32 \| ILC_MASK, 64, 32)` 초기 64 capacity, 32씩 증가 |
+| Cache key | extension wide-char hash (case-insensitive ordinal) |
+| Per-file exception | `.exe`, `.lnk`, `.url`, `desktop.ini` — 별도 LRU, cap 200 |
+| Entry lookup | LVN_GETDISPINFO → `IconExtensionCache::lookup(entry.extensionView())` → image index 또는 placeholder (-1) |
+| HiDPI | deferred. 32×32 only. (per-monitor scaling 시 stretched. M7 이후 upgrade 검토) |
+| Eviction | LRU. 시스템 low memory 시 `ImageList_Remove(-1)` + cache clear |
+
+Entry에 image index 저장 안 함 → entry당 **0 B** 추가 비용.
+
+#### 5.3.6 Format LRU
+
+```cpp
+class FormatService {
+  // size: uint64_t → wstring (e.g., "1.23 MB")
+  // date: FILETIME → wstring (locale formatted)
+  // Both bounded LRU, cap=1000 each.
+  std::wstring_view formatSize(uint64_t bytes);
+  std::wstring_view formatDate(FILETIME ft);
+  void onLocaleChange();  // clear all
+};
+```
+
+LVN_GETDISPINFO에서 cached `wstring_view` 직접 반환. 50 µs 예산 안전.
+
+#### 5.3.7 Enforcement / Measurement
+
+| Check | Method |
+|-------|--------|
+| `static_assert(sizeof(FileEntry) == 40)` | compile-time |
+| `static_assert(alignof(FileEntry) == 8)` | compile-time |
+| `FileModelStore::estimatedBytes()` | runtime, diag bar (debug mode) |
+| `GetProcessMemoryInfo(pmc.WorkingSetSize)` poll | PerfTracker event `process.workingset.delta` |
+| Bench gate (M7) | `process.peak_workingset` @ 100k pane ≤ 50 MB target, ≤ 100 MB budget |
+| Generation drop test | 100k → empty → 100k → empty cycle 10회, working set 누적 증가 ≤ 5 MB |
+
+### 5.4 Result Model
 
 Core and shell operations return explicit results.
 
@@ -697,18 +867,38 @@ Rules:
 - Failed icon extraction records an icon error state and keeps placeholder.
 - Icon loading must be disableable for benchmark comparison.
 
-### 9.2 Cache
+### 9.2 Cache (Process-Global)
 
-Initial cache keys:
+ImageList는 process-global single instance. 모든 pane 공유. (§5.3.5)
 
-```text
-IconCacheKey
-  extension
-  isDirectory
-  attributes mask
+```cpp
+class IconImageList {
+public:
+  // 32×32 BGRA, 64 initial / 32 grow / cap 1024.
+  HIMAGELIST himagelist() const noexcept;
+
+  // returns image index, or -1 if not cached (caller shows placeholder).
+  int lookupByExtension(std::wstring_view ext, uint32_t attrMask) const;
+
+  // worker thread calls this after SHGetFileInfoW.
+  int insertExtension(std::wstring_view ext, HICON icon);
+  int insertPerFile(std::wstring_view fullPath, HICON icon);
+
+  // low-memory hook
+  void shrinkToCap(size_t newCap);
+  void clear();
+};
 ```
 
-Per-file icon keys are allowed only for files that require specific icons, and must be bounded by LRU capacity.
+| Cache | Key | Cap | Eviction |
+|-------|-----|-----|----------|
+| Extension cache | `(ext_hash, attrMask & ATTR_DIRECTORY)` | 500 entries | LRU |
+| Per-file cache | full path hash (lower-cased) | 200 entries | LRU + watch invalidation |
+| ImageList size | 32×32 BGRA = 4 KB / icon | 700 × 4 KB = **2.8 MB cap** | shrinkToCap on low memory |
+
+Per-file exceptions: `.exe`, `.lnk`, `.url`, `desktop.ini` 파일은 path 기반 cache (각 파일이 고유 icon 보유 가능). 그 외는 extension cache로 충분.
+
+**FileEntry에 image index 미저장**: LVN_GETDISPINFO 시 `IconExtensionCache::lookup(entry.extensionView(), entry.attributes)` 로 조회. Entry당 추가 비용 **0 B**.
 
 ### 9.3 Metadata
 
@@ -915,6 +1105,24 @@ Benchmark JSON 결과를 baseline과 비교.
 
 Baseline은 main branch 최신 commit의 `bench-results/main/`에 저장. CI는 PR branch 결과를 baseline과 비교하여 GitHub status check report.
 
+### 11.6 Memory Telemetry
+
+| Event / Counter | Source | When |
+|-----------------|--------|------|
+| `process.workingset.delta` | `GetProcessMemoryInfo(WorkingSetSize)` | pane open / pane close / generation reset / 1s tick |
+| `process.privatebytes` | `PROCESS_MEMORY_COUNTERS_EX::PrivateUsage` | 1s tick |
+| `pane.memory.estimate` | `FileModelStore::estimatedBytes()` (entries + arena + visibleOrder) | pane.first_batch / pane.enumeration.complete |
+| `imagelist.cap` | `ImageList_GetImageCount` | low-memory event, periodic 10s |
+| `imagelist.shrunk` | shrinkToCap 호출 | event-triggered |
+| `mem.lownotify.fired` | `WAIT_OBJECT_0` from notification handle | 발생 시점 |
+| `mem.caches.dropped` | low-memory 응답 시 evict 항목 수 | drop 직후 |
+
+Debug build의 diag bar에 per-pane bytes + total resident + ImageList count 실시간 표시. Release에서는 `--diag` flag로 활성화.
+
+Memory soak test (M7):
+- 100k → 0 → 100k cycle 10회. Δ working set ≤ 5 MB (누적 leak 검출)
+- 다중 pane (dual + dual nav 50회). Δ working set ≤ 10 MB
+
 ---
 
 ## 12. Benchmark Design
@@ -1089,6 +1297,8 @@ Exit criteria:
 - **warm launch ≤ 500 ms** 측정값 기록
 - crash handler가 가짜 crash로 dump 생성 검증
 - per-monitor DPI 전환 시 UI 즉시 rescale 검증
+- **startup process working set ≤ 25 MB** (빈 window 상태, 아직 pane 없음)
+- `SetProcessWorkingSetSizeEx` 호출 + low-memory notification 등록 동작 확인
 
 ### 14.2 Milestone 2: Core Enumeration
 
@@ -1104,8 +1314,10 @@ Deliverables:
 Exit criteria:
 - CLI enumerates generated small/medium/large-flat datasets
 - core tests cover path, model, FileEntry layout, cancellation L2
+- `static_assert(sizeof(FileEntry) == 40)` 통과 + name arena commit/decommit 동작 검증
 - **CLI에서 small folder ≤ 50 ms, medium ≤ 100 ms** 측정값 기록
 - **FindFirstFileExW vs GetFileInformationByHandleEx head-to-head 측정값 기록** → final API 확정 (Plan §12.1 N1 해소)
+- **100k entries pane memory ≤ 15 MB** (CLI 측정, structural + arena만)
 
 ### 14.3 Milestone 3: Virtual List UI
 
@@ -1170,6 +1382,7 @@ Exit criteria:
 - file operations return structured `OperationResult`
 - OneDrive 폴더 enumeration에서 hydration trigger 0건 검증
 - Crash dump path가 portable mode override를 따름
+- **ImageList cap ≤ 3 MB** 측정 + low-memory notification 시 shrink 동작 확인
 
 ### 14.7 Milestone 7: Benchmark And Stabilization
 
@@ -1187,7 +1400,11 @@ Exit criteria:
 - **large folder first row ≤ 200 ms** 종합 측정
 - **UI stall single ≤ 50 ms** 100k 시나리오 검증
 - **scroll p95 ≤ 16.7 ms** 측정
-- **100k entries memory ≤ 100 MB** 측정
+- **100k entries process working set ≤ 50 MB target / ≤ 100 MB budget** 측정
+- **Memory soak: 100k→0→100k cycle 10회 누적 working set Δ ≤ 5 MB**
+- **Multi-pane soak: dual nav 50회 누적 working set Δ ≤ 10 MB**
+- `EmptyWorkingSet` 호출 후 working set 회복 ≤ 200 ms 검증
+- Low-memory notification 시 caches drop 검증
 - 1-hour soak: crash 0, memory leak 0
 - design performance gates can be measured
 - Check phase gap analysis can compare implementation to this document
