@@ -1,0 +1,23 @@
+.superpowers/
+
+# Build outputs
+build/
+out/
+dist/
+bin/
+obj/
+
+# Local IDE/user files
+.vs/
+.vscode/
+*.user
+*.suo
+
+# Logs and diagnostics
+*.log
+*.dmp
+*.pdb
+
+# Secrets
+.env
+.env.*
