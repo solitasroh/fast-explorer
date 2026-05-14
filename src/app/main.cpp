@@ -171,7 +171,7 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance,
       icc.dwICC = ICC_LISTVIEW_CLASSES | ICC_BAR_CLASSES;
       InitCommonControlsEx(&icc);
 
-      fast_explorer::ui::MainWindow window(services.memory());
+      fast_explorer::ui::MainWindow window(services.memory(), services.perf());
       if (window.create(instance, showCommand)) {
         if (!openPath.empty()) {
           if (!window.openFolder(openPath)) {

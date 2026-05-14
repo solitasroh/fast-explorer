@@ -7,6 +7,7 @@
 
 namespace fast_explorer::core {
 class ProcessMemoryService;
+class PerfTracker;
 }
 
 namespace fast_explorer::ui {
@@ -16,7 +17,8 @@ class PaneController;
 class MainWindow {
  public:
   // `memory` is non-owning; the AppServices owner must outlive the window.
-  explicit MainWindow(fast_explorer::core::ProcessMemoryService& memory) noexcept;
+  MainWindow(fast_explorer::core::ProcessMemoryService& memory,
+             fast_explorer::core::PerfTracker& perf) noexcept;
   ~MainWindow();
 
   MainWindow(const MainWindow&) = delete;
@@ -43,10 +45,12 @@ class MainWindow {
   void setStatusText(const wchar_t* text);
 
   fast_explorer::core::ProcessMemoryService& memory_;
+  fast_explorer::core::PerfTracker& perf_;
   HINSTANCE instance_ = nullptr;
   HWND hwnd_ = nullptr;
   HWND listView_ = nullptr;
   HWND statusBar_ = nullptr;
+  bool firstBatchSeen_ = false;
   std::unique_ptr<PaneController> pane_;
   std::unique_ptr<class FormatCache> formatCache_;
 };

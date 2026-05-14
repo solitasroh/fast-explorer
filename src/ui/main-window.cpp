@@ -9,6 +9,7 @@
 #include "core/file-entry.h"
 #include "core/file-model-store.h"
 #include "core/fs-backend.h"
+#include "core/perf-tracker.h"
 #include "core/process-memory.h"
 #include "ui/column-formatter.h"
 #include "ui/dpi-scale.h"
@@ -100,8 +101,9 @@ bool registerClassOnce(HINSTANCE instance, const wchar_t* className, WNDPROC pro
 
 }  // namespace
 
-MainWindow::MainWindow(fast_explorer::core::ProcessMemoryService& memory) noexcept
-    : memory_(memory) {}
+MainWindow::MainWindow(fast_explorer::core::ProcessMemoryService& memory,
+                       fast_explorer::core::PerfTracker& perf) noexcept
+    : memory_(memory), perf_(perf) {}
 
 MainWindow::~MainWindow() {
   if (hwnd_) {
@@ -114,6 +116,8 @@ bool MainWindow::openFolder(const std::wstring& path) {
   if (!pane_) {
     return false;
   }
+  perf_.record(fast_explorer::core::PerfTracker::EventId::PaneOpenStart);
+  firstBatchSeen_ = false;
   if (!pane_->openFolder(path)) {
     return false;
   }
@@ -223,6 +227,11 @@ LRESULT MainWindow::handleMessage(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPa
       return DefWindowProcW(hwnd, msg, wParam, lParam);
     case kWmFeEnumBatch: {
       const auto count = static_cast<uint64_t>(lParam);
+      if (!firstBatchSeen_) {
+        perf_.record(
+            fast_explorer::core::PerfTracker::EventId::PaneFirstBatch, count);
+        firstBatchSeen_ = true;
+      }
       if (listView_) {
         ListView_SetItemCountEx(listView_, static_cast<int>(count),
                                 LVSICF_NOSCROLL);

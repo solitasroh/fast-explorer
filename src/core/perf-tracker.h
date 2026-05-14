@@ -24,7 +24,9 @@ class PerfTracker {
     AppLaunchStart = 1,
     AppInteractive = 2,
     AppShutdownStart = 3,
-    // pane/sort/icon events allocated in later milestones
+    PaneOpenStart = 4,
+    PaneFirstBatch = 5,
+    // sort/icon events allocated in later milestones
   };
 
   struct Event {

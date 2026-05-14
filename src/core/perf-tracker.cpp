@@ -14,6 +14,8 @@ const wchar_t* eventName(PerfTracker::EventId id) noexcept {
     case PerfTracker::EventId::AppLaunchStart:   return L"app.launch.start";
     case PerfTracker::EventId::AppInteractive:   return L"app.interactive";
     case PerfTracker::EventId::AppShutdownStart: return L"app.shutdown.start";
+    case PerfTracker::EventId::PaneOpenStart:    return L"pane.open.start";
+    case PerfTracker::EventId::PaneFirstBatch:   return L"pane.first_batch";
   }
   return L"unknown";
 }
