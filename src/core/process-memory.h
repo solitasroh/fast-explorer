@@ -3,6 +3,7 @@
 #include <windows.h>
 
 #include <atomic>
+#include <cstdint>
 #include <thread>
 
 namespace fast_explorer::core {
@@ -55,6 +56,7 @@ class ProcessMemoryService {
 
   std::atomic<bool> running_{false};
   std::atomic<LowMemoryCallback> callback_{nullptr};
+  std::atomic<int64_t> lastEmptyTicks_{0};  // QPC ticks; throttles EmptyWorkingSet
   HANDLE notification_ = nullptr;
   HANDLE stopEvent_ = nullptr;
   std::thread notifier_;

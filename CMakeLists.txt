@@ -29,6 +29,8 @@ set(FE_APP_SOURCES
   src/app/main.cpp
   src/ui/main-window.cpp
   src/ui/main-window.h
+  src/core/path-utils.cpp
+  src/core/path-utils.h
   src/core/perf-tracker.cpp
   src/core/perf-tracker.h
   src/core/ring-logger.cpp

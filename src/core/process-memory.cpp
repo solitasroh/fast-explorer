@@ -8,9 +8,28 @@ namespace fast_explorer::core {
 
 namespace {
 
-constexpr SIZE_T kMinWorkingSet = 8 * 1024 * 1024;    // 8 MB hint
-constexpr SIZE_T kMaxWorkingSet = 128 * 1024 * 1024;  // 128 MB hint
-constexpr DWORD kPollIntervalMs = INFINITE;  // wake only on event
+constexpr SIZE_T kMinWorkingSet = 8 * 1024 * 1024;
+constexpr SIZE_T kMaxWorkingSet = 128 * 1024 * 1024;
+constexpr DWORD kEmptyWorkingSetThrottleMs = 1000;
+constexpr DWORD kLowMemoryReArmIntervalMs = 5000;
+
+LARGE_INTEGER qpcNow() noexcept {
+  LARGE_INTEGER v{};
+  QueryPerformanceCounter(&v);
+  return v;
+}
+
+double qpcMs(LARGE_INTEGER start, LARGE_INTEGER end) noexcept {
+  static LARGE_INTEGER freq{};
+  if (freq.QuadPart == 0) {
+    QueryPerformanceFrequency(&freq);
+  }
+  if (freq.QuadPart == 0) {
+    return 0.0;
+  }
+  return (static_cast<double>(end.QuadPart - start.QuadPart) * 1000.0)
+         / static_cast<double>(freq.QuadPart);
+}
 
 }  // namespace
 
@@ -28,7 +47,6 @@ bool ProcessMemoryService::start() {
     return true;
   }
 
-  // Working set hint: advisory only thanks to the HARDWS_*_DISABLE flags.
   const DWORD wsFlags = QUOTA_LIMITS_HARDWS_MIN_DISABLE
                       | QUOTA_LIMITS_HARDWS_MAX_DISABLE;
   if (!SetProcessWorkingSetSizeEx(GetCurrentProcess(),
@@ -37,7 +55,6 @@ bool ProcessMemoryService::start() {
                                   wsFlags)) {
     RingLogger::instance().warn(
         L"SetProcessWorkingSetSizeEx failed lastError=%lu", GetLastError());
-    // Continue; not fatal.
   }
 
   notification_ = CreateMemoryResourceNotification(LowMemoryResourceNotification);
@@ -46,7 +63,7 @@ bool ProcessMemoryService::start() {
         L"CreateMemoryResourceNotification failed lastError=%lu", GetLastError());
     return false;
   }
-  stopEvent_ = CreateEventW(nullptr, TRUE, FALSE, nullptr);
+  stopEvent_ = CreateEventW(nullptr, /*manualReset=*/TRUE, FALSE, nullptr);
   if (stopEvent_ == nullptr) {
     CloseHandle(notification_);
     notification_ = nullptr;
@@ -80,15 +97,29 @@ void ProcessMemoryService::stop() {
 }
 
 void ProcessMemoryService::notifyMinimized() noexcept {
-  // EmptyWorkingSet returns pages immediately. Throttling (1 Hz) is deferred
-  // until we have multiple minimize events to coalesce.
+  const LARGE_INTEGER now = qpcNow();
+  int64_t prev = lastEmptyTicks_.load(std::memory_order_relaxed);
+  // Throttle: skip if the last EmptyWorkingSet was less than 1 s ago.
+  if (prev != 0) {
+    LARGE_INTEGER prevTs{};
+    prevTs.QuadPart = prev;
+    if (qpcMs(prevTs, now) < kEmptyWorkingSetThrottleMs) {
+      return;
+    }
+  }
+  if (!lastEmptyTicks_.compare_exchange_strong(prev, now.QuadPart,
+                                               std::memory_order_acq_rel)) {
+    return;
+  }
+
+  SetPriorityClass(GetCurrentProcess(), PROCESS_MODE_BACKGROUND_BEGIN);
   if (EmptyWorkingSet(GetCurrentProcess())) {
     RingLogger::instance().info(L"working set emptied on minimize");
   }
 }
 
 void ProcessMemoryService::notifyRestored() noexcept {
-  // No-op for MVP; left here so the WM_SIZE hook has a paired call.
+  SetPriorityClass(GetCurrentProcess(), PROCESS_MODE_BACKGROUND_END);
 }
 
 void ProcessMemoryService::setLowMemoryCallback(LowMemoryCallback cb) noexcept {
@@ -118,25 +149,37 @@ SIZE_T ProcessMemoryService::privateBytes() noexcept {
 }
 
 void ProcessMemoryService::notifierLoop() {
+  // LowMemoryResourceNotification is a state-based object: it stays signaled
+  // while the OS reports low memory. Without throttling, WaitForMultipleObjects
+  // would spin. We invoke the callback once per low-memory transition and
+  // then sleep for kLowMemoryReArmIntervalMs (interruptible by stopEvent_)
+  // before checking again. QueryMemoryResourceNotification gives the real
+  // current state so we know when the system has recovered.
   HANDLE waits[2] = { notification_, stopEvent_ };
   while (running_.load(std::memory_order_acquire)) {
-    const DWORD rc = WaitForMultipleObjects(2, waits, FALSE, kPollIntervalMs);
-    if (rc == WAIT_OBJECT_0) {
-      // Low memory: invoke callback and log.
-      LowMemoryCallback cb = callback_.load(std::memory_order_acquire);
+    const DWORD rc = WaitForMultipleObjects(2, waits, FALSE, INFINITE);
+    if (rc == WAIT_OBJECT_0 + 1) {
+      break;
+    }
+    if (rc != WAIT_OBJECT_0) {
+      continue;
+    }
+
+    BOOL stillLow = TRUE;
+    if (QueryMemoryResourceNotification(notification_, &stillLow) && stillLow) {
+      const LowMemoryCallback cb = callback_.load(std::memory_order_acquire);
       RingLogger::instance().warn(
           L"low memory notification fired; working set=%zu KB",
           workingSetBytes() / 1024);
       if (cb) {
         cb();
       }
-      // The notification handle is auto-reset after a successful wait; re-arm
-      // happens automatically when the system leaves the low-memory state.
-    } else if (rc == WAIT_OBJECT_0 + 1) {
-      break;
-    } else {
-      break;
     }
+
+    // Wait either for the stop signal or for the throttle interval before
+    // re-arming. If the system is still low after the wait, we will react
+    // again; if it recovered, the WaitForMultipleObjects above blocks.
+    WaitForSingleObject(stopEvent_, kLowMemoryReArmIntervalMs);
   }
 }
 

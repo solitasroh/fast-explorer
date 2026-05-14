@@ -1,12 +1,12 @@
 #include "core/ring-logger.h"
 
-#include <shlobj.h>
 #include <stdio.h>
 #include <stringapiset.h>
 
-#include <chrono>
 #include <cstdarg>
 #include <string>
+
+#include "core/path-utils.h"
 
 namespace fast_explorer::core {
 
@@ -26,52 +26,6 @@ const char* levelTag(RingLogger::Level level) noexcept {
   return "?????";
 }
 
-bool resolveLogDirectory(std::wstring& outPath) {
-  wchar_t portable[MAX_PATH];
-  const DWORD portableLen = GetEnvironmentVariableW(
-      L"FAST_EXPLORER_PORTABLE_ROOT", portable, _countof(portable));
-  if (portableLen > 0 && portableLen < _countof(portable)) {
-    outPath.assign(portable, portableLen);
-    outPath.append(L"\\logs");
-    return true;
-  }
-
-  PWSTR localAppData = nullptr;
-  HRESULT hr = SHGetKnownFolderPath(FOLDERID_LocalAppData, 0, nullptr, &localAppData);
-  if (FAILED(hr) || localAppData == nullptr) {
-    if (localAppData) {
-      CoTaskMemFree(localAppData);
-    }
-    return false;
-  }
-  outPath.assign(localAppData);
-  CoTaskMemFree(localAppData);
-  outPath.append(L"\\FastExplorer\\logs");
-  return true;
-}
-
-bool ensureDirectory(const std::wstring& path) {
-  if (CreateDirectoryW(path.c_str(), nullptr)) {
-    return true;
-  }
-  const DWORD err = GetLastError();
-  if (err == ERROR_ALREADY_EXISTS) {
-    return true;
-  }
-  if (err != ERROR_PATH_NOT_FOUND) {
-    return false;
-  }
-  // Recursively create parent.
-  const size_t slash = path.find_last_of(L"\\/");
-  if (slash == std::wstring::npos) {
-    return false;
-  }
-  if (!ensureDirectory(path.substr(0, slash))) {
-    return false;
-  }
-  return CreateDirectoryW(path.c_str(), nullptr) || GetLastError() == ERROR_ALREADY_EXISTS;
-}
-
 void buildLogFileName(std::wstring& outPath) {
   SYSTEMTIME st{};
   GetLocalTime(&st);
@@ -87,10 +41,10 @@ int formatHeader(char* dst, size_t cap, const FILETIME& ft, uint32_t tid, RingLo
   SYSTEMTIME local{};
   SystemTimeToTzSpecificLocalTime(nullptr, &utc, &local);
   return _snprintf_s(dst, cap, _TRUNCATE,
-                     "[%04u-%02u-%02uT%02u:%02u:%02u.%03u] [%s] [tid=%u] ",
+                     "[%04u-%02u-%02uT%02u:%02u:%02u.%03u] [%s] [tid=%lu] ",
                      local.wYear, local.wMonth, local.wDay,
                      local.wHour, local.wMinute, local.wSecond, local.wMilliseconds,
-                     levelTag(lvl), tid);
+                     levelTag(lvl), static_cast<unsigned long>(tid));
 }
 
 }  // namespace
@@ -131,7 +85,14 @@ bool RingLogger::start() {
 }
 
 void RingLogger::stop() {
-  if (!running_.exchange(false, std::memory_order_acq_rel)) {
+  // Order matters:
+  //   1. Signal stopEvent so the writer thread enters a final drain loop and
+  //      writes every slot that producers have already published.
+  //   2. Wait for the writer thread to finish that drain (join below sees it
+  //      because the loop only exits after the post-stop drain completes).
+  //   3. Only then flip running_ off so any later log() falls back to ODS.
+  //   4. Close handles last.
+  if (!writer_.joinable() && !running_.load(std::memory_order_acquire)) {
     return;
   }
   if (stopEvent_) {
@@ -140,6 +101,7 @@ void RingLogger::stop() {
   if (writer_.joinable()) {
     writer_.join();
   }
+  running_.store(false, std::memory_order_release);
   if (stopEvent_)  { CloseHandle(stopEvent_);  stopEvent_  = nullptr; }
   if (flushEvent_) { CloseHandle(flushEvent_); flushEvent_ = nullptr; }
   if (fileHandle_ != INVALID_HANDLE_VALUE) {
@@ -150,10 +112,10 @@ void RingLogger::stop() {
 
 bool RingLogger::openLogFile() {
   std::wstring dir;
-  if (!resolveLogDirectory(dir)) {
+  if (!resolveAppDataSubdir(L"logs", dir)) {
     return false;
   }
-  if (!ensureDirectory(dir)) {
+  if (!ensureDirectoryRecursive(dir.c_str())) {
     return false;
   }
   std::wstring path = dir;
@@ -171,38 +133,61 @@ void RingLogger::publish(Level level, const wchar_t* fmt, va_list args) noexcept
                                     _countof(wideBuf),
                                     _TRUNCATE,
                                     fmt, args);
-  const int wideCount = wideLen < 0 ? static_cast<int>(_countof(wideBuf) - 1) : wideLen;
+  size_t wideCount;
+  if (wideLen < 0) {
+    wideCount = wcsnlen(wideBuf, _countof(wideBuf));
+  } else {
+    wideCount = static_cast<size_t>(wideLen);
+  }
 
   char utf8Buf[kMaxMessageBytes];
   int utf8Len = WideCharToMultiByte(CP_UTF8, 0,
-                                    wideBuf, wideCount,
+                                    wideBuf, static_cast<int>(wideCount),
                                     utf8Buf, static_cast<int>(sizeof(utf8Buf)),
                                     nullptr, nullptr);
-  if (utf8Len <= 0) {
+  if (utf8Len < 0) {
     utf8Len = 0;
   }
-  if (utf8Len > static_cast<int>(kMaxMessageBytes)) {
-    utf8Len = static_cast<int>(kMaxMessageBytes);
+  size_t utf8Bytes = static_cast<size_t>(utf8Len);
+  if (utf8Bytes > kMaxMessageBytes) {
+    utf8Bytes = kMaxMessageBytes;
   }
 
   if (!running_.load(std::memory_order_acquire)) {
-    emitFallback(level, utf8Buf, static_cast<uint16_t>(utf8Len));
+    emitFallback(level, utf8Buf, static_cast<uint16_t>(utf8Bytes));
     return;
   }
 
-  const uint64_t ticket = writeCursor_.fetch_add(1, std::memory_order_relaxed);
+  // Overflow guard: if the producer would lap the reader, drop the message.
+  const uint64_t writeNow = writeCursor_.load(std::memory_order_relaxed);
+  const uint64_t readNow = readCursor_.load(std::memory_order_acquire);
+  if (writeNow - readNow >= kSlotCount) {
+    dropped_.fetch_add(1, std::memory_order_relaxed);
+    emitFallback(level, utf8Buf, static_cast<uint16_t>(utf8Bytes));
+    return;
+  }
+
+  const uint64_t ticket = writeCursor_.fetch_add(1, std::memory_order_acq_rel);
+  // Re-check after we own the ticket; concurrent producers may have advanced
+  // the cursor past safety.
+  if (ticket - readCursor_.load(std::memory_order_acquire) >= kSlotCount) {
+    dropped_.fetch_add(1, std::memory_order_relaxed);
+    emitFallback(level, utf8Buf, static_cast<uint16_t>(utf8Bytes));
+    return;
+  }
+
   Slot& slot = slots_[ticket % kSlotCount];
   const uint64_t generation = ticket / kSlotCount;
   const uint64_t inProgress = (generation * 2) + 1;
   const uint64_t published = (generation * 2) + 2;
 
-  slot.seq.store(inProgress, std::memory_order_relaxed);
+  slot.seq.store(inProgress, std::memory_order_release);
   GetSystemTimeAsFileTime(&slot.timestamp);
   slot.threadId = GetCurrentThreadId();
   slot.level = level;
-  slot.messageLength = static_cast<uint16_t>(utf8Len);
-  if (utf8Len > 0) {
-    memcpy(slot.message, utf8Buf, static_cast<size_t>(utf8Len));
+  slot.messageLength = static_cast<uint16_t>(utf8Bytes);
+  if (utf8Bytes > 0) {
+    memcpy(slot.message, utf8Buf, utf8Bytes);
   }
   slot.seq.store(published, std::memory_order_release);
 
@@ -218,45 +203,65 @@ void RingLogger::log(Level level, const wchar_t* fmt, ...) noexcept {
   va_end(args);
 }
 
-void RingLogger::info(const wchar_t* fmt, ...) noexcept {
-  va_list args; va_start(args, fmt); publish(Level::Info,  fmt, args); va_end(args);
-}
-void RingLogger::warn(const wchar_t* fmt, ...) noexcept {
-  va_list args; va_start(args, fmt); publish(Level::Warn,  fmt, args); va_end(args);
-}
-void RingLogger::error(const wchar_t* fmt, ...) noexcept {
-  va_list args; va_start(args, fmt); publish(Level::Error, fmt, args); va_end(args);
-}
-void RingLogger::fatal(const wchar_t* fmt, ...) noexcept {
-  va_list args; va_start(args, fmt); publish(Level::Fatal, fmt, args); va_end(args);
+#define FE_DEFINE_LEVEL_HELPER(name, lvl)                            \
+  void RingLogger::name(const wchar_t* fmt, ...) noexcept {          \
+    va_list args; va_start(args, fmt);                               \
+    publish(Level::lvl, fmt, args); va_end(args);                    \
+  }
+
+FE_DEFINE_LEVEL_HELPER(info,  Info)
+FE_DEFINE_LEVEL_HELPER(warn,  Warn)
+FE_DEFINE_LEVEL_HELPER(error, Error)
+FE_DEFINE_LEVEL_HELPER(fatal, Fatal)
+
+#undef FE_DEFINE_LEVEL_HELPER
+
+void RingLogger::writeAllBytes(const void* data, size_t bytes) noexcept {
+  if (fileHandle_ == INVALID_HANDLE_VALUE || bytes == 0) {
+    return;
+  }
+  const char* cursor = static_cast<const char*>(data);
+  size_t remaining = bytes;
+  while (remaining > 0) {
+    const DWORD chunk = remaining > 0xFFFFFFFFu
+                          ? 0xFFFFFFFFu
+                          : static_cast<DWORD>(remaining);
+    DWORD written = 0;
+    if (!WriteFile(fileHandle_, cursor, chunk, &written, nullptr) || written == 0) {
+      OutputDebugStringW(L"[RingLogger] WriteFile failed; remaining bytes dropped\n");
+      return;
+    }
+    cursor += written;
+    remaining -= written;
+  }
 }
 
 void RingLogger::writeSlot(const Slot& slot) {
-  if (fileHandle_ == INVALID_HANDLE_VALUE) {
-    return;
-  }
   char header[96];
   const int headerLen = formatHeader(header, sizeof(header),
                                      slot.timestamp, slot.threadId, slot.level);
   if (headerLen <= 0) {
     return;
   }
-  DWORD written = 0;
-  WriteFile(fileHandle_, header, static_cast<DWORD>(headerLen), &written, nullptr);
+  writeAllBytes(header, static_cast<size_t>(headerLen));
   if (slot.messageLength > 0) {
-    WriteFile(fileHandle_, slot.message, slot.messageLength, &written, nullptr);
+    writeAllBytes(slot.message, slot.messageLength);
   }
   static const char kNewline = '\n';
-  WriteFile(fileHandle_, &kNewline, 1, &written, nullptr);
+  writeAllBytes(&kNewline, 1);
 }
 
 void RingLogger::writerLoop() {
   HANDLE waits[2] = { flushEvent_, stopEvent_ };
+  bool stopRequested = false;
   for (;;) {
-    const DWORD rc = WaitForMultipleObjects(2, waits, FALSE, kFlushIntervalMs);
-    const bool stopping = (rc == WAIT_OBJECT_0 + 1);
+    if (!stopRequested) {
+      const DWORD rc = WaitForMultipleObjects(2, waits, FALSE, kFlushIntervalMs);
+      stopRequested = (rc == WAIT_OBJECT_0 + 1);
+    }
 
-    // Drain published slots.
+    // Drain published slots. On stop, spin-wait briefly for any in-flight
+    // slots to publish so we do not lose the last few messages.
     for (;;) {
       const uint64_t read = readCursor_.load(std::memory_order_relaxed);
       const uint64_t write = writeCursor_.load(std::memory_order_acquire);
@@ -266,11 +271,19 @@ void RingLogger::writerLoop() {
       Slot& slot = slots_[read % kSlotCount];
       const uint64_t generation = read / kSlotCount;
       const uint64_t expectedPublished = (generation * 2) + 2;
-      const uint64_t seq = slot.seq.load(std::memory_order_acquire);
+      uint64_t seq = slot.seq.load(std::memory_order_acquire);
       if (seq != expectedPublished) {
-        // Producer has not yet finished writing this slot; bail and retry
-        // after the next signal/timeout.
-        break;
+        if (!stopRequested) {
+          break;  // producer still writing; come back on next signal.
+        }
+        // During shutdown wait a short moment for the producer to finish.
+        for (int spin = 0; spin < 100 && seq != expectedPublished; ++spin) {
+          Sleep(0);
+          seq = slot.seq.load(std::memory_order_acquire);
+        }
+        if (seq != expectedPublished) {
+          break;  // give up on this slot; it was lost in flight.
+        }
       }
       writeSlot(slot);
       readCursor_.store(read + 1, std::memory_order_release);
@@ -280,14 +293,13 @@ void RingLogger::writerLoop() {
       FlushFileBuffers(fileHandle_);
     }
 
-    if (stopping) {
+    if (stopRequested) {
       break;
     }
   }
 }
 
 void RingLogger::emitFallback(Level level, const char* utf8, uint16_t length) noexcept {
-  // Pre-startup or post-shutdown messages still surface to a debugger.
   char buffer[512];
   FILETIME ft{};
   GetSystemTimeAsFileTime(&ft);

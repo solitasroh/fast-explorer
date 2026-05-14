@@ -58,6 +58,12 @@ class PerfTracker {
   // Snapshot count of recorded events (clamped to kCapacity if wrapped).
   size_t recordedCount() const noexcept;
 
+  // Raw access for crash dump user-stream attachment. Returns a pointer to
+  // the per-slot ring array and its element count. The caller is expected
+  // to copy as many bytes as needed during MiniDumpWriteDump.
+  const void* rawSlotBuffer() const noexcept { return slots_; }
+  size_t rawSlotBufferBytes() const noexcept { return sizeof(slots_); }
+
  private:
   // Per-slot publication sequence. record() reserves a slot N by incrementing
   // cursor_, then writes seq = N*2+1 (odd = in progress), payload, seq = N*2+2

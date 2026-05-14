@@ -41,17 +41,18 @@ void PerfTracker::record(EventId id, uint64_t auxiliary) noexcept {
   LARGE_INTEGER now{};
   QueryPerformanceCounter(&now);
 
-  const uint64_t ticket = cursor_.fetch_add(1, std::memory_order_relaxed);
+  const uint64_t ticket = cursor_.fetch_add(1, std::memory_order_acq_rel);
   const size_t slot = static_cast<size_t>(ticket % kCapacity);
   PublishedSlot& s = slots_[slot];
 
-  // seq = 2*generation + 1 marks "in progress" so the consumer can skip a
-  // half-written slot. The store is relaxed; the publishing release store
-  // below establishes the happens-before edge for the payload.
+  // seq = 2*generation + 1 marks "in progress". The release on inProgress
+  // ensures the slot's previous published payload (if any, from a wrap) is
+  // visible to readers before we start writing. The second release publishes
+  // the new payload.
   const uint64_t generation = ticket / kCapacity;
   const uint64_t inProgress = (generation * 2) + 1;
   const uint64_t published = (generation * 2) + 2;
-  s.seq.store(inProgress, std::memory_order_relaxed);
+  s.seq.store(inProgress, std::memory_order_release);
 
   s.event.qpcTicks = now.QuadPart;
   s.event.auxiliary = auxiliary;

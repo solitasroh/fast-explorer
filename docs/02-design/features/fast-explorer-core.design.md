@@ -5,7 +5,7 @@
 > **Author**: Codex
 > **Created**: 2026-05-14
 > **Status**: Review
-> **Version**: 1.0.2
+> **Version**: 1.0.3
 > **Level**: Starter
 
 ---
@@ -17,6 +17,7 @@
 | 1.0.0 | 2026-05-14 | Initial technical design document | Codex |
 | 1.0.1 | 2026-05-14 | Teammate review 결과 반영: COM apartment 명시, cancellation 3계층, IFileOperation 운영 디테일, long path/reparse/UNC/cloud placeholder 정책, manifest/CRT/MSVC toolset, FileEntry 메모리 제약, ReadDirectoryChangesW MVP 포함, LVN_GETDISPINFO 예산, crash dump + 로깅 backend, ETW/QPC 측정 결정, milestone 성능 게이트 분산, deferred decisions 확장 | Claude |
 | 1.0.2 | 2026-05-14 | 메모리 최적화 전략 전면 반영: FileEntry 40 B 압축, name arena `VirtualAlloc` chunk, ImageList process-global 공유, Format LRU bounded, CRT/컴파일 옵션 (`/GR-` 검토, `/GL+LTCG`, `/Gw/Gy`), Working Set 핸들러 (`SetProcessWorkingSetSizeEx`, `EmptyWorkingSet`, low-memory notification → caches drop), generation 교체 시 즉시 회수, 메모리 enforcement (static_assert + bench gate), 예상 process 총 메모리 ~50 MB target (100 MB budget 대비 2× 마진) | Claude |
+| 1.0.3 | 2026-05-14 | M1 review fix 반영: §5.3.1 PerfTracker ring size 표기 정정 (640 KB → 320 KB, 24 B/slot 명시), §11.2 backend SPSC → MPSC + per-slot publication seq + overflow drop counter 명시. 구현 측 변경: RingLogger shutdown drain 순서 (stopEvent 먼저 → drain → join → flags), atomic ordering release on inProgress store, overflow guard + drop counter, WriteFile short-write 처리, crash handler RingLogger 의존 제거 (signal-safe path), MiniDump user-stream에 PerfTracker ring 첨부, --crash-test 토큰 정확 매칭 + real unhandled exception 경로 (=throw), low-memory state-based notification handling (busy loop 회피), EmptyWorkingSet 1 Hz throttle + SetPriorityClass BACKGROUND 짝, path-utils 추출 (DRY) | Claude |
 
 ## Related Documents
 
@@ -497,7 +498,7 @@ private:
 | `IconImageList` (`HIMAGELIST`) | process | 모든 pane이 동일 extension에서 동일 icon 재사용 |
 | `FormatService` LRU (size string, date string) | process | locale 변경 시 invalidate. 모든 pane 공유 |
 | `RingLogger` | process | 1개 ring + async writer thread |
-| `PerfTracker` ring (~10k events, 640 KB) | process | 1개 |
+| `PerfTracker` ring (~10k events × 32 B/slot ≈ 320 KB) | process | 1개. slot = 8 B seq + 24 B Event. M2부터 paneId/generation 추가 시 재계산. |
 | `IconExtensionCache` (ext → image idx) | process | 500 ext + 200 per-file LRU |
 
 #### 5.3.2 Per-Pane Lifetime
@@ -1051,7 +1052,7 @@ In-process ring buffer (last 10,000 events) + 비동기 file dump on app close. 
 
 | Item | Decision |
 |------|----------|
-| Backend | 자체 `RingLogger` (lock-free SPSC ring) + background writer thread |
+| Backend | 자체 `RingLogger` (lock-free MPSC ring with per-slot publication seq + overflow drop counter) + background writer thread (MTA) |
 | Location | `%LOCALAPPDATA%\FastExplorer\logs\fast-explorer-YYYYMMDD.log` (portable mode 시 `<portable_root>\logs\`) |
 | Rotation | daily + 10 MB cap. 7 days retention |
 | Format | `[ISO8601] [LEVEL] [thread] message` |

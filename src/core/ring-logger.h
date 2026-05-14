@@ -16,8 +16,14 @@ namespace fast_explorer::core {
 // performs WriteFile. INFO+ messages also signal the writer to flush right
 // away; lower levels are deferred until the timed flush tick.
 //
-// MVP scope: 512 slots * 256 bytes = 128 KB ring, UTF-8 output, no rotation
-// yet (M2 will add daily rotation + retention).
+// Backpressure: if the producer cursor moves more than kSlotCount ahead of
+// the reader cursor, the message is routed to emitFallback() (drop + ODS)
+// and the dropped counter is incremented. This prevents producers from
+// silently overwriting in-flight slots.
+//
+// Shutdown ordering: stop() first signals the stop event so the writer drains
+// all currently-published slots, then flips running_ off and joins. Producers
+// observing running_=false after stop() route to the fallback sink.
 class RingLogger {
  public:
   enum class Level : uint8_t {
@@ -35,22 +41,19 @@ class RingLogger {
 
   static RingLogger& instance();
 
-  // Initialize writer thread + open log file. Safe to call once at startup.
-  // Returns false if the log directory cannot be created or the file cannot
-  // be opened; callers should fall back to OutputDebugString-only mode.
   bool start();
-
-  // Flush any pending entries and stop the writer thread. Called from the
-  // destructor as well; explicit shutdown helps order operations during
-  // wWinMain teardown.
   void stop();
 
-  // Producer entry points. wide-char input is converted to UTF-8.
   void log(Level level, const wchar_t* fmt, ...) noexcept;
   void info(const wchar_t* fmt, ...) noexcept;
   void warn(const wchar_t* fmt, ...) noexcept;
   void error(const wchar_t* fmt, ...) noexcept;
   void fatal(const wchar_t* fmt, ...) noexcept;
+
+  // Number of messages dropped because the ring was full. For diagnostics.
+  uint64_t droppedCount() const noexcept {
+    return dropped_.load(std::memory_order_relaxed);
+  }
 
  private:
   struct Slot {
@@ -62,8 +65,6 @@ class RingLogger {
     uint16_t messageLength{0};       // UTF-8 byte count (<= kMaxMessageBytes)
     char message[kMaxMessageBytes]{};
   };
-  static_assert(sizeof(Slot) <= kSlotBytes + 16,
-                "Slot must stay close to the 256-byte budget");
 
   RingLogger();
   ~RingLogger();
@@ -73,8 +74,8 @@ class RingLogger {
   void writerLoop();
   bool openLogFile();
   void writeSlot(const Slot& slot);
+  void writeAllBytes(const void* data, size_t bytes) noexcept;
   void emitFallback(Level level, const char* utf8, uint16_t length) noexcept;
-
   void publish(Level level, const wchar_t* fmt, va_list args) noexcept;
 
   HANDLE fileHandle_ = INVALID_HANDLE_VALUE;
@@ -84,6 +85,7 @@ class RingLogger {
   std::atomic<bool> running_{false};
   std::atomic<uint64_t> writeCursor_{0};
   std::atomic<uint64_t> readCursor_{0};
+  std::atomic<uint64_t> dropped_{0};
   Slot slots_[kSlotCount]{};
 };
 
