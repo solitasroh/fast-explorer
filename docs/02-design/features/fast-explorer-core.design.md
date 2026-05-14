@@ -18,6 +18,7 @@
 | 1.0.1 | 2026-05-14 | Teammate review 결과 반영: COM apartment 명시, cancellation 3계층, IFileOperation 운영 디테일, long path/reparse/UNC/cloud placeholder 정책, manifest/CRT/MSVC toolset, FileEntry 메모리 제약, ReadDirectoryChangesW MVP 포함, LVN_GETDISPINFO 예산, crash dump + 로깅 backend, ETW/QPC 측정 결정, milestone 성능 게이트 분산, deferred decisions 확장 | Claude |
 | 1.0.2 | 2026-05-14 | 메모리 최적화 전략 전면 반영: FileEntry 40 B 압축, name arena `VirtualAlloc` chunk, ImageList process-global 공유, Format LRU bounded, CRT/컴파일 옵션 (`/GR-` 검토, `/GL+LTCG`, `/Gw/Gy`), Working Set 핸들러 (`SetProcessWorkingSetSizeEx`, `EmptyWorkingSet`, low-memory notification → caches drop), generation 교체 시 즉시 회수, 메모리 enforcement (static_assert + bench gate), 예상 process 총 메모리 ~50 MB target (100 MB budget 대비 2× 마진) | Claude |
 | 1.0.3 | 2026-05-14 | M1 review fix 반영: §5.3.1 PerfTracker ring size 표기 정정 (640 KB → 320 KB, 24 B/slot 명시), §11.2 backend SPSC → MPSC + per-slot publication seq + overflow drop counter 명시. 구현 측 변경: RingLogger shutdown drain 순서 (stopEvent 먼저 → drain → join → flags), atomic ordering release on inProgress store, overflow guard + drop counter, WriteFile short-write 처리, crash handler RingLogger 의존 제거 (signal-safe path), MiniDump user-stream에 PerfTracker ring 첨부, --crash-test 토큰 정확 매칭 + real unhandled exception 경로 (=throw), low-memory state-based notification handling (busy loop 회피), EmptyWorkingSet 1 Hz throttle + SetPriorityClass BACKGROUND 짝, path-utils 추출 (DRY) | Claude |
+| 1.0.4 | 2026-05-14 | M2 sub-step 3 review fix 반영: §5.1 `FILETIME modifiedTime` → `uint64_t modifiedTime100ns` 치환 (FILETIME 비트 레이아웃 그대로, 100-ns intervals since 1601-01-01 UTC). 동기: file-entry.h가 widely-included core 헤더가 될 예정이라 `<windows.h>` 매크로 오염 (`small`, `IN`, `OUT`, `ERROR` 등) 폭발 반경 차단. 변환은 호출자에서 `ULARGE_INTEGER` 한 줄로 처리. sizeof/alignment 불변, static_assert 그대로 통과. 추가: file-entry.h에 `is_trivial_v` static_assert + `file_entry_state` 네임스페이스 (states 바이트 nibble mask/shift 상수) + `iconState`/`metadataState` 자유함수 | Claude |
 
 ## Related Documents
 
@@ -375,20 +376,26 @@ Required columns:
 
 ```cpp
 struct FileEntry {
-  const wchar_t* namePtr;    // 8 B — points into FileModelStore::nameArena
-  uint64_t size;             // 8 B — 0 for directories
-  FILETIME modifiedTime;     // 8 B
-  uint32_t attributes;       // 4 B — raw FILE_ATTRIBUTE_* mask
-  uint16_t nameLength;       // 2 B — wide-char count
-  uint16_t extensionOffset;  // 2 B — offset into name (UINT16_MAX if none)
-  uint8_t  flags;            // 1 B — bit0=isDir, bit1=isHidden, bit2=isSystem,
-                             //        bit3=isReparse, bit4=isCloudPlaceholder
-  uint8_t  states;           // 1 B — icon nibble (low 4) + metadata nibble (high 4)
-  uint8_t  errorCode;        // 1 B — ErrorCode enum (0 = no error)
-  uint8_t  reserved;         // 1 B — padding / future
+  const wchar_t* namePtr;        // 8 B — points into FileModelStore::nameArena
+  uint64_t size;                 // 8 B — 0 for directories
+  uint64_t modifiedTime100ns;    // 8 B — 100-ns intervals since 1601-01-01 UTC
+                                 //        (FILETIME bit layout: (high << 32) | low)
+  uint32_t attributes;           // 4 B — raw FILE_ATTRIBUTE_* mask
+  uint16_t nameLength;           // 2 B — wide-char count
+  uint16_t extensionOffset;      // 2 B — offset into name (UINT16_MAX if none)
+  uint8_t  flags;                // 1 B — bit0=isDir, bit1=isHidden, bit2=isSystem,
+                                 //        bit3=isReparse, bit4=isCloudPlaceholder
+  uint8_t  states;               // 1 B — icon nibble (low 4) + metadata nibble (high 4)
+  uint8_t  errorCode;            // 1 B — ErrorCode enum (0 = no error)
+  uint8_t  reserved;             // 1 B — padding / future
 };
 static_assert(sizeof(FileEntry) == 40, "FileEntry must be exactly 40 B for memory budget");
 static_assert(alignof(FileEntry) == 8);
+// modifiedTime100ns intentionally uses uint64_t instead of FILETIME so the
+// public header does not pull <windows.h> (macro pollution: small/IN/OUT/...)
+// into every consumer (FileModelStore, sorting, virtual-list adapter,
+// crash handler). The bit layout is preserved: low = bits[0..31], high =
+// bits[32..63]; reconstruct a FILETIME via ULARGE_INTEGER at the call site.
 // 100k entries × 40 B = 4 MB structural + name arena (~4.8 MB) + visibleOrder (400 KB) = ~9.5 MB per pane.
 ```
 

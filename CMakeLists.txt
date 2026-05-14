@@ -31,6 +31,7 @@ set(FE_APP_SOURCES
   src/app/app-services.h
   src/ui/main-window.cpp
   src/ui/main-window.h
+  src/core/file-entry.h
   src/core/path-utils.cpp
   src/core/path-utils.h
   src/core/perf-tracker.cpp
@@ -82,6 +83,8 @@ target_link_options(FastExplorer PRIVATE "/MANIFEST:NO")
 add_executable(core-tests
   tests/test-main.cpp
   tests/path-utils-tests.cpp
+  tests/file-entry-tests.cpp
+  src/core/file-entry.h
   src/core/path-utils.cpp
 )
 
