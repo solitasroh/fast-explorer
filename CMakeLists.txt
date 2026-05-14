@@ -31,6 +31,8 @@ set(FE_APP_SOURCES
   src/app/app-services.h
   src/ui/main-window.cpp
   src/ui/main-window.h
+  src/core/directory-enumerator.cpp
+  src/core/directory-enumerator.h
   src/core/file-entry.h
   src/core/file-model-store.cpp
   src/core/file-model-store.h
@@ -98,6 +100,9 @@ add_executable(core-tests
   tests/memory-fs-backend-tests.cpp
   tests/win32-fs-backend-tests.cpp
   tests/file-model-store-tests.cpp
+  tests/directory-enumerator-tests.cpp
+  src/core/directory-enumerator.cpp
+  src/core/directory-enumerator.h
   src/core/file-entry.h
   src/core/file-model-store.cpp
   src/core/file-model-store.h
