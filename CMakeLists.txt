@@ -47,6 +47,8 @@ set(FE_APP_SOURCES
   src/core/crash-handler.h
   src/core/process-memory.cpp
   src/core/process-memory.h
+  src/core/win32-fs-backend.cpp
+  src/core/win32-fs-backend.h
 )
 
 set(FE_RESOURCES
@@ -92,6 +94,7 @@ add_executable(core-tests
   tests/name-arena-tests.cpp
   tests/fs-backend-tests.cpp
   tests/memory-fs-backend-tests.cpp
+  tests/win32-fs-backend-tests.cpp
   src/core/file-entry.h
   src/core/fs-backend.h
   src/core/memory-fs-backend.cpp
@@ -101,6 +104,8 @@ add_executable(core-tests
   src/core/path-utils.cpp
   src/core/ring-logger.cpp
   src/core/ring-logger.h
+  src/core/win32-fs-backend.cpp
+  src/core/win32-fs-backend.h
 )
 
 target_include_directories(core-tests PRIVATE src tests)

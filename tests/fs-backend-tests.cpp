@@ -10,6 +10,7 @@
 
 #include "core/fs-backend.h"
 
+using fast_explorer::core::BackendKind;
 using fast_explorer::core::EnumerationError;
 using fast_explorer::core::EnumerationHandle;
 using fast_explorer::core::FileEntry;
@@ -20,6 +21,7 @@ namespace {
 
 class StubHandle : public EnumerationHandle {
  public:
+  StubHandle() noexcept : EnumerationHandle(BackendKind::Stub) {}
   std::size_t position = 0;
 };
 

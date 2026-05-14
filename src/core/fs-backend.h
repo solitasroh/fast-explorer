@@ -25,6 +25,16 @@ enum class EnumerationError : uint8_t {
   Internal,
 };
 
+// Identifies which backend produced an EnumerationHandle. Used by each
+// backend's next() to verify the handle is one it produced before doing
+// a static_cast to its concrete handle type — avoids the RTTI cost of
+// dynamic_cast on the per-entry hot path.
+enum class BackendKind : uint8_t {
+  Stub,
+  Memory,
+  Win32,
+};
+
 template <typename T>
 struct Result {
   T value{};
@@ -52,8 +62,13 @@ class EnumerationHandle {
   EnumerationHandle(const EnumerationHandle&) = delete;
   EnumerationHandle& operator=(const EnumerationHandle&) = delete;
 
+  BackendKind kind() const noexcept { return kind_; }
+
  protected:
-  EnumerationHandle() = default;
+  explicit EnumerationHandle(BackendKind k) noexcept : kind_(k) {}
+
+ private:
+  BackendKind kind_;
 };
 
 class IFsBackend {
@@ -63,13 +78,15 @@ class IFsBackend {
   // On ok(), the returned unique_ptr is guaranteed non-null. The caller
   // keeps the handle alive while iterating next(). The path must be a
   // valid std::wstring so backends can pass it as a null-terminated
-  // LPCWSTR to Win32 APIs without an extra copy.
+  // LPCWSTR to Win32 APIs without an extra copy. Names returned by
+  // prior next() calls on the same handle remain valid until the
+  // handle is destroyed.
   virtual Result<std::unique_ptr<EnumerationHandle>> openEnumeration(
       const std::wstring& path, std::stop_token tok) = 0;
 
   // Empty optional + ok() means end-of-stream. Any non-ok result aborts
-  // enumeration; the handle remains owned by the caller and the caller
-  // releases its unique_ptr to clean up.
+  // enumeration. The handle must have been produced by this backend
+  // (kind() matches) — passing a foreign handle yields Internal.
   virtual Result<std::optional<FileEntry>> next(
       EnumerationHandle& handle, std::stop_token tok) = 0;
 

@@ -9,6 +9,8 @@ namespace {
 
 class DirHandle : public EnumerationHandle {
  public:
+  DirHandle() noexcept : EnumerationHandle(BackendKind::Memory) {}
+
   std::wstring path;
   std::vector<FileEntry> entries;
   std::size_t position = 0;
@@ -89,11 +91,11 @@ Result<std::optional<FileEntry>> MemoryFsBackend::next(
     return Result<std::optional<FileEntry>>::failure(
         EnumerationError::Canceled);
   }
-  auto* dirHandle = dynamic_cast<DirHandle*>(&handle);
-  if (dirHandle == nullptr) {
+  if (handle.kind() != BackendKind::Memory) {
     return Result<std::optional<FileEntry>>::failure(
         EnumerationError::Internal);
   }
+  auto* dirHandle = static_cast<DirHandle*>(&handle);
   const EnumerationError injected =
       nextHook(dirHandle->path, dirHandle->position);
   if (injected != EnumerationError::None) {
