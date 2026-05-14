@@ -5,7 +5,7 @@
 > **Author**: Codex
 > **Created**: 2026-05-14
 > **Status**: Review
-> **Version**: 1.0.0
+> **Version**: 1.0.1
 > **Level**: Starter
 
 ---
@@ -15,10 +15,11 @@
 | Version | Date | Changes | Author |
 |---------|------|---------|--------|
 | 1.0.0 | 2026-05-14 | 초기 상세 계획 문서 작성 | Codex |
+| 1.0.1 | 2026-05-14 | Design 결정 역반영 (Conditional Scope 확정), Schedule milestone별 성능 게이트 분산, Open Questions 해소 표 추가, §16 Locked Decisions 추가 (Teammate review 결과 반영) | Claude |
 
 ## Related Documents
 
-- Design: `docs/02-design/features/fast-explorer-core.design.md` 예정
+- Design: [fast-explorer-core.design.md](../../02-design/features/fast-explorer-core.design.md)
 - Analysis: `docs/03-analysis/fast-explorer-core.analysis.md` 예정
 - Report: `docs/04-report/features/fast-explorer-core.report.md` 예정
 - Brainstorm visual notes: `.superpowers/brainstorm/`
@@ -327,17 +328,17 @@ Out-of-scope 항목은 Non-Goals와 동일하되, 특히 다음은 MVP에서 의
 - 다국어 UI 전체 지원
 - Windows Store 패키징
 
-### 4.3 Conditional Scope
+### 4.3 Conditional Scope — Resolved (v1.0.1)
 
-아래 항목은 Design 단계에서 성능 리스크가 낮다고 판단될 때만 포함한다.
+Design 단계에서 다음과 같이 확정되었다.
 
-| Candidate | Include If | Exclude If |
-|-----------|------------|------------|
-| Quad layout | 각 패널의 로딩/취소/메모리 격리가 단순하게 유지됨 | 일정 또는 성능 검증을 흔듦 |
-| Shell context menu | UI thread 차단을 방지할 수 있음 | COM handler로 인한 멈춤 위험이 큼 |
-| Drag-and-drop | 기본 Windows UX를 안정적으로 구현 가능 | 파일 작업 안정성 검증이 부족함 |
-| File icons | 백그라운드 배치 로딩 가능 | 셸 아이콘 추출이 병목이 됨 |
-| Session restore | 구현 비용이 작음 | 상태 복원이 로딩 복잡도를 늘림 |
+| Candidate | Resolution (Design v1.0.1) | Rationale |
+|-----------|----------------------------|-----------|
+| Quad layout | **Deferred (architecture-ready, not in MVP gate)** | `PaneManager` 구조는 확장 가능하지만 MVP gate는 single + dual만 포함 |
+| Shell context menu | **Excluded from MVP** | UI thread block과 third-party shell extension reentrancy 리스크가 큼 |
+| Drag-and-drop | **Excluded from MVP** | file operation 안정화 이후 OLE drop target/source 별도 설계 |
+| File icons | **Included (background batch loading only)** | placeholder 우선 표시, 백그라운드 아이콘 적용. 파일명 표시를 지연시키지 않음 |
+| Session restore | **Included (basic: last path, layout, window size)** | 구현 비용 낮음, settings.json 저장 |
 
 ---
 
@@ -503,22 +504,23 @@ No implementation phase should be considered done unless these gates exist.
 
 ## 7. Schedule
 
-아래 일정은 2026-05-14 기준 초기 제안이다. 실제 일정은 사용자의 리뷰 속도와 기술 검증 결과에 따라 조정한다.
+아래 일정은 2026-05-14 기준이며, v1.0.1에서 **성능 게이트가 milestone마다 분산 측정**되도록 수정됐다. 기존 Plan은 모든 성능 게이트를 마지막 Performance Check에 몰아놓아 아키텍처 회귀 발견이 너무 늦었다.
 
-| Phase | Target Date | Status | Deliverable |
-|-------|-------------|--------|-------------|
-| Plan | 2026-05-14 | In Progress | `fast-explorer-core.plan.md` |
-| Plan Review | 2026-05-14 | Pending | 사용자 확인 및 수정 |
-| Design | 2026-05-14 ~ 2026-05-15 | Pending | architecture/design document |
-| Prototype Scaffold | 2026-05-15 | Pending | C++ native app skeleton |
-| Benchmark Harness | 2026-05-15 ~ 2026-05-16 | Pending | dataset + timing tools |
-| Directory Engine | 2026-05-16 ~ 2026-05-18 | Pending | async enumeration core |
-| Virtual File List | 2026-05-18 ~ 2026-05-20 | Pending | responsive list UI |
-| Pane/Layout MVP | 2026-05-20 ~ 2026-05-21 | Pending | single/dual/quad decision implementation |
-| Basic Operations | 2026-05-21 ~ 2026-05-22 | Pending | open/rename/new folder/delete |
-| Performance Check | 2026-05-22 ~ 2026-05-23 | Pending | benchmark report |
-| Stabilization | 2026-05-23 ~ 2026-05-24 | Pending | bug fixes, soak test |
-| PDCA Check/Report | 2026-05-24 ~ 2026-05-25 | Pending | gap analysis and report |
+| Phase | Target Date | Status | Deliverable | Performance Gate (v1.0.1) |
+|-------|-------------|--------|-------------|---------------------------|
+| Plan | 2026-05-14 | Completed | `fast-explorer-core.plan.md` | — |
+| Plan Review | 2026-05-14 | Completed | 사용자 확인 및 수정 | — |
+| Design | 2026-05-14 ~ 2026-05-15 | Completed | architecture/design document | — |
+| Prototype Scaffold (M1) | 2026-05-15 | Pending | C++ native app skeleton | warm launch ≤ 500 ms 첫 측정 |
+| Benchmark Harness + Core Enumeration (M2) | 2026-05-15 ~ 2026-05-17 | Pending | dataset + CLI + DirectoryEnumerator | **small folder first batch ≤ 50 ms (CLI)** 측정 |
+| Virtual File List (M3) | 2026-05-17 ~ 2026-05-19 | Pending | responsive list UI | **medium folder first visible rows ≤ 100 ms (UI)** 측정 |
+| Navigation + Cancellation (M4) | 2026-05-19 ~ 2026-05-20 | Pending | nav history + generation token | **folder switch cancellation ≤ 50 ms** 측정 |
+| Sorting + Selection (M5) | 2026-05-20 ~ 2026-05-21 | Pending | sort worker + stable selection | sort 명령 접수 ≤ 50 ms 측정 |
+| Icons + Basic Operations (M6) | 2026-05-21 ~ 2026-05-22 | Pending | placeholder icons + ops | icon 토글 시 first row 시간 변화 ≤ 20 % |
+| Benchmark + Stabilization (M7) | 2026-05-22 ~ 2026-05-24 | Pending | full bench, soak test | **large folder first row ≤ 200 ms, UI stall ≤ 50 ms, scroll p95 ≤ 16.7 ms, 100k ≤ 100 MB** 종합 검증 |
+| PDCA Check/Report | 2026-05-24 ~ 2026-05-25 | Pending | gap analysis and report | — |
+
+**Rule**: 각 milestone exit criteria는 해당 단계 성능 게이트 측정값 기록을 포함한다. 기준 미달이 발견되면 다음 milestone로 진행하기 전에 architecture 재검토를 한다.
 
 ---
 
@@ -640,22 +642,33 @@ MVP는 로컬 파일을 다루므로 데이터 안전이 중요하다.
 
 ---
 
-## 12. Open Questions For Design Phase
+## 12. Open Questions — Resolved (v1.0.1)
 
-아래 질문은 Plan 단계에서 확정하지 않고 Design 단계에서 구체 실험 또는 비교 후 결정한다.
+Design v1.0.1 시점 결정 상태.
 
-1. 파일 목록은 Win32 List-View `LVS_OWNERDATA`로 충분한가, 아니면 custom Direct2D list가 필요한가?
-2. 첫 MVP에서 quad layout을 포함할 것인가, dual layout까지만 포함할 것인가?
-3. Windows 10을 지원할 것인가, Windows 11 x64로 제한할 것인가?
-4. 파일 아이콘은 어떤 API와 cache strategy를 사용할 것인가?
-5. Shell context menu는 MVP에 포함할 것인가, 별도 단계로 뺄 것인가?
-6. 파일 작업은 `IFileOperation` 중심으로 갈 것인가, 일부 작업은 직접 Win32 API를 쓸 것인가?
-7. benchmark harness는 앱 내 debug panel로 둘 것인가, 별도 CLI로 둘 것인가, 둘 다 둘 것인가?
-8. build system은 Visual Studio solution 중심으로 갈 것인가, CMake 중심으로 갈 것인가?
-9. 테스트 프레임워크는 GoogleTest, Catch2, doctest 중 무엇을 사용할 것인가?
-10. 디자인 시스템은 Windows native controls를 우선할 것인가, custom chrome을 만들 것인가?
-11. 설정 저장은 registry, JSON file, app data folder 중 무엇을 사용할 것인가?
-12. 포터블 모드는 장기 목표로 둘 것인가?
+| # | Question | Status | Resolution |
+|---|----------|:------:|------------|
+| 1 | List-View `LVS_OWNERDATA` vs custom Direct2D list | ✅ | `LVS_OWNERDATA` 우선. Direct2D는 측정된 한계 이후로 deferred. |
+| 2 | Quad vs dual layout | ✅ | single + dual MVP. Quad는 architecture-ready로만 둠. |
+| 3 | Windows 10 vs 11 only | ✅ | Windows 11 x64 first, Windows 10 best-effort. |
+| 4 | Icon API + cache strategy | ✅ | `SHGetFileInfoW` (deferred: `IShellItemImageFactory` for HiDPI) + extension-level cache 우선, LRU bounded. |
+| 5 | Shell context menu | ✅ | MVP 제외. |
+| 6 | `IFileOperation` vs Win32 API | ✅ | rename/delete는 `IFileOperation` 중심, create folder는 `CreateDirectoryW` (확실히 빠르고 안전), Shell COM 실패 시에만 Win32 fallback. |
+| 7 | Benchmark harness 위치 | ✅ | 별도 CLI + 앱 instrumentation 둘 다 둠. |
+| 8 | Build system | ✅ | CMake + MSVC generator. |
+| 9 | Test framework | ✅ | MVP는 dependency-free `core-tests.exe` (self-contained assert macro). Catch2/doctest는 Milestone 7 이후 재검토. |
+| 10 | Native controls vs custom chrome | ✅ | Native controls 우선. Custom chrome은 deferred. |
+| 11 | Settings storage | ✅ | `%LOCALAPPDATA%\FastExplorer\settings.json`. Portable 모드는 Q12 참고. |
+| 12 | Portable mode | ⚠ | MVP 미포함. Settings 경로를 환경변수 `FAST_EXPLORER_PORTABLE_ROOT` override 가능하게 두어 향후 portable 모드를 막지 않음 (Design §2.1 패치 참고). |
+
+### 12.1 New Open Questions (Teammate Review 결과)
+
+| # | New Question | Owner | Resolution Target |
+|---|--------------|-------|-------------------|
+| N1 | `FindFirstFileExW` vs `GetFileInformationByHandleEx(FileIdBothDirectoryInfo)` 어느 쪽이 large-flat 200 ms 게이트에 유리한가? | M2 | M2 exit 측정값으로 결정 |
+| N2 | Crash dump를 `MiniDumpWithoutOptionalData` 수준으로 채택할지 WER 위임할지 | M6 | M6 milestone 진입 시점 |
+| N3 | UI 자동화 (FlaUI vs WinAppDriver) 도입 시점 | M7 | M7 stabilization 단계 |
+| N4 | Benchmark용 RAM disk(ImDisk) 강제 사용 vs SSD 측정 허용 | M7 | M7 exit 전 결정 |
 
 ---
 
@@ -726,11 +739,79 @@ MVP는 로컬 파일을 다루므로 데이터 안전이 중요하다.
 
 ## 15. Next Action
 
-Plan 문서 검토 후 다음 단계는 Design 문서 작성이다.
+Design 완료. 다음은 Do phase 진입.
 
-Design 단계에서 반드시 확정해야 할 첫 결정은 다음 두 가지다.
+Do 진입 전 Design v1.0.1 보완 (§16 Locked Decisions 참고).
 
-1. **파일 목록 구현 방식**: Win32 `LVS_OWNERDATA` virtual list vs custom rendered list
-2. **MVP 레이아웃 범위**: single + dual 우선 vs single + dual + quad 포함
+---
 
-이 두 결정이 전체 난도와 성능 검증 방식을 크게 좌우한다.
+## 16. Locked Decisions — Plan ↔ Design Sync (v1.0.1)
+
+Design 단계에서 새로 확정되어 Plan에도 영향을 미치는 의사결정.
+
+### 16.1 기술 스택 Lock
+
+| Item | Locked Value |
+|------|--------------|
+| Language | C++20 (C++23 미사용) |
+| Compiler | MSVC v143 (Visual Studio 2022 17.x) |
+| Windows SDK | 10.0.22621.0 (Windows 11 SDK) 이상 |
+| Build | CMake 3.24+ + Ninja or MSVC generator |
+| CRT linkage | `/MD` (shared CRT) + VC++ Redistributable 동봉 (or `/MT` 정적 — Design §2.1 참조) |
+| Target OS | Windows 11 x64 first, Windows 10 1809+ best-effort |
+| Charset | Wide-character only (UTF-16) |
+
+### 16.2 응답성 / Threading Lock
+
+- UI thread는 STA (`COINIT_APARTMENTTHREADED`)로 초기화한다.
+- Shell worker thread는 STA, 자체 PeekMessage 루프를 가진다.
+- Core worker pool은 MTA. Shell COM API 호출 금지.
+- 모든 작업에 `(paneId, generation)` + `std::stop_token` 부착.
+- IFileOperation은 `IFileOperationProgressSink` 기반 콜백 수집, owner HWND는 메인 윈도우 사용.
+
+### 16.3 Cancellation Lock (3계층)
+
+| Layer | Mechanism | Latency Target |
+|-------|-----------|----------------|
+| Layer 1 (UI ignore) | generation token mismatch → 결과 폐기 | ≤ 50 ms |
+| Layer 2 (worker abort) | `std::stop_source` per pane/generation, batch boundary check | best-effort (single batch 내) |
+| Layer 3 (shell op abort) | `IFileOperationProgressSink::Pre*` → `S_FALSE` | best-effort |
+
+SHGetFileInfo는 cancel 불가하므로 fire-and-forget + 결과 폐기 패턴 사용.
+
+### 16.4 File System Edge Case Lock
+
+| Edge Case | Decision |
+|-----------|----------|
+| Long path (> MAX_PATH) | app manifest `longPathAware=true` opt-in + 내부 경로 `\\?\` 정규화 |
+| UNC path (`\\server\share`) | MVP는 로컬 드라이브 letter만 허용. UNC 입력은 명시적 거부 + 안내 |
+| Reparse point / junction / symlink | enumeration 시 표시 마커 (attribute 컬럼에 `J/L` 문자), recursive follow 금지 |
+| OneDrive / cloud placeholder | `FILE_ATTRIBUTE_RECALL_ON_*` 비트 감지하여 hydration trigger 호출 회피. `SHGetFileInfo SHGFI_USEFILEATTRIBUTES` 경로 우선. |
+| Long file name (UTF-16 surrogate pair, RTL) | enumeration/sort 모두 wide-char ordinal로 처리 |
+
+### 16.5 Observability Lock
+
+- 측정 백엔드: `QueryPerformanceCounter` (1차), ETW custom provider (stretch goal).
+- 로깅 백엔드: 자체 ringbuffer + 비동기 file writer (MVP는 spdlog 도입 안 함).
+- Crash handler: `SetUnhandledExceptionFilter` + `MiniDumpWriteDump` (MiniDumpWithoutOptionalData 수준, 사용자 동의 시만 디스크 저장).
+- Stall probe: 50 ms 초과 시 debug log + active command 캡처.
+- CI 회귀 게이트: bench-results JSON baseline 비교 (p95 frame +20 %, first-visible +15 % 시 경고).
+
+### 16.6 Out of MVP — Explicit (HiDPI/DPI v2 예외)
+
+다음은 MVP에 포함된다 (사후 도입 비용이 크기 때문):
+- Per-monitor DPI v2 (`DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2`)
+- common controls v6 manifest dependency (themed List-View 필수)
+- Crash dump 핸들러
+- 자체 로깅 ringbuffer
+
+다음은 MVP 제외, deferred:
+- Dark mode (`SetWindowTheme(L"DarkMode_Explorer", ...)`)
+- HiDPI 아이콘 (`IShellItemImageFactory::GetImage` 256x256)
+- Accessibility (UIA custom provider — List-View 기본 MSAA로 커버)
+- IME 커스텀 처리 (기본 EDIT 컨트롤로 커버)
+- 다국어 UI strings
+
+### 16.7 File System Watch (M4 결정)
+
+`ReadDirectoryChangesW` 기반 변경 감지는 **MVP 포함**으로 결정. 없으면 rename/create 후 수동 refresh 강제 → MVP scope의 "user expects native explorer parity"를 깸. 단 구현은 M4(navigation/cancellation)에서 최소 기능(파일 추가/삭제/이름변경 알림)만 포함하고, sub-tree recursive watch는 deferred.
