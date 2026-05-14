@@ -126,6 +126,10 @@ bool MainWindow::openFolder(const std::wstring& path) {
   return true;
 }
 
+bool MainWindow::isStaleGeneration(WPARAM wParam) const {
+  return !pane_ || static_cast<uint32_t>(wParam) != pane_->generation();
+}
+
 void MainWindow::setStatusText(const wchar_t* text) {
   if (statusBar_ && text) {
     SendMessageW(statusBar_, SB_SETTEXTW, 0,
@@ -226,6 +230,9 @@ LRESULT MainWindow::handleMessage(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPa
       }
       return DefWindowProcW(hwnd, msg, wParam, lParam);
     case kWmFeEnumBatch: {
+      if (isStaleGeneration(wParam)) {
+        return 0;
+      }
       const auto count = static_cast<uint64_t>(lParam);
       if (!firstBatchSeen_) {
         perf_.record(
@@ -241,12 +248,18 @@ LRESULT MainWindow::handleMessage(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPa
       return 0;
     }
     case kWmFeEnumComplete: {
-      const size_t finalCount = pane_ ? pane_->store().itemCount() : 0;
+      if (isStaleGeneration(wParam)) {
+        return 0;
+      }
+      const size_t finalCount = pane_->store().itemCount();
       const std::wstring text = readyStatusText(finalCount);
       setStatusText(text.c_str());
       return 0;
     }
     case kWmFeEnumError: {
+      if (isStaleGeneration(wParam)) {
+        return 0;
+      }
       const auto err =
           static_cast<fast_explorer::core::EnumerationError>(lParam);
       const std::wstring text = errorStatusText(err);

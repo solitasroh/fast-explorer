@@ -35,6 +35,7 @@ class MainWindow {
   static LRESULT CALLBACK wndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam);
   LRESULT handleMessage(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam);
   LRESULT handleListViewNotify(NMHDR* hdr);
+  bool isStaleGeneration(WPARAM wParam) const;
   void handleGetDispInfo(NMHDR* hdr);
   LRESULT handleCustomDraw(NMHDR* hdr);
 
