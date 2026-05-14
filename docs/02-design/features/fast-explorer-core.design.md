@@ -1281,7 +1281,20 @@ Scenarios:
 
 각 milestone exit criteria는 해당 단계 성능 게이트 측정값 포함. 기준 미달 발견 시 다음 milestone로 진행하기 전 architecture 재검토.
 
-### 14.1 Milestone 1: Native Scaffold
+### 14.1 Milestone 1: Native Scaffold — ✅ Completed (2026-05-14, head `3e3f010`)
+
+Commit sequence: `dc03aba` walking skeleton → `1c3b47a` PerfTracker → `3cfea6b` review fixes → `a954bb6` RingLogger → `c9b62dd` CrashHandler → `e5ea58d` ProcessMemoryService + WM_SIZE + PerfTracker→logger → `e4396a8` review fixes (12 of 13) → `3e3f010` H8 DI refactor (AppServices).
+
+Final measurements (Win11 x64, MSVC v143, Release, graceful close):
+
+| Gate | Target | Measured |
+|------|--------|----------|
+| Warm launch | ≤ 500 ms | **21–36 ms** |
+| Startup working set | ≤ 25 MB | **10.3 MB** |
+| Crash dump generation | — | ✅ 831 KB w/ PerfTracker user-stream (real SEH path) |
+| DPI rescale handler | — | ✅ (multi-monitor live test deferred to QA) |
+| Log file (UTF-8) | — | ✅ `%LOCALAPPDATA%\FastExplorer\logs\fast-explorer-YYYYMMDD.log` |
+| Exe size (Release) | — | 131 KB |
 
 Deliverables:
 - CMake project (`/MD` shared CRT, MSVC v143)
