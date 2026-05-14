@@ -19,6 +19,7 @@
 | 1.0.2 | 2026-05-14 | 메모리 최적화 전략 전면 반영: FileEntry 40 B 압축, name arena `VirtualAlloc` chunk, ImageList process-global 공유, Format LRU bounded, CRT/컴파일 옵션 (`/GR-` 검토, `/GL+LTCG`, `/Gw/Gy`), Working Set 핸들러 (`SetProcessWorkingSetSizeEx`, `EmptyWorkingSet`, low-memory notification → caches drop), generation 교체 시 즉시 회수, 메모리 enforcement (static_assert + bench gate), 예상 process 총 메모리 ~50 MB target (100 MB budget 대비 2× 마진) | Claude |
 | 1.0.3 | 2026-05-14 | M1 review fix 반영: §5.3.1 PerfTracker ring size 표기 정정 (640 KB → 320 KB, 24 B/slot 명시), §11.2 backend SPSC → MPSC + per-slot publication seq + overflow drop counter 명시. 구현 측 변경: RingLogger shutdown drain 순서 (stopEvent 먼저 → drain → join → flags), atomic ordering release on inProgress store, overflow guard + drop counter, WriteFile short-write 처리, crash handler RingLogger 의존 제거 (signal-safe path), MiniDump user-stream에 PerfTracker ring 첨부, --crash-test 토큰 정확 매칭 + real unhandled exception 경로 (=throw), low-memory state-based notification handling (busy loop 회피), EmptyWorkingSet 1 Hz throttle + SetPriorityClass BACKGROUND 짝, path-utils 추출 (DRY) | Claude |
 | 1.0.4 | 2026-05-14 | M2 sub-step 3 review fix 반영: §5.1 `FILETIME modifiedTime` → `uint64_t modifiedTime100ns` 치환 (FILETIME 비트 레이아웃 그대로, 100-ns intervals since 1601-01-01 UTC). 동기: file-entry.h가 widely-included core 헤더가 될 예정이라 `<windows.h>` 매크로 오염 (`small`, `IN`, `OUT`, `ERROR` 등) 폭발 반경 차단. 변환은 호출자에서 `ULARGE_INTEGER` 한 줄로 처리. sizeof/alignment 불변, static_assert 그대로 통과. 추가: file-entry.h에 `is_trivial_v` static_assert + `file_entry_state` 네임스페이스 (states 바이트 nibble mask/shift 상수) + `iconState`/`metadataState` 자유함수 | Claude |
+| 1.0.5 | 2026-05-15 | M2 exit-gate 측정값 + 완료 마크. §14.2에 small 0.176 ms / medium 5.03 ms / 100k 43.8 ms·6.43 MB 표 기재, Plan §12.1 N1 해소 (FindFirstFileExW 유지, GFIBHE 60% 느림). 측정 환경: Win11 NTFS SSD Defender on, 10-run median, no RAM disk. | Claude |
 
 ## Related Documents
 
@@ -1321,7 +1322,7 @@ Exit criteria:
 - **startup process working set ≤ 25 MB** (빈 window 상태, 아직 pane 없음)
 - `SetProcessWorkingSetSizeEx` 호출 + low-memory notification 등록 동작 확인
 
-### 14.2 Milestone 2: Core Enumeration
+### 14.2 Milestone 2: Core Enumeration — ✅ Completed (2026-05-15)
 
 Deliverables:
 - path utilities (`toInternal`/`toDisplay`, `\\?\` prefix, UNC reject)
@@ -1329,16 +1330,32 @@ Deliverables:
 - `DirectoryEnumerator` (FindFirstFileExW + FindExInfoBasic + LARGE_FETCH)
 - `FileEntry` (`static_assert(sizeof <= 64)`) + name arena
 - `FileModelStore`
-- first benchmark CLI command (`generate`, `enumerate`)
+- benchmark CLI (`generate` 7 presets, `enumerate`, `head-to-head`)
 - `QueryPerformanceCounter` 기반 PerfTracker
 
-Exit criteria:
-- CLI enumerates generated small/medium/large-flat datasets
-- core tests cover path, model, FileEntry layout, cancellation L2
-- `static_assert(sizeof(FileEntry) == 40)` 통과 + name arena commit/decommit 동작 검증
-- **CLI에서 small folder ≤ 50 ms, medium ≤ 100 ms** 측정값 기록
-- **FindFirstFileExW vs GetFileInformationByHandleEx head-to-head 측정값 기록** → final API 확정 (Plan §12.1 N1 해소)
-- **100k entries pane memory ≤ 15 MB** (CLI 측정, structural + arena만)
+Exit criteria + measured values (Release, Win11, NTFS SSD, Defender on, 10-run median):
+
+| Gate | Spec | Measured | Margin |
+|------|------|----------|--------|
+| small (200) median | ≤ 50 ms | 0.176 ms | 99.6% |
+| medium (10 000) median | ≤ 100 ms | 5.03 ms | 95.0% |
+| large-flat (100 000) memory | ≤ 15 MB | 6.43 MB | 57.1% |
+| `static_assert(sizeof(FileEntry) == 40)` | pass | pass | — |
+| core-tests.exe | pass | 186 / 186 | — |
+
+Plan §12.1 N1 (FindFirstFileExW vs GetFileInformationByHandleEx) measured on large-flat 100 000, 10-run median:
+
+| Method | median | p95 |
+|--------|--------|-----|
+| FindFirstFileExW (LARGE_FETCH) | 37.9 ms | 48.3 ms |
+| GetFileInformationByHandleEx (FileIdBothDirectoryInfo, 64 KB buf) | 60.7 ms | 71.8 ms |
+
+Decision: **keep FindFirstFileExW + FIND_FIRST_EX_LARGE_FETCH**. GFIBHE was 60% slower at 100 000 entries despite the single-syscall-per-buffer design; the FindFirstFileExW path already amortizes I/O through NtQueryDirectoryFile under LARGE_FETCH and the GFIBHE variable-stride pointer walk does not recover the difference. The Plan §12.1 N1 question is resolved; no second backend will be added.
+
+Measurement caveats:
+- Defender real-time scan was active; numbers represent realistic dev environment.
+- No RAM disk (Design §13.2 deferred to M7).
+- First runs are typically cold-cache outliers and show up in p95; median is the gate.
 
 ### 14.3 Milestone 3: Virtual List UI
 

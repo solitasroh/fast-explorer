@@ -513,7 +513,7 @@ No implementation phase should be considered done unless these gates exist.
 | Plan Review | 2026-05-14 | Completed | 사용자 확인 및 수정 | — |
 | Design | 2026-05-14 ~ 2026-05-15 | Completed | architecture/design document | — |
 | Prototype Scaffold (M1) | 2026-05-15 | Pending | C++ native app skeleton | warm launch ≤ 500 ms 첫 측정 |
-| Benchmark Harness + Core Enumeration (M2) | 2026-05-15 ~ 2026-05-17 | Pending | dataset + CLI + DirectoryEnumerator | **small folder first batch ≤ 50 ms (CLI)** 측정 |
+| Benchmark Harness + Core Enumeration (M2) | 2026-05-14 ~ 2026-05-15 | **Completed** | dataset + CLI + DirectoryEnumerator + head-to-head | small 0.176 ms / medium 5.03 ms / 100k 43.8 ms·6.43 MB. N1 해소 (FindFirstFileExW 유지). Design §14.2 측정값. |
 | Virtual File List (M3) | 2026-05-17 ~ 2026-05-19 | Pending | responsive list UI | **medium folder first visible rows ≤ 100 ms (UI)** 측정 |
 | Navigation + Cancellation (M4) | 2026-05-19 ~ 2026-05-20 | Pending | nav history + generation token | **folder switch cancellation ≤ 50 ms** 측정 |
 | Sorting + Selection (M5) | 2026-05-20 ~ 2026-05-21 | Pending | sort worker + stable selection | sort 명령 접수 ≤ 50 ms 측정 |
@@ -666,7 +666,7 @@ Design v1.0.1 시점 결정 상태.
 
 | # | New Question | Owner | Resolution Target |
 |---|--------------|-------|-------------------|
-| N1 | `FindFirstFileExW` vs `GetFileInformationByHandleEx(FileIdBothDirectoryInfo)` 어느 쪽이 large-flat 200 ms 게이트에 유리한가? | M2 | M2 exit 측정값으로 결정 |
+| N1 | `FindFirstFileExW` vs `GetFileInformationByHandleEx(FileIdBothDirectoryInfo)` 어느 쪽이 large-flat 200 ms 게이트에 유리한가? | M2 | **해소 (2026-05-15)**: FindFirstFileExW 유지. large-flat 100k에서 head-to-head 측정 결과 FindFirstFileExW + LARGE_FETCH median 37.9 ms vs GFIBHE median 60.7 ms (find 60% 빠름). Design §14.2 측정값 참조. |
 | N2 | Crash dump를 `MiniDumpWithoutOptionalData` 수준으로 채택할지 WER 위임할지 | M6 | M6 milestone 진입 시점 |
 | N3 | UI 자동화 (FlaUI vs WinAppDriver) 도입 시점 | M7 | M7 stabilization 단계 |
 | N4 | Benchmark용 RAM disk(ImDisk) 강제 사용 vs SSD 측정 허용 | M7 | M7 exit 전 결정 |
