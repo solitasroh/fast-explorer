@@ -49,6 +49,12 @@ class PerfTracker {
   // no producers are still running (e.g. after the message loop returns).
   void dumpToDebugOutput() const;
 
+  // Sink-style dump used so the tracker stays free of logger / file deps.
+  // Callback receives one already-formatted UTF-16 line per published slot.
+  // Caller must guarantee no concurrent producers, same as dumpToDebugOutput.
+  using LineSink = void (*)(const wchar_t* line, void* userData);
+  void dumpToCallback(LineSink sink, void* userData) const;
+
   // Snapshot count of recorded events (clamped to kCapacity if wrapped).
   size_t recordedCount() const noexcept;
 

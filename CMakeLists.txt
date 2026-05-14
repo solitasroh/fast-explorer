@@ -35,6 +35,8 @@ set(FE_APP_SOURCES
   src/core/ring-logger.h
   src/core/crash-handler.cpp
   src/core/crash-handler.h
+  src/core/process-memory.cpp
+  src/core/process-memory.h
 )
 
 set(FE_RESOURCES

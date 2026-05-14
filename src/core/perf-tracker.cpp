@@ -3,8 +3,6 @@
 #include <stdio.h>
 #include <wchar.h>
 
-#include <cstdarg>
-
 namespace fast_explorer::core {
 
 namespace {
@@ -20,22 +18,9 @@ const wchar_t* eventName(PerfTracker::EventId id) noexcept {
   return L"unknown";
 }
 
-void emitLine(const wchar_t* prefix, const wchar_t* fmt, ...) noexcept {
-  wchar_t line[kDumpLineCapacity];
-  if (prefix) {
-    OutputDebugStringW(prefix);
-  }
-  va_list args;
-  va_start(args, fmt);
-  // _snwprintf_s with _TRUNCATE writes a terminator on overflow and returns
-  // -1 without invoking the invalid-parameter handler. Truncation is OK for
-  // diagnostic output; we just drop the tail.
-  const int rc = _vsnwprintf_s(line, kDumpLineCapacity, _TRUNCATE, fmt, args);
-  va_end(args);
-  if (rc < 0) {
-    line[kDumpLineCapacity - 1] = L'\0';
-  }
+void debugOutputSink(const wchar_t* line, void* /*userData*/) {
   OutputDebugStringW(line);
+  OutputDebugStringW(L"\n");
 }
 
 }  // namespace
@@ -90,9 +75,16 @@ size_t PerfTracker::recordedCount() const noexcept {
 }
 
 void PerfTracker::dumpToDebugOutput() const {
+  dumpToCallback(&debugOutputSink, nullptr);
+}
+
+void PerfTracker::dumpToCallback(LineSink sink, void* userData) const {
+  if (sink == nullptr) {
+    return;
+  }
   const uint64_t totalTickets = cursor_.load(std::memory_order_acquire);
   if (totalTickets == 0) {
-    OutputDebugStringW(L"[PerfTracker] no events recorded\n");
+    sink(L"[PerfTracker] no events recorded", userData);
     return;
   }
 
@@ -115,25 +107,29 @@ void PerfTracker::dumpToDebugOutput() const {
     }
   }
 
-  emitLine(nullptr,
-           L"[PerfTracker] dump %zu events, freq=%lld Hz\n",
-           count, qpcFrequency_);
+  wchar_t header[kDumpLineCapacity];
+  _snwprintf_s(header, kDumpLineCapacity, _TRUNCATE,
+               L"[PerfTracker] dump %zu events, freq=%lld Hz",
+               count, qpcFrequency_);
+  sink(header, userData);
 
-  // Second pass: emit in ticket order so the timeline reads chronologically
-  // even after the ring has wrapped.
   for (size_t i = 0; i < count; ++i) {
     const uint64_t ticket = startTicket + i;
     const PublishedSlot& s = slots_[ticket % kCapacity];
     const uint64_t seq = s.seq.load(std::memory_order_acquire);
+    wchar_t line[kDumpLineCapacity];
     if ((seq & 1u) != 0u) {
-      emitLine(nullptr, L"  [   skip] ticket=%llu (in progress)\n", ticket);
+      _snwprintf_s(line, kDumpLineCapacity, _TRUNCATE,
+                   L"  [   skip] ticket=%llu (in progress)", ticket);
+      sink(line, userData);
       continue;
     }
-    const Event e = s.event;  // safe copy after acquire load of seq.
+    const Event e = s.event;
     const double ms = baselineSet ? ticksToMs(e.qpcTicks - baseline) : 0.0;
-    emitLine(nullptr,
-             L"  [%6.2f ms] tid=%u id=%s aux=%llu\n",
-             ms, e.threadId, eventName(e.id), e.auxiliary);
+    _snwprintf_s(line, kDumpLineCapacity, _TRUNCATE,
+                 L"  [%6.2f ms] tid=%u id=%s aux=%llu",
+                 ms, e.threadId, eventName(e.id), e.auxiliary);
+    sink(line, userData);
   }
 }
 

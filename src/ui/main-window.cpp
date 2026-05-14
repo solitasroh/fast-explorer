@@ -1,5 +1,7 @@
 #include "ui/main-window.h"
 
+#include "core/process-memory.h"
+
 namespace fast_explorer::ui {
 
 namespace {
@@ -79,6 +81,13 @@ LRESULT MainWindow::handleMessage(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPa
                    SWP_NOZORDER | SWP_NOACTIVATE);
       return 0;
     }
+    case WM_SIZE:
+      if (wParam == SIZE_MINIMIZED) {
+        fast_explorer::core::ProcessMemoryService::instance().notifyMinimized();
+      } else if (wParam == SIZE_RESTORED || wParam == SIZE_MAXIMIZED) {
+        fast_explorer::core::ProcessMemoryService::instance().notifyRestored();
+      }
+      return DefWindowProcW(hwnd, msg, wParam, lParam);
     case WM_DESTROY:
       PostQuitMessage(0);
       return 0;
