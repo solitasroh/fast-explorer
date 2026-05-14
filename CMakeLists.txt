@@ -32,6 +32,8 @@ set(FE_APP_SOURCES
   src/ui/main-window.cpp
   src/ui/main-window.h
   src/ui/messages.h
+  src/ui/pane-controller.cpp
+  src/ui/pane-controller.h
   src/core/directory-enumerator.cpp
   src/core/directory-enumerator.h
   src/core/file-entry.h
@@ -107,8 +109,11 @@ add_executable(core-tests
   tests/enumeration-bench-tests.cpp
   tests/head-to-head-bench-tests.cpp
   tests/ui-messages-tests.cpp
+  tests/pane-controller-tests.cpp
   tests/bench-fs-helper.h
   src/ui/messages.h
+  src/ui/pane-controller.cpp
+  src/ui/pane-controller.h
   src/bench/bench-cli.cpp
   src/bench/bench-cli.h
   src/bench/dataset-generator.cpp
