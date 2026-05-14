@@ -11,6 +11,7 @@
 #include "core/fs-backend.h"
 #include "core/process-memory.h"
 #include "ui/column-formatter.h"
+#include "ui/dpi-scale.h"
 #include "ui/format-cache.h"
 #include "ui/messages.h"
 #include "ui/pane-controller.h"
@@ -47,18 +48,24 @@ HWND createListView(HWND parent, HINSTANCE instance) {
       0, 0, 0, 0, parent, nullptr, instance, nullptr);
 }
 
-bool addColumns(HWND lv) {
+bool addColumns(HWND lv, unsigned int dpi) {
   for (int i = 0; i < static_cast<int>(std::size(kColumns)); ++i) {
     LVCOLUMNW col{};
     col.mask = LVCF_TEXT | LVCF_WIDTH | LVCF_FMT;
     col.fmt = kColumns[i].alignment;
-    col.cx = kColumns[i].widthPx;
+    col.cx = scaleForDpi(kColumns[i].widthPx, dpi);
     col.pszText = const_cast<wchar_t*>(kColumns[i].title);
     if (ListView_InsertColumn(lv, i, &col) == -1) {
       return false;
     }
   }
   return true;
+}
+
+void rescaleColumnWidths(HWND lv, unsigned int dpi) {
+  for (int i = 0; i < static_cast<int>(std::size(kColumns)); ++i) {
+    ListView_SetColumnWidth(lv, i, scaleForDpi(kColumns[i].widthPx, dpi));
+  }
 }
 
 void writeCellText(NMLVDISPINFOW& disp, const std::wstring& text) {
@@ -168,7 +175,7 @@ LRESULT MainWindow::handleMessage(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPa
       if (!listView_) {
         return -1;
       }
-      if (!addColumns(listView_)) {
+      if (!addColumns(listView_, GetDpiForWindow(hwnd))) {
         DestroyWindow(listView_);
         listView_ = nullptr;
         return -1;
@@ -185,6 +192,9 @@ LRESULT MainWindow::handleMessage(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPa
       SetWindowPos(hwnd, nullptr, rect->left, rect->top,
                    rect->right - rect->left, rect->bottom - rect->top,
                    SWP_NOZORDER | SWP_NOACTIVATE);
+      if (listView_) {
+        rescaleColumnWidths(listView_, LOWORD(wParam));
+      }
       return 0;
     }
     case WM_SIZE:
