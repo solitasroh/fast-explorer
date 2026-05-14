@@ -1,4 +1,5 @@
 .superpowers/
+.rkit/
 
 # Build outputs
 build/
