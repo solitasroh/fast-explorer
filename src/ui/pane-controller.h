@@ -4,28 +4,36 @@
 
 #include <cstdint>
 #include <string>
+#include <thread>
 
 #include "core/file-model-store.h"
+#include "core/win32-fs-backend.h"
 
 namespace fast_explorer::ui {
 
-// Per-pane state holder. Owns the FileModelStore that backs one
-// list-view and remembers the host HWND for cross-thread message
-// routing.
+// Owns one pane's FileModelStore and drives DirectoryEnumerator on
+// a worker jthread, posting WM_FE_ENUM_* messages to hostWindow_.
 class PaneController {
  public:
   explicit PaneController(HWND hostWindow);
-  ~PaneController() = default;
+  ~PaneController();
 
   PaneController(const PaneController&) = delete;
   PaneController& operator=(const PaneController&) = delete;
-  PaneController(PaneController&&) noexcept = default;
-  PaneController& operator=(PaneController&&) noexcept = default;
+  PaneController(PaneController&&) = delete;
+  PaneController& operator=(PaneController&&) = delete;
 
-  // Validates `path` and resets the underlying store on success.
-  // Returns false on invalid path (empty / relative / UNC / etc.)
-  // and leaves the controller unchanged.
+  // Validates `path`, cancels any in-flight worker, resets the
+  // underlying store, then spawns a new worker thread.  Returns false
+  // on invalid path (empty / relative / UNC / etc.) and leaves the
+  // controller unchanged.
   bool openFolder(const std::wstring& path);
+
+  // Test helper: block until the current worker finishes.  In
+  // production the worker's lifecycle is owned by the jthread
+  // destructor; tests need an explicit synchronization point to
+  // assert results.
+  void joinForTest();
 
   uint32_t generation() const noexcept;
   const std::wstring& currentPath() const noexcept { return currentPath_; }
@@ -35,9 +43,13 @@ class PaneController {
   HWND hostWindow() const noexcept { return hostWindow_; }
 
  private:
+  // Declared in destruction-reverse order so worker_ joins (via its
+  // std::jthread destructor) before backend_ / store_ go away.
   HWND hostWindow_;
   std::wstring currentPath_;
   fast_explorer::core::FileModelStore store_;
+  fast_explorer::core::Win32FsBackend backend_;
+  std::jthread worker_;
 };
 
 }  // namespace fast_explorer::ui

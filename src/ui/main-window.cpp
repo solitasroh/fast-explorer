@@ -149,6 +149,15 @@ LRESULT MainWindow::handleMessage(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPa
         memory_.notifyRestored();
       }
       return DefWindowProcW(hwnd, msg, wParam, lParam);
+    case kWmFeEnumBatch:
+      if (listView_) {
+        ListView_SetItemCountEx(listView_, static_cast<int>(lParam),
+                                LVSICF_NOSCROLL);
+      }
+      return 0;
+    case kWmFeEnumComplete:
+    case kWmFeEnumError:
+      return 0;
     case WM_DESTROY:
       PostQuitMessage(0);
       return 0;

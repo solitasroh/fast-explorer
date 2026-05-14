@@ -62,4 +62,20 @@ inline std::wstring makeFreshTempDirPath(const wchar_t* label) {
   return base;
 }
 
+// RAII wrapper that allocates a fresh temp-dir path at construction
+// (the directory itself is created by the unit under test) and
+// recursively removes the tree at destruction, including the
+// exception-unwind path triggered by FE_ASSERT_*.
+class TempDir {
+ public:
+  explicit TempDir(const wchar_t* label) : path_(makeFreshTempDirPath(label)) {}
+  ~TempDir() { removeDirectoryRecursive(path_); }
+  TempDir(const TempDir&) = delete;
+  TempDir& operator=(const TempDir&) = delete;
+  const std::wstring& path() const noexcept { return path_; }
+
+ private:
+  std::wstring path_;
+};
+
 }  // namespace fast_explorer::tests

@@ -4,12 +4,15 @@
 #include <shellapi.h>
 #include <stdio.h>
 
+#include <string>
+
 #include "app/app-services.h"
 #include "core/crash-handler.h"
 #include "core/perf-tracker.h"
 #include "core/process-memory.h"
 #include "core/ring-logger.h"
 #include "ui/main-window.h"
+#include "ui/pane-controller.h"
 
 namespace {
 
@@ -77,6 +80,7 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance,
   }
 
   // Diagnostic switches parsed via CommandLineToArgvW.
+  std::wstring openPath;
   if (cmdLine != nullptr) {
     int argc = 0;
     LPWSTR* argv = CommandLineToArgvW(cmdLine, &argc);
@@ -90,6 +94,9 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance,
         throwTest = true;
       } else if (wcscmp(argv[i], L"--crash-test=invalid") == 0) {
         invalidTest = true;
+      } else if (wcscmp(argv[i], L"--open") == 0 && i + 1 < argc) {
+        openPath = argv[i + 1];
+        ++i;
       }
     }
     if (argv) {
@@ -126,6 +133,14 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance,
 
       fast_explorer::ui::MainWindow window(services.memory());
       if (window.create(instance, showCommand)) {
+        fast_explorer::ui::PaneController pane(window.handle());
+        if (!openPath.empty()) {
+          if (!pane.openFolder(openPath)) {
+            logger.error(L"--open path invalid: %ls", openPath.c_str());
+          } else {
+            logger.info(L"--open: enumerating %ls", openPath.c_str());
+          }
+        }
         exitCode = runMessageLoop(services.perf());
       } else {
         logger.error(L"MainWindow::create failed (lastError=%lu)", GetLastError());
