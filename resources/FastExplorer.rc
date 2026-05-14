@@ -1,0 +1,33 @@
+#include <winres.h>
+
+// Embed application manifest (common controls v6, DPI v2, longPathAware).
+// CREATEPROCESS_MANIFEST_RESOURCE_ID (1) is required for asInvoker manifests.
+1 24 "FastExplorer.exe.manifest"
+
+VS_VERSION_INFO VERSIONINFO
+ FILEVERSION    0,1,0,0
+ PRODUCTVERSION 0,1,0,0
+ FILEFLAGSMASK  VS_FFI_FILEFLAGSMASK
+ FILEFLAGS      0
+ FILEOS         VOS_NT_WINDOWS32
+ FILETYPE       VFT_APP
+ FILESUBTYPE    VFT2_UNKNOWN
+BEGIN
+    BLOCK "StringFileInfo"
+    BEGIN
+        BLOCK "040904b0"
+        BEGIN
+            VALUE "CompanyName",      "Fast Explorer Project"
+            VALUE "FileDescription",  "Fast Explorer"
+            VALUE "FileVersion",      "0.1.0.0"
+            VALUE "InternalName",     "FastExplorer"
+            VALUE "OriginalFilename", "FastExplorer.exe"
+            VALUE "ProductName",      "Fast Explorer"
+            VALUE "ProductVersion",   "0.1.0.0"
+        END
+    END
+    BLOCK "VarFileInfo"
+    BEGIN
+        VALUE "Translation", 0x0409, 1200
+    END
+END
