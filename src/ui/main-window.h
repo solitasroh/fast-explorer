@@ -31,6 +31,7 @@ class MainWindow {
   fast_explorer::core::ProcessMemoryService& memory_;
   HINSTANCE instance_ = nullptr;
   HWND hwnd_ = nullptr;
+  HWND listView_ = nullptr;
 };
 
 }  // namespace fast_explorer::ui

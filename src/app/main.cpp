@@ -1,4 +1,5 @@
 #include <windows.h>
+#include <commctrl.h>
 #include <ole2.h>
 #include <shellapi.h>
 #include <stdio.h>
@@ -118,6 +119,11 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance,
   {
     OleScope ole;
     if (ole.ok()) {
+      INITCOMMONCONTROLSEX icc{};
+      icc.dwSize = sizeof(icc);
+      icc.dwICC = ICC_LISTVIEW_CLASSES;
+      InitCommonControlsEx(&icc);
+
       fast_explorer::ui::MainWindow window(services.memory());
       if (window.create(instance, showCommand)) {
         exitCode = runMessageLoop(services.perf());

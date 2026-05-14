@@ -1,10 +1,50 @@
 #include "ui/main-window.h"
 
+#include <commctrl.h>
+
+#include <iterator>
+
 #include "core/process-memory.h"
+#include "ui/messages.h"
 
 namespace fast_explorer::ui {
 
 namespace {
+
+struct ColumnSpec {
+  const wchar_t* title;
+  int widthPx;
+  int alignment;
+};
+
+constexpr ColumnSpec kColumns[] = {
+    {L"Name", 300, LVCFMT_LEFT},
+    {L"Size", 100, LVCFMT_RIGHT},
+    {L"Type", 100, LVCFMT_LEFT},
+    {L"Modified", 160, LVCFMT_LEFT},
+};
+
+HWND createListView(HWND parent, HINSTANCE instance) {
+  return CreateWindowExW(
+      0, WC_LISTVIEWW, L"",
+      WS_CHILD | WS_VISIBLE | WS_BORDER | LVS_REPORT | LVS_OWNERDATA |
+          LVS_SHAREIMAGELISTS | LVS_NOSORTHEADER,
+      0, 0, 0, 0, parent, nullptr, instance, nullptr);
+}
+
+bool addColumns(HWND lv) {
+  for (int i = 0; i < static_cast<int>(std::size(kColumns)); ++i) {
+    LVCOLUMNW col{};
+    col.mask = LVCF_TEXT | LVCF_WIDTH | LVCF_FMT;
+    col.fmt = kColumns[i].alignment;
+    col.cx = kColumns[i].widthPx;
+    col.pszText = const_cast<wchar_t*>(kColumns[i].title);
+    if (ListView_InsertColumn(lv, i, &col) == -1) {
+      return false;
+    }
+  }
+  return true;
+}
 
 bool registerClassOnce(HINSTANCE instance, const wchar_t* className, WNDPROC proc) {
   WNDCLASSEXW existing{};
@@ -77,6 +117,18 @@ LRESULT CALLBACK MainWindow::wndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM 
 
 LRESULT MainWindow::handleMessage(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
   switch (msg) {
+    case WM_CREATE:
+      listView_ = createListView(hwnd, instance_);
+      if (!listView_) {
+        return -1;
+      }
+      if (!addColumns(listView_)) {
+        DestroyWindow(listView_);
+        listView_ = nullptr;
+        return -1;
+      }
+      ListView_SetItemCountEx(listView_, 0, 0);
+      return 0;
     case WM_DPICHANGED: {
       const auto* rect = reinterpret_cast<const RECT*>(lParam);
       SetWindowPos(hwnd, nullptr, rect->left, rect->top,
@@ -85,6 +137,12 @@ LRESULT MainWindow::handleMessage(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPa
       return 0;
     }
     case WM_SIZE:
+      if (listView_) {
+        RECT rc;
+        GetClientRect(hwnd, &rc);
+        SetWindowPos(listView_, nullptr, 0, 0, rc.right - rc.left,
+                     rc.bottom - rc.top, SWP_NOZORDER | SWP_NOACTIVATE);
+      }
       if (wParam == SIZE_MINIMIZED) {
         memory_.notifyMinimized();
       } else if (wParam == SIZE_RESTORED || wParam == SIZE_MAXIMIZED) {
