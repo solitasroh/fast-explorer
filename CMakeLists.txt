@@ -32,6 +32,8 @@ set(FE_APP_SOURCES
   src/ui/main-window.cpp
   src/ui/main-window.h
   src/core/file-entry.h
+  src/core/file-model-store.cpp
+  src/core/file-model-store.h
   src/core/fs-backend.h
   src/core/memory-fs-backend.cpp
   src/core/memory-fs-backend.h
@@ -95,7 +97,10 @@ add_executable(core-tests
   tests/fs-backend-tests.cpp
   tests/memory-fs-backend-tests.cpp
   tests/win32-fs-backend-tests.cpp
+  tests/file-model-store-tests.cpp
   src/core/file-entry.h
+  src/core/file-model-store.cpp
+  src/core/file-model-store.h
   src/core/fs-backend.h
   src/core/memory-fs-backend.cpp
   src/core/memory-fs-backend.h
