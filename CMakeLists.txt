@@ -33,6 +33,8 @@ set(FE_APP_SOURCES
   src/ui/main-window.h
   src/core/file-entry.h
   src/core/fs-backend.h
+  src/core/memory-fs-backend.cpp
+  src/core/memory-fs-backend.h
   src/core/name-arena.cpp
   src/core/name-arena.h
   src/core/path-utils.cpp
@@ -89,8 +91,11 @@ add_executable(core-tests
   tests/file-entry-tests.cpp
   tests/name-arena-tests.cpp
   tests/fs-backend-tests.cpp
+  tests/memory-fs-backend-tests.cpp
   src/core/file-entry.h
   src/core/fs-backend.h
+  src/core/memory-fs-backend.cpp
+  src/core/memory-fs-backend.h
   src/core/name-arena.cpp
   src/core/name-arena.h
   src/core/path-utils.cpp
