@@ -48,6 +48,7 @@ class MainWindow {
   HWND listView_ = nullptr;
   HWND statusBar_ = nullptr;
   std::unique_ptr<PaneController> pane_;
+  std::unique_ptr<class FormatCache> formatCache_;
 };
 
 }  // namespace fast_explorer::ui

@@ -11,6 +11,7 @@
 #include "core/fs-backend.h"
 #include "core/process-memory.h"
 #include "ui/column-formatter.h"
+#include "ui/format-cache.h"
 #include "ui/messages.h"
 #include "ui/pane-controller.h"
 #include "ui/status-text.h"
@@ -175,6 +176,7 @@ LRESULT MainWindow::handleMessage(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPa
       ListView_SetItemCountEx(listView_, 0, 0);
       statusBar_ = createStatusBar(hwnd, instance_);
       pane_ = std::make_unique<PaneController>(hwnd);
+      formatCache_ = std::make_unique<FormatCache>();
       return 0;
     case WM_NOTIFY:
       return handleListViewNotify(reinterpret_cast<NMHDR*>(lParam));
@@ -298,13 +300,13 @@ void MainWindow::handleGetDispInfo(NMHDR* hdr) {
       break;
     }
     case 1:
-      writeCellText(*disp, formatSizeForEntry(entry));
+      writeCellText(*disp, formatCache_->sizeForEntry(entry));
       break;
     case 2:
-      writeCellText(*disp, formatTypeForEntry(entry));
+      writeCellText(*disp, formatCache_->typeForEntry(entry));
       break;
     case 3:
-      writeCellText(*disp, formatModified(entry.modifiedTime100ns));
+      writeCellText(*disp, formatCache_->modifiedAt(entry.modifiedTime100ns));
       break;
     default:
       break;
