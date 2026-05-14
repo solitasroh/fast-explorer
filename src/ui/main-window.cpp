@@ -199,17 +199,33 @@ LRESULT MainWindow::handleMessage(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPa
 }
 
 LRESULT MainWindow::handleListViewNotify(NMHDR* hdr) {
-  if (hdr == nullptr || hdr->code != LVN_GETDISPINFOW || !pane_) {
+  if (hdr == nullptr) {
     return 0;
+  }
+  switch (hdr->code) {
+    case LVN_GETDISPINFOW:
+      handleGetDispInfo(hdr);
+      return 0;
+    case LVN_ODCACHEHINT:
+    case LVN_ODSTATECHANGED:
+      return 0;
+    default:
+      return 0;
+  }
+}
+
+void MainWindow::handleGetDispInfo(NMHDR* hdr) {
+  if (hdr == nullptr || !pane_) {
+    return;
   }
   auto* disp = reinterpret_cast<NMLVDISPINFOW*>(hdr);
   if ((disp->item.mask & LVIF_TEXT) == 0 || disp->item.iItem < 0) {
-    return 0;
+    return;
   }
   const auto& store = pane_->store();
   const size_t row = static_cast<size_t>(disp->item.iItem);
   if (row >= store.itemCount()) {
-    return 0;
+    return;
   }
   const auto& entry = store.entryAt(row);
   switch (disp->item.iSubItem) {
@@ -230,7 +246,6 @@ LRESULT MainWindow::handleListViewNotify(NMHDR* hdr) {
     default:
       break;
   }
-  return 0;
 }
 
 }  // namespace fast_explorer::ui
