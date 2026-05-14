@@ -33,10 +33,8 @@ double qpcMs(LARGE_INTEGER start, LARGE_INTEGER end) noexcept {
 
 }  // namespace
 
-ProcessMemoryService& ProcessMemoryService::instance() {
-  static ProcessMemoryService singleton;
-  return singleton;
-}
+ProcessMemoryService::ProcessMemoryService(RingLogger& logger) noexcept
+    : logger_(logger) {}
 
 ProcessMemoryService::~ProcessMemoryService() {
   stop();
@@ -53,13 +51,13 @@ bool ProcessMemoryService::start() {
                                   kMinWorkingSet,
                                   kMaxWorkingSet,
                                   wsFlags)) {
-    RingLogger::instance().warn(
+    logger_.warn(
         L"SetProcessWorkingSetSizeEx failed lastError=%lu", GetLastError());
   }
 
   notification_ = CreateMemoryResourceNotification(LowMemoryResourceNotification);
   if (notification_ == nullptr) {
-    RingLogger::instance().warn(
+    logger_.warn(
         L"CreateMemoryResourceNotification failed lastError=%lu", GetLastError());
     return false;
   }
@@ -71,7 +69,7 @@ bool ProcessMemoryService::start() {
   }
   running_.store(true, std::memory_order_release);
   notifier_ = std::thread(&ProcessMemoryService::notifierLoop, this);
-  RingLogger::instance().info(
+  logger_.info(
       L"process-memory hints applied (min=8MB max=128MB advisory)");
   return true;
 }
@@ -114,7 +112,7 @@ void ProcessMemoryService::notifyMinimized() noexcept {
 
   SetPriorityClass(GetCurrentProcess(), PROCESS_MODE_BACKGROUND_BEGIN);
   if (EmptyWorkingSet(GetCurrentProcess())) {
-    RingLogger::instance().info(L"working set emptied on minimize");
+    logger_.info(L"working set emptied on minimize");
   }
 }
 
@@ -168,7 +166,7 @@ void ProcessMemoryService::notifierLoop() {
     BOOL stillLow = TRUE;
     if (QueryMemoryResourceNotification(notification_, &stillLow) && stillLow) {
       const LowMemoryCallback cb = callback_.load(std::memory_order_acquire);
-      RingLogger::instance().warn(
+      logger_.warn(
           L"low memory notification fired; working set=%zu KB",
           workingSetBytes() / 1024);
       if (cb) {

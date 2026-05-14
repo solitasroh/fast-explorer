@@ -21,11 +21,19 @@ namespace fast_explorer::core {
 //    handle and invokes the registered low-memory callback.
 //
 // Cache providers should call setLowMemoryCallback() with their evict hook.
+class RingLogger;
+
 class ProcessMemoryService {
  public:
   using LowMemoryCallback = void (*)();
 
-  static ProcessMemoryService& instance();
+  // Logger reference is required for diagnostic output. The service does
+  // not extend the logger's lifetime; the owner (typically AppServices)
+  // is responsible for ordering start/stop calls correctly.
+  explicit ProcessMemoryService(RingLogger& logger) noexcept;
+  ~ProcessMemoryService();
+  ProcessMemoryService(const ProcessMemoryService&) = delete;
+  ProcessMemoryService& operator=(const ProcessMemoryService&) = delete;
 
   // Idempotent. Returns true if hints/notifier are installed.
   bool start();
@@ -47,13 +55,9 @@ class ProcessMemoryService {
   static SIZE_T privateBytes() noexcept;
 
  private:
-  ProcessMemoryService() = default;
-  ~ProcessMemoryService();
-  ProcessMemoryService(const ProcessMemoryService&) = delete;
-  ProcessMemoryService& operator=(const ProcessMemoryService&) = delete;
-
   void notifierLoop();
 
+  RingLogger& logger_;
   std::atomic<bool> running_{false};
   std::atomic<LowMemoryCallback> callback_{nullptr};
   std::atomic<int64_t> lastEmptyTicks_{0};  // QPC ticks; throttles EmptyWorkingSet

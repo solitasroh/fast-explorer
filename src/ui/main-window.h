@@ -2,11 +2,16 @@
 
 #include <windows.h>
 
+namespace fast_explorer::core {
+class ProcessMemoryService;
+}
+
 namespace fast_explorer::ui {
 
 class MainWindow {
  public:
-  MainWindow() = default;
+  // `memory` is non-owning; the AppServices owner must outlive the window.
+  explicit MainWindow(fast_explorer::core::ProcessMemoryService& memory) noexcept;
   ~MainWindow();
 
   MainWindow(const MainWindow&) = delete;
@@ -23,6 +28,7 @@ class MainWindow {
   static constexpr int kDefaultWidth = 1280;
   static constexpr int kDefaultHeight = 800;
 
+  fast_explorer::core::ProcessMemoryService& memory_;
   HINSTANCE instance_ = nullptr;
   HWND hwnd_ = nullptr;
 };

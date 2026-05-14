@@ -28,6 +28,9 @@ struct CrashState {
   // loop. thread_local would be cleaner but the variable must be reachable
   // from the static handlers without per-thread storage costs.
   std::atomic<bool> writing{false};
+  // Non-owning. Set by install(PerfTracker&); cleared by uninstall(). The
+  // raw atomic pointer is needed because OS callbacks cannot capture state.
+  std::atomic<PerfTracker*> perf{nullptr};
   wchar_t dumpDirectory[MAX_PATH * 2]{};
   wchar_t lastDumpPath[MAX_PATH * 2]{};
 };
@@ -95,17 +98,18 @@ bool writeDumpInternal(EXCEPTION_POINTERS* exceptionInfo,
     }
 
     // Attach the PerfTracker ring as a user stream so post-mortem analysis
-    // can see what the app was doing just before the fault.
-    MINIDUMP_USER_STREAM perfStream{};
-    perfStream.Type = kPerfTrackerStreamType;
-    perfStream.BufferSize = static_cast<ULONG>(
-        PerfTracker::instance().rawSlotBufferBytes());
-    perfStream.Buffer = const_cast<void*>(PerfTracker::instance().rawSlotBuffer());
-
-    MINIDUMP_USER_STREAM streams[1] = { perfStream };
+    // can see what the app was doing just before the fault. The pointer was
+    // registered by install(perf); a null tracker just skips the stream.
+    MINIDUMP_USER_STREAM streams[1]{};
     MINIDUMP_USER_STREAM_INFORMATION streamInfo{};
-    streamInfo.UserStreamCount = 1;
-    streamInfo.UserStreamArray = streams;
+    PerfTracker* perf = g_state.perf.load(std::memory_order_acquire);
+    if (perf != nullptr) {
+      streams[0].Type = kPerfTrackerStreamType;
+      streams[0].BufferSize = static_cast<ULONG>(perf->rawSlotBufferBytes());
+      streams[0].Buffer = const_cast<void*>(perf->rawSlotBuffer());
+      streamInfo.UserStreamCount = 1;
+      streamInfo.UserStreamArray = streams;
+    }
 
     const MINIDUMP_TYPE dumpType = static_cast<MINIDUMP_TYPE>(
         MiniDumpNormal | MiniDumpWithThreadInfo | MiniDumpWithUnloadedModules);
@@ -164,14 +168,17 @@ void __cdecl purecallHandler() {
 
 }  // namespace
 
-bool CrashHandler::install() noexcept {
+bool CrashHandler::install(PerfTracker& perf) noexcept {
+  // Always update the tracker pointer so a reinstall can replace it.
+  g_state.perf.store(&perf, std::memory_order_release);
+
   bool expected = false;
   if (!g_state.installed.compare_exchange_strong(expected, true)) {
-    return true;
+    return true;  // already installed; tracker pointer was refreshed above.
   }
   if (!resolveDumpDirectory()) {
-    // Roll back the install flag so callers can retry later if needed.
     g_state.installed.store(false, std::memory_order_release);
+    g_state.perf.store(nullptr, std::memory_order_release);
     return false;
   }
   SetUnhandledExceptionFilter(&unhandledExceptionFilter);
@@ -183,6 +190,13 @@ bool CrashHandler::install() noexcept {
   swprintf_s(line, L"[CrashHandler] installed (dir=%ls)\n", g_state.dumpDirectory);
   OutputDebugStringW(line);
   return true;
+}
+
+void CrashHandler::uninstall() noexcept {
+  g_state.perf.store(nullptr, std::memory_order_release);
+  g_state.installed.store(false, std::memory_order_release);
+  // Note: Windows offers no clean "remove handler" API for the filters we
+  // installed; they remain registered but short-circuit when installed=false.
 }
 
 const wchar_t* CrashHandler::writeManualDump(const wchar_t* reason) noexcept {

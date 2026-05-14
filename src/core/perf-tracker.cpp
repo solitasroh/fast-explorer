@@ -25,12 +25,7 @@ void debugOutputSink(const wchar_t* line, void* /*userData*/) {
 
 }  // namespace
 
-PerfTracker& PerfTracker::instance() noexcept {
-  static PerfTracker singleton;
-  return singleton;
-}
-
-PerfTracker::PerfTracker() {
+PerfTracker::PerfTracker() noexcept {
   LARGE_INTEGER freq{};
   if (QueryPerformanceFrequency(&freq)) {
     qpcFrequency_ = freq.QuadPart;

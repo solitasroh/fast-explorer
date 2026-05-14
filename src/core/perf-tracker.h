@@ -36,7 +36,10 @@ class PerfTracker {
   };
   static_assert(sizeof(Event) == 24, "Event packed to 24 bytes for cache locality");
 
-  static PerfTracker& instance() noexcept;
+  PerfTracker() noexcept;
+  ~PerfTracker() = default;
+  PerfTracker(const PerfTracker&) = delete;
+  PerfTracker& operator=(const PerfTracker&) = delete;
 
   // Lock-free emit. Safe from any thread. Producers publish ordering with
   // release stores so the consumer can observe a consistent slot.
@@ -74,18 +77,9 @@ class PerfTracker {
     Event event{};
   };
 
-  PerfTracker();
-  PerfTracker(const PerfTracker&) = delete;
-  PerfTracker& operator=(const PerfTracker&) = delete;
-
   int64_t qpcFrequency_ = 0;
   std::atomic<uint64_t> cursor_{0};
   PublishedSlot slots_[kCapacity]{};
 };
-
-// Convenience inline helper to keep call sites short.
-inline void recordPerf(PerfTracker::EventId id, uint64_t aux = 0) noexcept {
-  PerfTracker::instance().record(id, aux);
-}
 
 }  // namespace fast_explorer::core

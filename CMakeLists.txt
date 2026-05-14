@@ -27,6 +27,8 @@ add_compile_options(/W4 /permissive- /Zc:__cplusplus /utf-8)
 
 set(FE_APP_SOURCES
   src/app/main.cpp
+  src/app/app-services.cpp
+  src/app/app-services.h
   src/ui/main-window.cpp
   src/ui/main-window.h
   src/core/path-utils.cpp

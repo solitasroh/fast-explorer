@@ -26,6 +26,9 @@ bool registerClassOnce(HINSTANCE instance, const wchar_t* className, WNDPROC pro
 
 }  // namespace
 
+MainWindow::MainWindow(fast_explorer::core::ProcessMemoryService& memory) noexcept
+    : memory_(memory) {}
+
 MainWindow::~MainWindow() {
   if (hwnd_) {
     DestroyWindow(hwnd_);
@@ -83,9 +86,9 @@ LRESULT MainWindow::handleMessage(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPa
     }
     case WM_SIZE:
       if (wParam == SIZE_MINIMIZED) {
-        fast_explorer::core::ProcessMemoryService::instance().notifyMinimized();
+        memory_.notifyMinimized();
       } else if (wParam == SIZE_RESTORED || wParam == SIZE_MAXIMIZED) {
-        fast_explorer::core::ProcessMemoryService::instance().notifyRestored();
+        memory_.notifyRestored();
       }
       return DefWindowProcW(hwnd, msg, wParam, lParam);
     case WM_DESTROY:

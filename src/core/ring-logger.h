@@ -39,7 +39,10 @@ class RingLogger {
   static constexpr size_t kSlotBytes = 256;
   static constexpr size_t kMaxMessageBytes = kSlotBytes - 24;  // header overhead
 
-  static RingLogger& instance();
+  RingLogger();
+  ~RingLogger();
+  RingLogger(const RingLogger&) = delete;
+  RingLogger& operator=(const RingLogger&) = delete;
 
   bool start();
   void stop();
@@ -65,11 +68,6 @@ class RingLogger {
     uint16_t messageLength{0};       // UTF-8 byte count (<= kMaxMessageBytes)
     char message[kMaxMessageBytes]{};
   };
-
-  RingLogger();
-  ~RingLogger();
-  RingLogger(const RingLogger&) = delete;
-  RingLogger& operator=(const RingLogger&) = delete;
 
   void writerLoop();
   bool openLogFile();

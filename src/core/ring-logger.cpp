@@ -49,11 +49,6 @@ int formatHeader(char* dst, size_t cap, const FILETIME& ft, uint32_t tid, RingLo
 
 }  // namespace
 
-RingLogger& RingLogger::instance() {
-  static RingLogger singleton;
-  return singleton;
-}
-
 RingLogger::RingLogger() = default;
 
 RingLogger::~RingLogger() {
