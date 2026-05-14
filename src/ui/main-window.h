@@ -34,6 +34,7 @@ class MainWindow {
   LRESULT handleMessage(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam);
   LRESULT handleListViewNotify(NMHDR* hdr);
   void handleGetDispInfo(NMHDR* hdr);
+  LRESULT handleCustomDraw(NMHDR* hdr);
 
   static constexpr const wchar_t* kClassName = L"FastExplorer.MainWindow";
   static constexpr int kDefaultWidth = 1280;

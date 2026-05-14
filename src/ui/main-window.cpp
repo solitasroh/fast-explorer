@@ -209,8 +209,25 @@ LRESULT MainWindow::handleListViewNotify(NMHDR* hdr) {
     case LVN_ODCACHEHINT:
     case LVN_ODSTATECHANGED:
       return 0;
+    case NM_CUSTOMDRAW:
+      return handleCustomDraw(hdr);
     default:
       return 0;
+  }
+}
+
+LRESULT MainWindow::handleCustomDraw(NMHDR* hdr) {
+  if (hdr == nullptr) {
+    return CDRF_DODEFAULT;
+  }
+  auto* cd = reinterpret_cast<NMLVCUSTOMDRAW*>(hdr);
+  switch (cd->nmcd.dwDrawStage) {
+    case CDDS_PREPAINT:
+      return CDRF_NOTIFYITEMDRAW;
+    case CDDS_ITEMPREPAINT:
+      return CDRF_DODEFAULT;
+    default:
+      return CDRF_DODEFAULT;
   }
 }
 
