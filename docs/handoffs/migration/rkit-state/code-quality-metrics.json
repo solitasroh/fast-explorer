@@ -1,0 +1,470 @@
+{
+  "version": "1.0",
+  "lastUpdated": "2026-05-14T10:56:24.990Z",
+  "files": {
+    "src\\ui\\main-window.h": {
+      "totalLines": 37,
+      "functions": [],
+      "maxNestingDepth": 0,
+      "maxLoopDepth": 0,
+      "maxBranchChain": 1,
+      "switchCases": 0,
+      "publicMethods": 0,
+      "archViolations": 0,
+      "violationCount": 0,
+      "lastChecked": "2026-05-14T10:19:02.666Z"
+    },
+    "src\\ui\\main-window.cpp": {
+      "totalLines": 107,
+      "functions": [
+        {
+          "name": "registerClassOnce",
+          "lines": 13,
+          "params": 3,
+          "nestingDepth": 0,
+          "startLine": 9
+        },
+        {
+          "name": "memory_",
+          "lines": 0,
+          "params": 1,
+          "nestingDepth": 0,
+          "startLine": 30
+        }
+      ],
+      "maxNestingDepth": 0,
+      "maxLoopDepth": 0,
+      "maxBranchChain": 2,
+      "switchCases": 4,
+      "publicMethods": 0,
+      "archViolations": 0,
+      "violationCount": 0,
+      "lastChecked": "2026-05-14T10:19:15.596Z"
+    },
+    "src\\app\\main.cpp": {
+      "totalLines": 140,
+      "functions": [
+        {
+          "name": "ok",
+          "lines": 0,
+          "params": 0,
+          "nestingDepth": 0,
+          "startLine": 27
+        },
+        {
+          "name": "hr",
+          "lines": 0,
+          "params": 0,
+          "nestingDepth": 0,
+          "startLine": 28
+        },
+        {
+          "name": "perfLineToLogger",
+          "lines": 2,
+          "params": 2,
+          "nestingDepth": 0,
+          "startLine": 34
+        },
+        {
+          "name": "runMessageLoop",
+          "lines": 12,
+          "params": 1,
+          "nestingDepth": 1,
+          "startLine": 39
+        }
+      ],
+      "maxNestingDepth": 1,
+      "maxLoopDepth": 2,
+      "maxBranchChain": 2,
+      "switchCases": 0,
+      "publicMethods": 0,
+      "archViolations": 0,
+      "violationCount": 1,
+      "lastChecked": "2026-05-14T10:20:25.989Z"
+    },
+    "src\\core\\perf-tracker.h": {
+      "totalLines": 86,
+      "functions": [],
+      "maxNestingDepth": 0,
+      "maxLoopDepth": 0,
+      "maxBranchChain": 1,
+      "switchCases": 0,
+      "publicMethods": 0,
+      "archViolations": 0,
+      "violationCount": 0,
+      "lastChecked": "2026-05-14T10:16:38.371Z"
+    },
+    "src\\core\\perf-tracker.cpp": {
+      "totalLines": 133,
+      "functions": [
+        {
+          "name": "eventName",
+          "lines": 6,
+          "params": 1,
+          "nestingDepth": 0,
+          "startLine": 12
+        },
+        {
+          "name": "debugOutputSink",
+          "lines": 2,
+          "params": 2,
+          "nestingDepth": 0,
+          "startLine": 21
+        }
+      ],
+      "maxNestingDepth": 0,
+      "maxLoopDepth": 2,
+      "maxBranchChain": 1,
+      "switchCases": 3,
+      "publicMethods": 0,
+      "archViolations": 0,
+      "violationCount": 1,
+      "lastChecked": "2026-05-14T10:16:45.278Z"
+    },
+    "src\\core\\ring-logger.h": {
+      "totalLines": 91,
+      "functions": [],
+      "maxNestingDepth": 0,
+      "maxLoopDepth": 0,
+      "maxBranchChain": 1,
+      "switchCases": 0,
+      "publicMethods": 0,
+      "archViolations": 0,
+      "violationCount": 0,
+      "lastChecked": "2026-05-14T10:17:02.941Z"
+    },
+    "src\\core\\ring-logger.cpp": {
+      "totalLines": 317,
+      "functions": [
+        {
+          "name": "levelTag",
+          "lines": 9,
+          "params": 1,
+          "nestingDepth": 0,
+          "startLine": 17
+        },
+        {
+          "name": "buildLogFileName",
+          "lines": 6,
+          "params": 1,
+          "nestingDepth": 0,
+          "startLine": 29
+        },
+        {
+          "name": "formatHeader",
+          "lines": 9,
+          "params": 5,
+          "nestingDepth": 0,
+          "startLine": 38
+        }
+      ],
+      "maxNestingDepth": 0,
+      "maxLoopDepth": 3,
+      "maxBranchChain": 1,
+      "switchCases": 6,
+      "publicMethods": 0,
+      "archViolations": 0,
+      "violationCount": 3,
+      "lastChecked": "2026-05-14T10:17:10.031Z"
+    },
+    "src\\core\\crash-handler.h": {
+      "totalLines": 43,
+      "functions": [],
+      "maxNestingDepth": 0,
+      "maxLoopDepth": 0,
+      "maxBranchChain": 1,
+      "switchCases": 0,
+      "publicMethods": 0,
+      "archViolations": 0,
+      "violationCount": 0,
+      "lastChecked": "2026-05-14T10:17:54.012Z"
+    },
+    "src\\core\\crash-handler.cpp": {
+      "totalLines": 213,
+      "functions": [
+        {
+          "name": "resolveDumpDirectory",
+          "lines": 10,
+          "params": 0,
+          "nestingDepth": 0,
+          "startLine": 40
+        },
+        {
+          "name": "buildDumpFileName",
+          "lines": 8,
+          "params": 2,
+          "nestingDepth": 0,
+          "startLine": 53
+        },
+        {
+          "name": "unhandledExceptionFilter",
+          "lines": 2,
+          "params": 1,
+          "nestingDepth": 0,
+          "startLine": 142
+        },
+        {
+          "name": "purecallHandler",
+          "lines": 2,
+          "params": 0,
+          "nestingDepth": 0,
+          "startLine": 164
+        }
+      ],
+      "maxNestingDepth": 0,
+      "maxLoopDepth": 2,
+      "maxBranchChain": 1,
+      "switchCases": 0,
+      "publicMethods": 0,
+      "archViolations": 0,
+      "violationCount": 1,
+      "lastChecked": "2026-05-14T10:18:27.636Z"
+    },
+    "src\\core\\process-memory.h": {
+      "totalLines": 70,
+      "functions": [],
+      "maxNestingDepth": 0,
+      "maxLoopDepth": 0,
+      "maxBranchChain": 1,
+      "switchCases": 0,
+      "publicMethods": 0,
+      "archViolations": 0,
+      "violationCount": 0,
+      "lastChecked": "2026-05-14T10:17:26.202Z"
+    },
+    "src\\core\\process-memory.cpp": {
+      "totalLines": 185,
+      "functions": [
+        {
+          "name": "qpcNow",
+          "lines": 3,
+          "params": 0,
+          "nestingDepth": 0,
+          "startLine": 16
+        },
+        {
+          "name": "qpcMs",
+          "lines": 9,
+          "params": 2,
+          "nestingDepth": 0,
+          "startLine": 22
+        },
+        {
+          "name": "logger_",
+          "lines": 0,
+          "params": 1,
+          "nestingDepth": 0,
+          "startLine": 37
+        }
+      ],
+      "maxNestingDepth": 0,
+      "maxLoopDepth": 1,
+      "maxBranchChain": 1,
+      "switchCases": 0,
+      "publicMethods": 0,
+      "archViolations": 0,
+      "violationCount": 0,
+      "lastChecked": "2026-05-14T10:17:37.892Z"
+    },
+    "src\\core\\path-utils.h": {
+      "totalLines": 51,
+      "functions": [],
+      "maxNestingDepth": 0,
+      "maxLoopDepth": 0,
+      "maxBranchChain": 1,
+      "switchCases": 0,
+      "publicMethods": 0,
+      "archViolations": 0,
+      "violationCount": 0,
+      "lastChecked": "2026-05-14T10:44:54.705Z"
+    },
+    "src\\core\\path-utils.cpp": {
+      "totalLines": 258,
+      "functions": [
+        {
+          "name": "startsWith",
+          "lines": 2,
+          "params": 2,
+          "nestingDepth": 0,
+          "startLine": 16
+        },
+        {
+          "name": "hasDriveLetterRoot",
+          "lines": 6,
+          "params": 1,
+          "nestingDepth": 0,
+          "startLine": 21
+        },
+        {
+          "name": "containsInvalidPathChar",
+          "lines": 14,
+          "params": 1,
+          "nestingDepth": 2,
+          "startLine": 35
+        },
+        {
+          "name": "normalizeSeparators",
+          "lines": 5,
+          "params": 1,
+          "nestingDepth": 1,
+          "startLine": 52
+        },
+        {
+          "name": "isUncreatableRoot",
+          "lines": 11,
+          "params": 1,
+          "nestingDepth": 0,
+          "startLine": 66
+        },
+        {
+          "name": "ensureDirectoryRecursive",
+          "lines": 41,
+          "params": 1,
+          "nestingDepth": 3,
+          "startLine": 84
+        },
+        {
+          "name": "isUncPath",
+          "lines": 8,
+          "params": 1,
+          "nestingDepth": 0,
+          "startLine": 139
+        },
+        {
+          "name": "isAbsoluteDrivePath",
+          "lines": 2,
+          "params": 1,
+          "nestingDepth": 0,
+          "startLine": 160
+        },
+        {
+          "name": "toInternal",
+          "lines": 31,
+          "params": 2,
+          "nestingDepth": 1,
+          "startLine": 167
+        },
+        {
+          "name": "toDisplay",
+          "lines": 11,
+          "params": 1,
+          "nestingDepth": 0,
+          "startLine": 211
+        },
+        {
+          "name": "resolveAppDataSubdir",
+          "lines": 25,
+          "params": 2,
+          "nestingDepth": 1,
+          "startLine": 227
+        }
+      ],
+      "maxNestingDepth": 3,
+      "maxLoopDepth": 4,
+      "maxBranchChain": 1,
+      "switchCases": 7,
+      "publicMethods": 0,
+      "archViolations": 0,
+      "violationCount": 2,
+      "lastChecked": "2026-05-14T10:55:15.851Z"
+    },
+    "src\\app\\app-services.h": {
+      "totalLines": 51,
+      "functions": [],
+      "maxNestingDepth": 0,
+      "maxLoopDepth": 0,
+      "maxBranchChain": 1,
+      "switchCases": 0,
+      "publicMethods": 0,
+      "archViolations": 0,
+      "violationCount": 0,
+      "lastChecked": "2026-05-14T10:18:40.112Z"
+    },
+    "src\\app\\app-services.cpp": {
+      "totalLines": 51,
+      "functions": [
+        {
+          "name": "memory_",
+          "lines": 0,
+          "params": 1,
+          "nestingDepth": 0,
+          "startLine": 10
+        }
+      ],
+      "maxNestingDepth": 0,
+      "maxLoopDepth": 0,
+      "maxBranchChain": 1,
+      "switchCases": 0,
+      "publicMethods": 0,
+      "archViolations": 0,
+      "violationCount": 0,
+      "lastChecked": "2026-05-14T10:18:48.847Z"
+    },
+    "tests\\test-harness.h": {
+      "totalLines": 113,
+      "functions": [],
+      "maxNestingDepth": 0,
+      "maxLoopDepth": 8,
+      "maxBranchChain": 1,
+      "switchCases": 0,
+      "publicMethods": 0,
+      "archViolations": 0,
+      "violationCount": 1,
+      "lastChecked": "2026-05-14T10:55:38.212Z"
+    },
+    "tests\\test-main.cpp": {
+      "totalLines": 28,
+      "functions": [
+        {
+          "name": "main",
+          "lines": 21,
+          "params": 0,
+          "nestingDepth": 1,
+          "startLine": 5
+        }
+      ],
+      "maxNestingDepth": 1,
+      "maxLoopDepth": 1,
+      "maxBranchChain": 1,
+      "switchCases": 0,
+      "publicMethods": 0,
+      "archViolations": 0,
+      "violationCount": 0,
+      "lastChecked": "2026-05-14T10:55:44.737Z"
+    },
+    "tests\\path-utils-tests.cpp": {
+      "totalLines": 239,
+      "functions": [
+        {
+          "name": "directoryExists",
+          "lines": 2,
+          "params": 1,
+          "nestingDepth": 0,
+          "startLine": 16
+        },
+        {
+          "name": "removeIfExists",
+          "lines": 1,
+          "params": 1,
+          "nestingDepth": 0,
+          "startLine": 21
+        }
+      ],
+      "maxNestingDepth": 0,
+      "maxLoopDepth": 0,
+      "maxBranchChain": 1,
+      "switchCases": 0,
+      "publicMethods": 0,
+      "archViolations": 0,
+      "violationCount": 0,
+      "lastChecked": "2026-05-14T10:56:24.989Z"
+    }
+  },
+  "summary": {
+    "totalFiles": 18,
+    "totalViolations": 9,
+    "avgFunctionLength": 8,
+    "avgParams": 1.2,
+    "maxNestingDepth": 3
+  }
+}
