@@ -12,6 +12,7 @@
 #include "core/process-memory.h"
 #include "core/ring-logger.h"
 #include "ui/main-window.h"
+#include "ui/stall-probe.h"
 
 namespace {
 
@@ -39,17 +40,57 @@ void perfLineToLogger(const wchar_t* line, void* userData) {
   logger->info(L"%ls", line);
 }
 
-int runMessageLoop(fast_explorer::core::PerfTracker& perf) {
+void logStall(fast_explorer::core::RingLogger& logger,
+              fast_explorer::core::PerfTracker& perf,
+              fast_explorer::ui::StallLevel level,
+              uint64_t gapMicros, UINT message) {
+  using fast_explorer::core::RingLogger;
+  using fast_explorer::ui::StallLevel;
+  if (level == StallLevel::None) {
+    return;
+  }
+  using LoggerFn = void (RingLogger::*)(const wchar_t*, ...) noexcept;
+  const LoggerFn fn = (level == StallLevel::Info)   ? &RingLogger::info
+                    : (level == StallLevel::Warn)   ? &RingLogger::warn
+                    :                                  &RingLogger::error;
+  (logger.*fn)(L"ui stall %llu us (msg=0x%04X)%ls",
+               static_cast<unsigned long long>(gapMicros), message,
+               level == StallLevel::Error ? L" -- perf dump" : L"");
+  if (level == StallLevel::Error) {
+    perf.dumpToCallback(&perfLineToLogger, &logger);
+  }
+}
+
+int runMessageLoop(fast_explorer::core::PerfTracker& perf,
+                   fast_explorer::core::RingLogger& logger) {
   using fast_explorer::core::PerfTracker;
+  using fast_explorer::ui::classifyStall;
   MSG msg{};
   bool firstMessageSeen = false;
+  LARGE_INTEGER freq{};
+  QueryPerformanceFrequency(&freq);
+  const uint64_t hz = static_cast<uint64_t>(freq.QuadPart);
   while (GetMessageW(&msg, nullptr, 0, 0) > 0) {
     if (!firstMessageSeen) {
       perf.record(PerfTracker::EventId::AppInteractive);
       firstMessageSeen = true;
     }
+    // Stall is measured per dispatch: anything outside the
+    // Translate+Dispatch pair (the GetMessage blocking wait, our own
+    // post-dispatch logging) should not count against the budget.
+    LARGE_INTEGER t0{};
+    QueryPerformanceCounter(&t0);
     TranslateMessage(&msg);
     DispatchMessageW(&msg);
+    LARGE_INTEGER t1{};
+    QueryPerformanceCounter(&t1);
+
+    const uint64_t dispatchTicks =
+        static_cast<uint64_t>(t1.QuadPart - t0.QuadPart);
+    const uint64_t dispatchMicros =
+        hz == 0 ? 0 : (dispatchTicks * 1'000'000ULL) / hz;
+    logStall(logger, perf, classifyStall(dispatchMicros), dispatchMicros,
+             msg.message);
   }
   return static_cast<int>(msg.wParam);
 }
@@ -139,7 +180,7 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance,
             logger.info(L"--open: enumerating %ls", openPath.c_str());
           }
         }
-        exitCode = runMessageLoop(services.perf());
+        exitCode = runMessageLoop(services.perf(), logger);
       } else {
         logger.error(L"MainWindow::create failed (lastError=%lu)", GetLastError());
       }

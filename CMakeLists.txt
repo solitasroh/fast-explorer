@@ -38,6 +38,8 @@ set(FE_APP_SOURCES
   src/ui/pane-controller.h
   src/ui/status-text.cpp
   src/ui/status-text.h
+  src/ui/stall-probe.cpp
+  src/ui/stall-probe.h
   src/core/directory-enumerator.cpp
   src/core/directory-enumerator.h
   src/core/file-entry.h
@@ -116,6 +118,7 @@ add_executable(core-tests
   tests/pane-controller-tests.cpp
   tests/column-formatter-tests.cpp
   tests/status-text-tests.cpp
+  tests/stall-probe-tests.cpp
   tests/bench-fs-helper.h
   src/ui/messages.h
   src/ui/column-formatter.cpp
@@ -124,6 +127,8 @@ add_executable(core-tests
   src/ui/pane-controller.h
   src/ui/status-text.cpp
   src/ui/status-text.h
+  src/ui/stall-probe.cpp
+  src/ui/stall-probe.h
   src/bench/bench-cli.cpp
   src/bench/bench-cli.h
   src/bench/dataset-generator.cpp
