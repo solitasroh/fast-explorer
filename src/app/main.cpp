@@ -127,7 +127,7 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance,
     if (ole.ok()) {
       INITCOMMONCONTROLSEX icc{};
       icc.dwSize = sizeof(icc);
-      icc.dwICC = ICC_LISTVIEW_CLASSES;
+      icc.dwICC = ICC_LISTVIEW_CLASSES | ICC_BAR_CLASSES;
       InitCommonControlsEx(&icc);
 
       fast_explorer::ui::MainWindow window(services.memory());

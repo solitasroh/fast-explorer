@@ -8,10 +8,12 @@
 
 #include "core/file-entry.h"
 #include "core/file-model-store.h"
+#include "core/fs-backend.h"
 #include "core/process-memory.h"
 #include "ui/column-formatter.h"
 #include "ui/messages.h"
 #include "ui/pane-controller.h"
+#include "ui/status-text.h"
 
 namespace fast_explorer::ui {
 
@@ -29,6 +31,12 @@ constexpr ColumnSpec kColumns[] = {
     {L"Type", 100, LVCFMT_LEFT},
     {L"Modified", 160, LVCFMT_LEFT},
 };
+
+HWND createStatusBar(HWND parent, HINSTANCE instance) {
+  return CreateWindowExW(0, STATUSCLASSNAMEW, L"",
+                         WS_CHILD | WS_VISIBLE | SBARS_SIZEGRIP, 0, 0, 0, 0,
+                         parent, nullptr, instance, nullptr);
+}
 
 HWND createListView(HWND parent, HINSTANCE instance) {
   return CreateWindowExW(
@@ -98,7 +106,19 @@ bool MainWindow::openFolder(const std::wstring& path) {
   if (!pane_) {
     return false;
   }
-  return pane_->openFolder(path);
+  if (!pane_->openFolder(path)) {
+    return false;
+  }
+  const std::wstring text = loadingStatusText(path);
+  setStatusText(text.c_str());
+  return true;
+}
+
+void MainWindow::setStatusText(const wchar_t* text) {
+  if (statusBar_ && text) {
+    SendMessageW(statusBar_, SB_SETTEXTW, 0,
+                 reinterpret_cast<LPARAM>(text));
+  }
 }
 
 bool MainWindow::create(HINSTANCE instance, int showCommand) {
@@ -153,6 +173,7 @@ LRESULT MainWindow::handleMessage(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPa
         return -1;
       }
       ListView_SetItemCountEx(listView_, 0, 0);
+      statusBar_ = createStatusBar(hwnd, instance_);
       pane_ = std::make_unique<PaneController>(hwnd);
       return 0;
     case WM_NOTIFY:
@@ -165,11 +186,22 @@ LRESULT MainWindow::handleMessage(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPa
       return 0;
     }
     case WM_SIZE:
+      if (statusBar_) {
+        SendMessageW(statusBar_, WM_SIZE, 0, 0);
+      }
       if (listView_) {
-        RECT rc;
-        GetClientRect(hwnd, &rc);
-        SetWindowPos(listView_, nullptr, 0, 0, rc.right - rc.left,
-                     rc.bottom - rc.top, SWP_NOZORDER | SWP_NOACTIVATE);
+        RECT client;
+        GetClientRect(hwnd, &client);
+        int statusH = 0;
+        if (statusBar_) {
+          RECT sb;
+          GetWindowRect(statusBar_, &sb);
+          statusH = sb.bottom - sb.top;
+        }
+        const int listH =
+            std::max<int>(0, (client.bottom - client.top) - statusH);
+        SetWindowPos(listView_, nullptr, 0, 0, client.right - client.left,
+                     listH, SWP_NOZORDER | SWP_NOACTIVATE);
       }
       if (wParam == SIZE_MINIMIZED) {
         memory_.notifyMinimized();
@@ -177,15 +209,29 @@ LRESULT MainWindow::handleMessage(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPa
         memory_.notifyRestored();
       }
       return DefWindowProcW(hwnd, msg, wParam, lParam);
-    case kWmFeEnumBatch:
+    case kWmFeEnumBatch: {
+      const auto count = static_cast<uint64_t>(lParam);
       if (listView_) {
-        ListView_SetItemCountEx(listView_, static_cast<int>(lParam),
+        ListView_SetItemCountEx(listView_, static_cast<int>(count),
                                 LVSICF_NOSCROLL);
       }
+      const std::wstring text = loadingProgressStatusText(count);
+      setStatusText(text.c_str());
       return 0;
-    case kWmFeEnumComplete:
-    case kWmFeEnumError:
+    }
+    case kWmFeEnumComplete: {
+      const size_t finalCount = pane_ ? pane_->store().itemCount() : 0;
+      const std::wstring text = readyStatusText(finalCount);
+      setStatusText(text.c_str());
       return 0;
+    }
+    case kWmFeEnumError: {
+      const auto err =
+          static_cast<fast_explorer::core::EnumerationError>(lParam);
+      const std::wstring text = errorStatusText(err);
+      setStatusText(text.c_str());
+      return 0;
+    }
     case WM_DESTROY:
       PostQuitMessage(0);
       return 0;

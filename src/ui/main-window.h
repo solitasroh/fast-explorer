@@ -40,10 +40,13 @@ class MainWindow {
   static constexpr int kDefaultWidth = 1280;
   static constexpr int kDefaultHeight = 800;
 
+  void setStatusText(const wchar_t* text);
+
   fast_explorer::core::ProcessMemoryService& memory_;
   HINSTANCE instance_ = nullptr;
   HWND hwnd_ = nullptr;
   HWND listView_ = nullptr;
+  HWND statusBar_ = nullptr;
   std::unique_ptr<PaneController> pane_;
 };
 
