@@ -72,3 +72,25 @@ set_target_properties(FastExplorer PROPERTIES
 
 # Manifest is embedded through the .rc file; disable the default generated manifest.
 target_link_options(FastExplorer PRIVATE "/MANIFEST:NO")
+
+# ---------------------------------------------------------------------------
+# core-tests: self-contained unit test binary (see tests/test-harness.h).
+# Linked directly against the source files it exercises so test runs do not
+# depend on a separate object library yet. Once the test suite grows we will
+# extract a CMake OBJECT library shared between FastExplorer and core-tests.
+# ---------------------------------------------------------------------------
+add_executable(core-tests
+  tests/test-main.cpp
+  tests/path-utils-tests.cpp
+  src/core/path-utils.cpp
+)
+
+target_include_directories(core-tests PRIVATE src tests)
+
+target_link_libraries(core-tests PRIVATE
+  shell32
+  ole32
+)
+
+enable_testing()
+add_test(NAME core-tests COMMAND core-tests)
