@@ -1,3 +1,5 @@
+#include <unordered_set>
+
 #include "bench-fs-helper.h"
 #include "bench/dataset-generator.h"
 #include "core/file-sort.h"
@@ -284,6 +286,97 @@ FE_TEST_CASE(PaneController_BackgroundSort_FillsPendingAndAppliesOnDemand) {
   std::wstring last(store.visibleAt(store.publishedCount() - 1).namePtr,
                     store.visibleAt(store.publishedCount() - 1).nameLength);
   FE_ASSERT_TRUE(first < last);
+}
+
+// ---------------------------------------------------------------------------
+// Stable selection (selectRaw / clearSelection / selectedRowsUnderCurrentOrder)
+// ---------------------------------------------------------------------------
+
+FE_TEST_CASE(PaneController_Selection_Default_Empty) {
+  PaneController pc(nullptr);
+  FE_ASSERT_EQ(pc.selectedCount(), static_cast<std::size_t>(0));
+  FE_ASSERT_FALSE(pc.isRawSelected(0));
+  FE_ASSERT_TRUE(pc.selectedRowsUnderCurrentOrder().empty());
+}
+
+FE_TEST_CASE(PaneController_Selection_SelectAndDeselect) {
+  PaneController pc(nullptr);
+  pc.selectRaw(3);
+  pc.selectRaw(7);
+  FE_ASSERT_EQ(pc.selectedCount(), static_cast<std::size_t>(2));
+  FE_ASSERT_TRUE(pc.isRawSelected(3));
+  FE_ASSERT_TRUE(pc.isRawSelected(7));
+  FE_ASSERT_FALSE(pc.isRawSelected(5));
+
+  pc.deselectRaw(3);
+  FE_ASSERT_FALSE(pc.isRawSelected(3));
+  FE_ASSERT_EQ(pc.selectedCount(), static_cast<std::size_t>(1));
+}
+
+FE_TEST_CASE(PaneController_Selection_DoubleSelectIsIdempotent) {
+  PaneController pc(nullptr);
+  pc.selectRaw(4);
+  pc.selectRaw(4);
+  FE_ASSERT_EQ(pc.selectedCount(), static_cast<std::size_t>(1));
+}
+
+FE_TEST_CASE(PaneController_Selection_ClearEmptiesSet) {
+  PaneController pc(nullptr);
+  pc.selectRaw(0);
+  pc.selectRaw(1);
+  pc.selectRaw(2);
+  pc.clearSelection();
+  FE_ASSERT_EQ(pc.selectedCount(), static_cast<std::size_t>(0));
+}
+
+FE_TEST_CASE(PaneController_Selection_ClearedOnOpenFolder) {
+  TempDir tmp(L"pane-sel-clear");
+  FE_ASSERT_EQ(generateDataset(PresetKind::Small, tmp.path(), 1).error,
+               GenerateError::None);
+  PaneController pane(nullptr);
+  FE_ASSERT_TRUE(pane.openFolder(tmp.path()));
+  pane.joinForTest();
+  pane.selectRaw(0);
+  pane.selectRaw(1);
+  FE_ASSERT_EQ(pane.selectedCount(), static_cast<std::size_t>(2));
+  FE_ASSERT_TRUE(pane.openFolder(tmp.path()));
+  pane.joinForTest();
+  FE_ASSERT_EQ(pane.selectedCount(), static_cast<std::size_t>(0));
+}
+
+FE_TEST_CASE(PaneController_Selection_RowsFollowSortReorder) {
+  TempDir tmp(L"pane-sel-sort");
+  FE_ASSERT_EQ(generateDataset(PresetKind::Small, tmp.path(), 1).error,
+               GenerateError::None);
+  PaneController pane(nullptr);
+  FE_ASSERT_TRUE(pane.openFolder(tmp.path()));
+  pane.joinForTest();
+
+  // Capture the raw indices that sit at rows 0 and 1 *before* the
+  // sort, then sort and verify those raws now appear at whatever
+  // new visible rows they ended up in.
+  const auto& store = pane.store();
+  const auto orderBefore = store.visibleOrder();
+  FE_ASSERT_TRUE(orderBefore.size() >= 2);
+  const std::uint32_t rawA = orderBefore[0];
+  const std::uint32_t rawB = orderBefore[1];
+  pane.selectRaw(rawA);
+  pane.selectRaw(rawB);
+
+  pane.requestSort(SortKey::Name);
+  pane.requestSort(SortKey::Name);  // toggle to Descending — meaningful reorder
+
+  const auto rowsAfter = pane.selectedRowsUnderCurrentOrder();
+  FE_ASSERT_EQ(rowsAfter.size(), static_cast<std::size_t>(2));
+  // Verify the rows really point back at the originally selected raw
+  // indices under the new permutation.
+  const auto orderAfter = store.visibleOrder();
+  std::unordered_set<std::uint32_t> rawsAtSelectedRows;
+  for (int row : rowsAfter) {
+    rawsAtSelectedRows.insert(orderAfter[static_cast<std::size_t>(row)]);
+  }
+  FE_ASSERT_TRUE(rawsAtSelectedRows.count(rawA) == 1);
+  FE_ASSERT_TRUE(rawsAtSelectedRows.count(rawB) == 1);
 }
 
 FE_TEST_CASE(PaneController_RequestSort_ActuallyReordersVisible) {

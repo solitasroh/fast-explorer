@@ -192,6 +192,37 @@ SortDispatch PaneController::requestSort(
   return SortDispatch::Dispatched;
 }
 
+void PaneController::selectRaw(std::uint32_t rawIndex) {
+  selectedRaws_.insert(rawIndex);
+}
+
+void PaneController::deselectRaw(std::uint32_t rawIndex) noexcept {
+  selectedRaws_.erase(rawIndex);
+}
+
+void PaneController::clearSelection() noexcept {
+  selectedRaws_.clear();
+}
+
+bool PaneController::isRawSelected(std::uint32_t rawIndex) const noexcept {
+  return selectedRaws_.contains(rawIndex);
+}
+
+std::vector<int> PaneController::selectedRowsUnderCurrentOrder() const {
+  std::vector<int> rows;
+  if (selectedRaws_.empty()) {
+    return rows;
+  }
+  const auto order = store_.visibleOrder();
+  rows.reserve(selectedRaws_.size());
+  for (std::size_t i = 0; i < order.size(); ++i) {
+    if (selectedRaws_.contains(order[i])) {
+      rows.push_back(static_cast<int>(i));
+    }
+  }
+  return rows;
+}
+
 void PaneController::applyPendingSort(std::uint32_t gen) {
   if (workerActive_.load(std::memory_order_acquire)) {
     return;
@@ -229,6 +260,7 @@ bool PaneController::navigateInternal(const std::wstring& path) {
     sortWorker_.join();
   }
   pendingSortedOrder_.clear();
+  selectedRaws_.clear();
   fsWatcher_.stop();
 
   currentPath_ = path;

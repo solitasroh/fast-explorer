@@ -6,6 +6,7 @@
 #include <cstdint>
 #include <string>
 #include <thread>
+#include <unordered_set>
 #include <vector>
 
 #include "core/file-model-store.h"
@@ -96,6 +97,25 @@ class PaneController {
   }
   bool hasSortApplied() const noexcept { return sorted_; }
 
+  // Selection is tracked by raw entries_ index so the selection
+  // survives sort reorderings: a row may move to a different
+  // visibleOrder slot but the underlying FileEntry keeps the same
+  // raw index until the next navigation. openFolder / back / forward /
+  // up / refresh clear the selection (the underlying entries are
+  // replaced by reset()), so callers do not need to manage that.
+  void selectRaw(std::uint32_t rawIndex);
+  void deselectRaw(std::uint32_t rawIndex) noexcept;
+  void clearSelection() noexcept;
+  bool isRawSelected(std::uint32_t rawIndex) const noexcept;
+  std::size_t selectedCount() const noexcept {
+    return selectedRaws_.size();
+  }
+  // Returns the visible-row positions of every selected raw index
+  // under the current visibleOrder permutation, sorted ascending.
+  // Used by MainWindow after a sort apply to reapply LVIS_SELECTED to
+  // the new row positions.
+  std::vector<int> selectedRowsUnderCurrentOrder() const;
+
   bool canGoBack() const noexcept { return !backStack_.empty(); }
   bool canGoForward() const noexcept { return !forwardStack_.empty(); }
 
@@ -141,6 +161,7 @@ class PaneController {
   // why worker_ is declared last.
   std::vector<std::uint32_t> pendingSortedOrder_;
   std::uint32_t pendingSortGen_ = 0;
+  std::unordered_set<std::uint32_t> selectedRaws_;
   std::jthread sortWorker_;
   std::jthread worker_;
 };
