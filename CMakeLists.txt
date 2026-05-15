@@ -35,6 +35,8 @@ set(FE_APP_SOURCES
   src/ui/column-formatter.cpp
   src/ui/column-formatter.h
   src/ui/dpi-scale.h
+  src/ui/extension-icon-cache.cpp
+  src/ui/extension-icon-cache.h
   src/ui/format-cache.cpp
   src/ui/format-cache.h
   src/ui/icon-cache.cpp
@@ -134,6 +136,7 @@ add_executable(core-tests
   tests/status-text-tests.cpp
   tests/stall-probe-tests.cpp
   tests/file-sort-tests.cpp
+  tests/extension-icon-cache-tests.cpp
   tests/icon-cache-tests.cpp
   tests/pane-sort-coordinator-tests.cpp
   tests/bench-fs-helper.h
@@ -141,6 +144,8 @@ add_executable(core-tests
   src/ui/column-formatter.cpp
   src/ui/column-formatter.h
   src/ui/dpi-scale.h
+  src/ui/extension-icon-cache.cpp
+  src/ui/extension-icon-cache.h
   src/ui/format-cache.cpp
   src/ui/format-cache.h
   src/ui/icon-cache.cpp
