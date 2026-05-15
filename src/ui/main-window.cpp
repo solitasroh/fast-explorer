@@ -5,6 +5,8 @@
 #include <algorithm>
 #include <cstring>
 #include <iterator>
+#include <new>
+#include <span>
 
 #include "core/file-entry.h"
 #include "core/file-model-store.h"
@@ -24,6 +26,22 @@ namespace {
 
 constexpr UINT_PTR kTimerFsCoalesce = 1;
 constexpr UINT kFsCoalesceMs = 100;
+
+// RAII scope guard for the selection-reapply reentrancy flag. Ensures
+// the flag is cleared even if the LVIS_SELECTED reapply throws — a
+// C++ exception escaping through wndProc is undefined behavior on
+// Win32, so the catch block in reapplySelectionFromPane needs the
+// guard's destructor to run before the catch handler.
+class ScopedFlag {
+ public:
+  explicit ScopedFlag(bool& flag) noexcept : flag_(flag) { flag_ = true; }
+  ~ScopedFlag() { flag_ = false; }
+  ScopedFlag(const ScopedFlag&) = delete;
+  ScopedFlag& operator=(const ScopedFlag&) = delete;
+
+ private:
+  bool& flag_;
+};
 
 struct ColumnSpec {
   const wchar_t* title;
@@ -412,6 +430,7 @@ LRESULT MainWindow::handleMessage(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPa
       const auto spec = pane_->currentSortSpec();
       updateSortIndicator(listView_, sortKeyToColumnIndex(spec.key),
                           spec.direction);
+      reapplySelectionFromPane();
       const int count =
           static_cast<int>(pane_->store().publishedCount());
       if (count > 0) {
@@ -465,6 +484,9 @@ LRESULT MainWindow::handleListViewNotify(NMHDR* hdr) {
       return 0;
     case LVN_COLUMNCLICK:
       handleColumnClick(hdr);
+      return 0;
+    case LVN_ITEMCHANGED:
+      handleItemChanged(hdr);
       return 0;
     case LVN_ODCACHEHINT:
     case LVN_ODSTATECHANGED:
@@ -532,6 +554,70 @@ void MainWindow::handleGetDispInfo(NMHDR* hdr) {
   }
 }
 
+void MainWindow::handleItemChanged(NMHDR* hdr) {
+  if (hdr == nullptr || !pane_ || reapplyingSelection_) {
+    return;
+  }
+  auto* nmlv = reinterpret_cast<NMLISTVIEW*>(hdr);
+  if ((nmlv->uChanged & LVIF_STATE) == 0) {
+    return;
+  }
+  if (nmlv->iItem < 0) {
+    // -1 is a list-wide change (LVS_OWNERDATA broadcast); we re-derive
+    // selection from the pane on the next reapplySelectionFromPane(),
+    // so nothing to track here.
+    return;
+  }
+  const auto row = static_cast<std::size_t>(nmlv->iItem);
+  const auto& store = pane_->store();
+  if (row >= store.publishedCount()) {
+    return;
+  }
+  const std::span<const std::uint32_t> order = store.visibleOrder();
+  if (row >= order.size()) {
+    return;
+  }
+  const std::uint32_t raw = order[row];
+  const bool wasSelected = (nmlv->uOldState & LVIS_SELECTED) != 0;
+  const bool isSelected = (nmlv->uNewState & LVIS_SELECTED) != 0;
+  if (wasSelected == isSelected) {
+    return;
+  }
+  // selectRaw / deselectRaw use unordered_set under the hood and
+  // therefore can throw bad_alloc; an uncaught C++ exception leaving
+  // the wndProc callstack is UB on Win32, so we swallow the
+  // synchronization miss — the next reapplySelectionFromPane()
+  // rebuilds list-view state from the pane model.
+  try {
+    if (isSelected) {
+      pane_->selectRaw(raw);
+    } else {
+      pane_->deselectRaw(raw);
+    }
+  } catch (const std::bad_alloc&) {
+  }
+}
+
+void MainWindow::reapplySelectionFromPane() {
+  if (!pane_ || listView_ == nullptr) {
+    return;
+  }
+  ScopedFlag guard(reapplyingSelection_);
+  // -1 broadcasts the state mask to every item; this clears the
+  // LVIS_SELECTED bit list-wide before we re-set it on the rows the
+  // pane says are still selected.
+  ListView_SetItemState(listView_, -1, 0, LVIS_SELECTED);
+  try {
+    for (int row : pane_->selectedRowsUnderCurrentOrder()) {
+      ListView_SetItemState(listView_, row, LVIS_SELECTED, LVIS_SELECTED);
+    }
+  } catch (const std::bad_alloc&) {
+    // Best-effort: the broadcast clear above leaves the list-view in
+    // a coherent "nothing selected" state, which is better than
+    // letting the exception cross the wndProc boundary.
+  }
+}
+
 void MainWindow::handleColumnClick(NMHDR* hdr) {
   if (hdr == nullptr || !pane_ || listView_ == nullptr) {
     return;
@@ -557,6 +643,7 @@ void MainWindow::handleColumnClick(NMHDR* hdr) {
   const auto spec = pane_->currentSortSpec();
   updateSortIndicator(listView_, sortKeyToColumnIndex(spec.key), spec.direction);
   if (dispatch == fast_explorer::ui::SortDispatch::AppliedSync) {
+    reapplySelectionFromPane();
     const int count =
         static_cast<int>(pane_->store().publishedCount());
     if (count > 0) {

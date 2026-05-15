@@ -38,6 +38,8 @@ class MainWindow {
   bool isStaleGeneration(WPARAM wParam) const;
   void handleGetDispInfo(NMHDR* hdr);
   void handleColumnClick(NMHDR* hdr);
+  void handleItemChanged(NMHDR* hdr);
+  void reapplySelectionFromPane();
   LRESULT handleCustomDraw(NMHDR* hdr);
   void handleAddressCommit();
   static LRESULT CALLBACK addressBarSubclassProc(HWND, UINT, WPARAM, LPARAM,
@@ -57,6 +59,12 @@ class MainWindow {
   HWND statusBar_ = nullptr;
   HWND addressBar_ = nullptr;
   bool firstBatchSeen_ = false;
+  // Reentrancy guard for our own SetItemState calls inside
+  // reapplySelectionFromPane(): the list-view fires LVN_ITEMCHANGED
+  // for every state change including the ones we drive, and routing
+  // those back into PaneController would clobber the selection we
+  // just restored.
+  bool reapplyingSelection_ = false;
   std::unique_ptr<PaneController> pane_;
   std::unique_ptr<class FormatCache> formatCache_;
 };
