@@ -297,171 +297,19 @@ LRESULT CALLBACK MainWindow::wndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM 
 
 LRESULT MainWindow::handleMessage(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
   switch (msg) {
-    case WM_CREATE:
-      listView_ = createListView(hwnd, instance_);
-      if (!listView_) {
-        return -1;
-      }
-      if (!addColumns(listView_, GetDpiForWindow(hwnd))) {
-        DestroyWindow(listView_);
-        listView_ = nullptr;
-        return -1;
-      }
-      ListView_SetItemCountEx(listView_, 0, 0);
-      statusBar_ = createStatusBar(hwnd, instance_);
-      addressBar_ = createAddressBar(hwnd, instance_);
-      if (addressBar_) {
-        SetWindowSubclass(addressBar_, &MainWindow::addressBarSubclassProc, 0,
-                          0);
-      }
-      pane_ = std::make_unique<PaneController>(hwnd);
-      formatCache_ = std::make_unique<FormatCache>();
-      return 0;
-    case WM_NOTIFY:
-      return handleListViewNotify(reinterpret_cast<NMHDR*>(lParam));
-    case WM_DPICHANGED: {
-      const auto* rect = reinterpret_cast<const RECT*>(lParam);
-      SetWindowPos(hwnd, nullptr, rect->left, rect->top,
-                   rect->right - rect->left, rect->bottom - rect->top,
-                   SWP_NOZORDER | SWP_NOACTIVATE);
-      if (listView_) {
-        rescaleColumnWidths(listView_, LOWORD(wParam));
-      }
-      return 0;
-    }
-    case WM_SIZE:
-      if (statusBar_) {
-        SendMessageW(statusBar_, WM_SIZE, 0, 0);
-      }
-      if (listView_) {
-        RECT client;
-        GetClientRect(hwnd, &client);
-        int statusH = 0;
-        if (statusBar_) {
-          RECT sb;
-          GetWindowRect(statusBar_, &sb);
-          statusH = sb.bottom - sb.top;
-        }
-        const int addressH = addressBar_ ? scaleForDpi(28, GetDpiForWindow(hwnd)) : 0;
-        const int clientW = client.right - client.left;
-        const int clientH = client.bottom - client.top;
-        if (addressBar_) {
-          SetWindowPos(addressBar_, nullptr, 0, 0, clientW, addressH,
-                       SWP_NOZORDER | SWP_NOACTIVATE);
-        }
-        const int listH = std::max<int>(0, clientH - statusH - addressH);
-        SetWindowPos(listView_, nullptr, 0, addressH, clientW, listH,
-                     SWP_NOZORDER | SWP_NOACTIVATE);
-      }
-      if (wParam == SIZE_MINIMIZED) {
-        memory_.notifyMinimized();
-      } else if (wParam == SIZE_RESTORED || wParam == SIZE_MAXIMIZED) {
-        memory_.notifyRestored();
-      }
-      return DefWindowProcW(hwnd, msg, wParam, lParam);
-    case WM_COMMAND:
-      if (HIWORD(wParam) == 1) {
-        switch (LOWORD(wParam)) {
-          case kAccelFocusAddress:
-            if (addressBar_) {
-              SetFocus(addressBar_);
-              SendMessageW(addressBar_, EM_SETSEL, 0, -1);
-            }
-            return 0;
-          case kAccelNavBack:
-            if (pane_) pane_->back();
-            return 0;
-          case kAccelNavForward:
-            if (pane_) pane_->forward();
-            return 0;
-          case kAccelNavUp:
-            if (pane_) pane_->up();
-            return 0;
-          case kAccelRefresh:
-            if (pane_) {
-              pane_->refresh();
-            }
-            return 0;
-        }
-        return 0;  // unknown accelerator: swallow, do not Def-process
-      }
-      return DefWindowProcW(hwnd, msg, wParam, lParam);
-    case kWmFeAddressCommit:
-      handleAddressCommit();
-      return 0;
-    case kWmFeEnumBatch: {
-      if (isStaleGeneration(wParam)) {
-        return 0;
-      }
-      const auto count = static_cast<uint64_t>(lParam);
-      if (!firstBatchSeen_) {
-        perf_.record(
-            fast_explorer::core::PerfTracker::EventId::PaneFirstBatch, count);
-        firstBatchSeen_ = true;
-      }
-      if (listView_) {
-        ListView_SetItemCountEx(listView_, static_cast<int>(count),
-                                LVSICF_NOSCROLL);
-      }
-      const std::wstring text = loadingProgressStatusText(count);
-      setStatusText(text.c_str());
-      return 0;
-    }
-    case kWmFeEnumComplete: {
-      if (isStaleGeneration(wParam)) {
-        return 0;
-      }
-      const size_t finalCount = pane_->store().itemCount();
-      const std::wstring text = readyStatusText(finalCount);
-      setStatusText(text.c_str());
-      return 0;
-    }
-    case kWmFeSortComplete: {
-      if (!pane_ || listView_ == nullptr) {
-        return 0;
-      }
-      if (isStaleGeneration(wParam)) {
-        // Worker for a previous folder; pane state has moved on.
-        // applyPendingSort would also detect this via pendingSortGen_
-        // but the early return saves the indicator/redraw work.
-        return 0;
-      }
-      pane_->applyPendingSort(static_cast<std::uint32_t>(wParam));
-      const auto spec = pane_->currentSortSpec();
-      updateSortIndicator(listView_, sortKeyToColumnIndex(spec.key),
-                          spec.direction);
-      reapplySelectionFromPane();
-      const int count =
-          static_cast<int>(pane_->store().publishedCount());
-      if (count > 0) {
-        ListView_RedrawItems(listView_, 0, count - 1);
-      }
-      return 0;
-    }
-    case kWmFeFsChange:
-      // Debounce: every event restarts the timer; the actual refresh
-      // fires once after kFsCoalesceMs of quiet.
-      SetTimer(hwnd, kTimerFsCoalesce, kFsCoalesceMs, nullptr);
-      return 0;
-    case WM_TIMER:
-      if (wParam == kTimerFsCoalesce) {
-        KillTimer(hwnd, kTimerFsCoalesce);
-        if (pane_) {
-          pane_->refresh();
-        }
-        return 0;
-      }
-      return DefWindowProcW(hwnd, msg, wParam, lParam);
-    case kWmFeEnumError: {
-      if (isStaleGeneration(wParam)) {
-        return 0;
-      }
-      const auto err =
-          static_cast<fast_explorer::core::EnumerationError>(lParam);
-      const std::wstring text = errorStatusText(err);
-      setStatusText(text.c_str());
-      return 0;
-    }
+    case WM_CREATE:           return onCreate(hwnd);
+    case WM_NOTIFY:           return handleListViewNotify(
+                                  reinterpret_cast<NMHDR*>(lParam));
+    case WM_DPICHANGED:       return onDpiChanged(hwnd, wParam, lParam);
+    case WM_SIZE:             return onSize(hwnd, msg, wParam, lParam);
+    case WM_COMMAND:          return onCommand(hwnd, msg, wParam, lParam);
+    case kWmFeAddressCommit:  handleAddressCommit(); return 0;
+    case kWmFeEnumBatch:      return onEnumBatch(wParam, lParam);
+    case kWmFeEnumComplete:   return onEnumComplete(wParam);
+    case kWmFeSortComplete:   return onSortComplete(wParam);
+    case kWmFeEnumError:      return onEnumError(wParam, lParam);
+    case kWmFeFsChange:       return onFsChange(hwnd);
+    case WM_TIMER:            return onTimer(hwnd, msg, wParam, lParam);
     case WM_DESTROY:
       PostQuitMessage(0);
       return 0;
@@ -471,6 +319,187 @@ LRESULT MainWindow::handleMessage(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPa
       return DefWindowProcW(hwnd, msg, wParam, lParam);
     default:
       return DefWindowProcW(hwnd, msg, wParam, lParam);
+  }
+}
+
+LRESULT MainWindow::onCreate(HWND hwnd) {
+  listView_ = createListView(hwnd, instance_);
+  if (!listView_) {
+    return -1;
+  }
+  if (!addColumns(listView_, GetDpiForWindow(hwnd))) {
+    DestroyWindow(listView_);
+    listView_ = nullptr;
+    return -1;
+  }
+  ListView_SetItemCountEx(listView_, 0, 0);
+  statusBar_ = createStatusBar(hwnd, instance_);
+  addressBar_ = createAddressBar(hwnd, instance_);
+  if (addressBar_) {
+    SetWindowSubclass(addressBar_, &MainWindow::addressBarSubclassProc, 0, 0);
+  }
+  pane_ = std::make_unique<PaneController>(hwnd);
+  formatCache_ = std::make_unique<FormatCache>();
+  return 0;
+}
+
+LRESULT MainWindow::onDpiChanged(HWND hwnd, WPARAM wParam, LPARAM lParam) {
+  const auto* rect = reinterpret_cast<const RECT*>(lParam);
+  SetWindowPos(hwnd, nullptr, rect->left, rect->top,
+               rect->right - rect->left, rect->bottom - rect->top,
+               SWP_NOZORDER | SWP_NOACTIVATE);
+  if (listView_) {
+    rescaleColumnWidths(listView_, LOWORD(wParam));
+  }
+  return 0;
+}
+
+LRESULT MainWindow::onSize(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
+  if (statusBar_) {
+    SendMessageW(statusBar_, WM_SIZE, 0, 0);
+  }
+  if (listView_) {
+    RECT client;
+    GetClientRect(hwnd, &client);
+    int statusH = 0;
+    if (statusBar_) {
+      RECT sb;
+      GetWindowRect(statusBar_, &sb);
+      statusH = sb.bottom - sb.top;
+    }
+    const int addressH =
+        addressBar_ ? scaleForDpi(28, GetDpiForWindow(hwnd)) : 0;
+    const int clientW = client.right - client.left;
+    const int clientH = client.bottom - client.top;
+    if (addressBar_) {
+      SetWindowPos(addressBar_, nullptr, 0, 0, clientW, addressH,
+                   SWP_NOZORDER | SWP_NOACTIVATE);
+    }
+    const int listH = std::max<int>(0, clientH - statusH - addressH);
+    SetWindowPos(listView_, nullptr, 0, addressH, clientW, listH,
+                 SWP_NOZORDER | SWP_NOACTIVATE);
+  }
+  if (wParam == SIZE_MINIMIZED) {
+    memory_.notifyMinimized();
+  } else if (wParam == SIZE_RESTORED || wParam == SIZE_MAXIMIZED) {
+    memory_.notifyRestored();
+  }
+  return DefWindowProcW(hwnd, msg, wParam, lParam);
+}
+
+LRESULT MainWindow::onCommand(HWND hwnd, UINT msg, WPARAM wParam,
+                              LPARAM lParam) {
+  if (HIWORD(wParam) == 1) {
+    switch (LOWORD(wParam)) {
+      case kAccelFocusAddress:
+        if (addressBar_) {
+          SetFocus(addressBar_);
+          SendMessageW(addressBar_, EM_SETSEL, 0, -1);
+        }
+        return 0;
+      case kAccelNavBack:
+        if (pane_) pane_->back();
+        return 0;
+      case kAccelNavForward:
+        if (pane_) pane_->forward();
+        return 0;
+      case kAccelNavUp:
+        if (pane_) pane_->up();
+        return 0;
+      case kAccelRefresh:
+        if (pane_) {
+          pane_->refresh();
+        }
+        return 0;
+    }
+    // Unknown accelerator id: swallow without calling DefWindowProc so
+    // an unbound key does not produce a system beep.
+    return 0;
+  }
+  return DefWindowProcW(hwnd, msg, wParam, lParam);
+}
+
+LRESULT MainWindow::onTimer(HWND hwnd, UINT msg, WPARAM wParam,
+                            LPARAM lParam) {
+  if (wParam == kTimerFsCoalesce) {
+    KillTimer(hwnd, kTimerFsCoalesce);
+    if (pane_) {
+      pane_->refresh();
+    }
+    return 0;
+  }
+  return DefWindowProcW(hwnd, msg, wParam, lParam);
+}
+
+LRESULT MainWindow::onEnumBatch(WPARAM wParam, LPARAM lParam) {
+  if (isStaleGeneration(wParam)) {
+    return 0;
+  }
+  const auto count = static_cast<uint64_t>(lParam);
+  if (!firstBatchSeen_) {
+    perf_.record(fast_explorer::core::PerfTracker::EventId::PaneFirstBatch,
+                 count);
+    firstBatchSeen_ = true;
+  }
+  if (listView_) {
+    ListView_SetItemCountEx(listView_, static_cast<int>(count),
+                            LVSICF_NOSCROLL);
+  }
+  const std::wstring text = loadingProgressStatusText(count);
+  setStatusText(text.c_str());
+  return 0;
+}
+
+LRESULT MainWindow::onEnumComplete(WPARAM wParam) {
+  if (isStaleGeneration(wParam)) {
+    return 0;
+  }
+  const size_t finalCount = pane_->store().itemCount();
+  const std::wstring text = readyStatusText(finalCount);
+  setStatusText(text.c_str());
+  return 0;
+}
+
+LRESULT MainWindow::onEnumError(WPARAM wParam, LPARAM lParam) {
+  if (isStaleGeneration(wParam)) {
+    return 0;
+  }
+  const auto err = static_cast<fast_explorer::core::EnumerationError>(lParam);
+  const std::wstring text = errorStatusText(err);
+  setStatusText(text.c_str());
+  return 0;
+}
+
+LRESULT MainWindow::onSortComplete(WPARAM wParam) {
+  if (!pane_ || listView_ == nullptr) {
+    return 0;
+  }
+  if (isStaleGeneration(wParam)) {
+    return 0;
+  }
+  pane_->applyPendingSort(static_cast<std::uint32_t>(wParam));
+  finalizeSortApply();
+  return 0;
+}
+
+LRESULT MainWindow::onFsChange(HWND hwnd) {
+  // Debounce: every event restarts the timer; the actual refresh fires
+  // once after kFsCoalesceMs of quiet.
+  SetTimer(hwnd, kTimerFsCoalesce, kFsCoalesceMs, nullptr);
+  return 0;
+}
+
+void MainWindow::finalizeSortApply() {
+  if (!pane_ || listView_ == nullptr) {
+    return;
+  }
+  const auto spec = pane_->currentSortSpec();
+  updateSortIndicator(listView_, sortKeyToColumnIndex(spec.key),
+                      spec.direction);
+  reapplySelectionFromPane();
+  const int count = static_cast<int>(pane_->store().publishedCount());
+  if (count > 0) {
+    ListView_RedrawItems(listView_, 0, count - 1);
   }
 }
 
@@ -637,18 +666,15 @@ void MainWindow::handleColumnClick(NMHDR* hdr) {
   if (dispatch == fast_explorer::ui::SortDispatch::Rejected) {
     return;
   }
-  // Update the arrow eagerly for both paths so the click feels
-  // responsive; the background path will still get its final repaint
-  // when kWmFeSortComplete commits applyPendingSort().
-  const auto spec = pane_->currentSortSpec();
-  updateSortIndicator(listView_, sortKeyToColumnIndex(spec.key), spec.direction);
   if (dispatch == fast_explorer::ui::SortDispatch::AppliedSync) {
-    reapplySelectionFromPane();
-    const int count =
-        static_cast<int>(pane_->store().publishedCount());
-    if (count > 0) {
-      ListView_RedrawItems(listView_, 0, count - 1);
-    }
+    finalizeSortApply();
+  } else {
+    // Background path: paint the arrow eagerly so the click feels
+    // responsive; the final selection-aware repaint runs in
+    // onSortComplete via finalizeSortApply().
+    const auto spec = pane_->currentSortSpec();
+    updateSortIndicator(listView_, sortKeyToColumnIndex(spec.key),
+                        spec.direction);
   }
 }
 

@@ -34,12 +34,36 @@ class MainWindow {
  private:
   static LRESULT CALLBACK wndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam);
   LRESULT handleMessage(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam);
+
+  // Per-message handlers split out of handleMessage so the dispatch
+  // switch reads as a flat routing table. Each helper returns the
+  // value handleMessage should return for that case. Argument policy:
+  // handlers that can fall back to DefWindowProcW (standard WM_*)
+  // take (HWND, UINT, WPARAM, LPARAM) so msg can be replayed; the
+  // kWmFe* user-message handlers take only the params they actually
+  // need.
+  LRESULT onCreate(HWND hwnd);
+  LRESULT onDpiChanged(HWND hwnd, WPARAM wParam, LPARAM lParam);
+  LRESULT onSize(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam);
+  LRESULT onCommand(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam);
+  LRESULT onTimer(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam);
+  LRESULT onEnumBatch(WPARAM wParam, LPARAM lParam);
+  LRESULT onEnumComplete(WPARAM wParam);
+  LRESULT onEnumError(WPARAM wParam, LPARAM lParam);
+  LRESULT onSortComplete(WPARAM wParam);
+  LRESULT onFsChange(HWND hwnd);
+
   LRESULT handleListViewNotify(NMHDR* hdr);
   bool isStaleGeneration(WPARAM wParam) const;
   void handleGetDispInfo(NMHDR* hdr);
   void handleColumnClick(NMHDR* hdr);
   void handleItemChanged(NMHDR* hdr);
   void reapplySelectionFromPane();
+  // Shared tail of every sort-apply path: refresh the column-header
+  // arrow, repaint the selection, and force LVN_GETDISPINFO to fetch
+  // cells in the new order. Used by both the synchronous click path
+  // and the kWmFeSortComplete handler.
+  void finalizeSortApply();
   LRESULT handleCustomDraw(NMHDR* hdr);
   void handleAddressCommit();
   static LRESULT CALLBACK addressBarSubclassProc(HWND, UINT, WPARAM, LPARAM,
