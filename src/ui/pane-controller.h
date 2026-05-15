@@ -41,6 +41,10 @@ class PaneController {
   // path has no addressable parent (drive root, empty).
   bool up();
 
+  // Re-enumerate currentPath_ without touching the history stacks.
+  // Used by F5 and the coalesced fs-change refresh.
+  bool refresh();
+
   bool canGoBack() const noexcept { return !backStack_.empty(); }
   bool canGoForward() const noexcept { return !forwardStack_.empty(); }
 

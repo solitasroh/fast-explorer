@@ -22,6 +22,9 @@ namespace fast_explorer::ui {
 
 namespace {
 
+constexpr UINT_PTR kTimerFsCoalesce = 1;
+constexpr UINT kFsCoalesceMs = 100;
+
 struct ColumnSpec {
   const wchar_t* title;
   int widthPx;
@@ -307,8 +310,8 @@ LRESULT MainWindow::handleMessage(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPa
             if (pane_) pane_->up();
             return 0;
           case kAccelRefresh:
-            if (pane_ && !pane_->currentPath().empty()) {
-              openFolder(pane_->currentPath());
+            if (pane_) {
+              pane_->refresh();
             }
             return 0;
         }
@@ -346,7 +349,19 @@ LRESULT MainWindow::handleMessage(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPa
       return 0;
     }
     case kWmFeFsChange:
+      // Debounce: every event restarts the timer; the actual refresh
+      // fires once after kFsCoalesceMs of quiet.
+      SetTimer(hwnd, kTimerFsCoalesce, kFsCoalesceMs, nullptr);
       return 0;
+    case WM_TIMER:
+      if (wParam == kTimerFsCoalesce) {
+        KillTimer(hwnd, kTimerFsCoalesce);
+        if (pane_) {
+          pane_->refresh();
+        }
+        return 0;
+      }
+      return DefWindowProcW(hwnd, msg, wParam, lParam);
     case kWmFeEnumError: {
       if (isStaleGeneration(wParam)) {
         return 0;

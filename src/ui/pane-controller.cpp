@@ -113,6 +113,13 @@ bool PaneController::up() {
   return openFolder(parent);
 }
 
+bool PaneController::refresh() {
+  if (currentPath_.empty() || !isPathValid(currentPath_)) {
+    return false;
+  }
+  return navigateInternal(currentPath_);
+}
+
 bool PaneController::navigateInternal(const std::wstring& path) {
   using fast_explorer::core::DirectoryEnumerator;
   using fast_explorer::core::EnumerationError;

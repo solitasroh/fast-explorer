@@ -132,6 +132,23 @@ FE_TEST_CASE(PaneController_Up_FromDriveRoot_ReturnsFalse) {
   FE_ASSERT_FALSE(pc.up());
 }
 
+FE_TEST_CASE(PaneController_Refresh_Empty_ReturnsFalse) {
+  PaneController pc(nullptr);
+  FE_ASSERT_FALSE(pc.refresh());
+}
+
+FE_TEST_CASE(PaneController_Refresh_BumpsGenerationWithoutHistoryPush) {
+  PaneController pc(nullptr);
+  FE_ASSERT_TRUE(pc.openFolder(L"C:\\a"));
+  FE_ASSERT_TRUE(pc.openFolder(L"C:\\b"));
+  const uint32_t before = pc.generation();
+  const auto backDepthBefore = pc.canGoBack();
+  FE_ASSERT_TRUE(pc.refresh());
+  FE_ASSERT_TRUE(pc.generation() != before);
+  FE_ASSERT_WSTREQ(pc.currentPath(), L"C:\\b");
+  FE_ASSERT_EQ(pc.canGoBack(), backDepthBefore);
+}
+
 FE_TEST_CASE(PaneController_Up_FromExtendedPrefix_NormalizesToDisplay) {
   PaneController pc(nullptr);
   // openFolder accepts the \\?\ extended-length form and stores it
