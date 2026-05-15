@@ -14,8 +14,8 @@ namespace fast_explorer::core {
 // per-slot sequence counter so that a reader can distinguish a torn slot
 // (write-in-progress) from a fully published slot. See record() / readSlot().
 //
-// MVP scope: ~10k event capacity, dump to OutputDebugString on shutdown.
-// Async file writer integration is deferred until RingLogger lands.
+// Capacity: ~10k events, dumped to OutputDebugString on shutdown.
+// Async file writer integration uses RingLogger when available.
 class PerfTracker {
  public:
   static constexpr size_t kCapacity = 10'000;
@@ -26,7 +26,7 @@ class PerfTracker {
     AppShutdownStart = 3,
     PaneOpenStart = 4,
     PaneFirstBatch = 5,
-    // sort/icon events allocated in later milestones
+    // additional event ids appended below as needed
   };
 
   struct Event {

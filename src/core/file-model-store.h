@@ -40,9 +40,10 @@ enum class AppendResult : uint8_t {
 // observe fully-initialized FileEntry records.
 class FileModelStore {
  public:
-  // Cap on entries per pane; chosen to match the design memory budget
-  // (§5.1) and pre-reserved at construction so neither entries_ nor
-  // visibleOrder_ ever reallocates and invalidates UI-thread reads.
+  // Cap on entries per pane. entries_ and visibleOrder_ are reserved
+  // up to this value at construction so push_back never reallocates;
+  // UI-thread reads of entries_[i] / visibleOrder_[i] therefore see
+  // stable pointers for any i below publishedCount().
   static constexpr std::uint32_t kMaxEntries = 100'000;
 
   explicit FileModelStore(

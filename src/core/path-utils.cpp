@@ -170,7 +170,7 @@ PathConvertError toInternal(std::wstring_view displayPath, std::wstring& out) {
   }
   // UNC detection must happen before separator normalization so that both
   // \\server\share and //server/share are caught here instead of falling
-  // through to the relative-path branch (Design §7.3.3 / §7.3.7).
+  // through to the relative-path branch.
   if (isUncPath(displayPath)) {
     return PathConvertError::UncUnsupported;
   }

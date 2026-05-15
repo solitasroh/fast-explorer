@@ -632,7 +632,7 @@ void MainWindow::handleColumnClick(NMHDR* hdr) {
   }
   // requestSort guards against the enumeration worker still writing
   // entries_; the GETDISPINFO read path against in-flight appends is
-  // tracked separately and addressed by the sort-worker milestone.
+  // tracked separately.
   const auto dispatch = pane_->requestSort(key);
   if (dispatch == fast_explorer::ui::SortDispatch::Rejected) {
     return;

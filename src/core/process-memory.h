@@ -8,11 +8,11 @@
 
 namespace fast_explorer::core {
 
-// ProcessMemoryService applies the OS-level working-set hints described in
-// Design §5.3.4 and watches the system low-memory notification so the app
-// can drop bounded caches when Windows is under pressure.
+// ProcessMemoryService applies OS-level working-set hints and watches
+// the system low-memory notification so the app can drop bounded caches
+// when Windows is under pressure.
 //
-// MVP scope:
+// Behavior:
 //  - SetProcessWorkingSetSizeEx hint at startup (min 8 MB, max 128 MB, both
 //    HARDWS_*_DISABLE so they are advisory).
 //  - notifyMinimized() / notifyRestored() so the main window can hook

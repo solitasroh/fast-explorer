@@ -34,9 +34,6 @@ class PaneController {
   // Item count at and above which requestSort runs on a background
   // worker thread; smaller stores sort synchronously on the UI thread
   // because the worker hand-off overhead would dominate the sort.
-  // The 2,000-row choice tracks the design §14.5 calibration: below
-  // it std::sort on the visible permutation finishes well inside the
-  // 50 ms UI budget without the jthread spin-up cost.
   static constexpr std::uint32_t kDefaultSortThresholdRows = 2000;
 
   explicit PaneController(HWND hostWindow,

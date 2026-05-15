@@ -21,7 +21,7 @@ bool ensureDirectoryRecursive(const wchar_t* path) noexcept;
 // (callers may want to defer creation until they need to write).
 bool resolveAppDataSubdir(const wchar_t* sub, std::wstring& out);
 
-// Conversion between display and internal path forms (Design §7.3.1).
+// Conversion between display and internal path forms.
 //
 // Internal form is always prefixed with \\?\ so the OS skips path
 // normalization, which lets us address > MAX_PATH paths reliably.
@@ -31,7 +31,7 @@ enum class PathConvertError {
   None = 0,
   Empty,                // input was nullptr / empty
   RelativeUnsupported,  // no drive letter, no \\?\ prefix
-  UncUnsupported,       // UNC paths are out of MVP scope (§7.3.3)
+  UncUnsupported,       // UNC paths are not handled
   InvalidSyntax,        // contains characters that cannot appear in a path
 };
 

@@ -6,11 +6,11 @@
 
 namespace fast_explorer::core {
 
-// FileEntry — 40 B per-row record used by FileModelStore (Design §5.1).
+// FileEntry — 40 B per-row record used by FileModelStore.
 //
 // The layout is hand-tuned so 100k entries fit the per-pane budget of 4 MB
 // structural + ~4.8 MB name arena. Do NOT change field order or sizes
-// without updating Design §5.1 and the memory layout summary §5.2.2.
+// without re-checking the per-pane memory budget.
 //
 // modifiedTime100ns intentionally uses uint64_t rather than FILETIME so this
 // public header does not pull <windows.h> (and its macro pollution) into
@@ -32,8 +32,8 @@ constexpr uint8_t kIsCloudPlaceholder = 1u << 4;
 namespace file_entry_state {
 
 // The `states` byte packs two nibbles: low 4 bits = icon state enum,
-// high 4 bits = metadata state enum (Design §5.1, §9.2 plans). Future
-// enums must fit in 4 bits each (max 16 distinct states per nibble).
+// high 4 bits = metadata state enum. Each enum value must fit in
+// 4 bits (max 16 distinct states per nibble).
 constexpr uint8_t kIconMask     = 0x0F;
 constexpr uint8_t kMetadataMask = 0xF0;
 constexpr uint8_t kMetadataShift = 4;
