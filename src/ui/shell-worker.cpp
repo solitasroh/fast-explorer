@@ -1,10 +1,68 @@
 #include "ui/shell-worker.h"
 
 #include <objbase.h>
+#include <shellapi.h>
+#include <shlobj.h>
+#include <shobjidl_core.h>
 
 #include <utility>
 
 namespace fast_explorer::ui {
+
+namespace {
+
+// Releases a COM interface pointer and clears it.
+template <class T>
+void safeRelease(T*& p) noexcept {
+  if (p != nullptr) {
+    p->Release();
+    p = nullptr;
+  }
+}
+
+// Runs the recycle-bin delete sequence on the worker's STA thread.
+// Returns true if PerformOperations succeeded; otherwise the file
+// system is unchanged. The watcher path (kWmFeFsChange + coalesce
+// refresh) will pick up the result automatically — no extra
+// channel is needed back to the UI for the success case.
+bool performShellDelete(const std::wstring& sourcePath) noexcept {
+  IFileOperation* op = nullptr;
+  HRESULT hr = CoCreateInstance(CLSID_FileOperation, nullptr,
+                                CLSCTX_INPROC_SERVER,
+                                IID_PPV_ARGS(&op));
+  if (FAILED(hr) || op == nullptr) {
+    return false;
+  }
+  // FOF_ALLOWUNDO + FOFX_RECYCLEONDELETE routes the delete through
+  // the recycle bin. FOF_NOCONFIRMATION / FOF_NOERRORUI keep the
+  // shell from popping its own dialogs — we report failure through
+  // the return value instead.
+  hr = op->SetOperationFlags(FOF_ALLOWUNDO | FOFX_RECYCLEONDELETE |
+                             FOF_NOCONFIRMATION | FOF_NOERRORUI |
+                             FOF_SILENT);
+  if (FAILED(hr)) {
+    safeRelease(op);
+    return false;
+  }
+  IShellItem* item = nullptr;
+  hr = SHCreateItemFromParsingName(sourcePath.c_str(), nullptr,
+                                   IID_PPV_ARGS(&item));
+  if (FAILED(hr) || item == nullptr) {
+    safeRelease(op);
+    return false;
+  }
+  hr = op->DeleteItem(item, nullptr);
+  safeRelease(item);
+  if (FAILED(hr)) {
+    safeRelease(op);
+    return false;
+  }
+  hr = op->PerformOperations();
+  safeRelease(op);
+  return SUCCEEDED(hr);
+}
+
+}  // namespace
 
 ShellWorker::ShellWorker(HWND host)
     : host_(host),
@@ -54,11 +112,15 @@ std::optional<ShellCommand> ShellWorker::dequeueOne(std::stop_token tok) {
 }
 
 void ShellWorker::processOne(const ShellCommand& command) {
-  // Dummy processing pass: the actual IFileOperation call arrives
-  // in the follow-up sub-step. The release-store on processed_
-  // anchors the happens-before for any result data the next
-  // sub-step publishes from inside processOne.
-  (void)command;
+  switch (command.kind) {
+    case ShellCommandKind::Delete:
+      (void)performShellDelete(command.sourcePath);
+      break;
+    case ShellCommandKind::Rename:
+    case ShellCommandKind::CreateFolder:
+      // Wired in the follow-up sub-step.
+      break;
+  }
   processed_.fetch_add(1, std::memory_order_release);
   processed_.notify_all();
 }
