@@ -290,7 +290,31 @@ LRESULT CALLBACK MainWindow::wndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM 
   }
 
   if (self) {
-    return self->handleMessage(hwnd, msg, wParam, lParam);
+    // Win32 documents that a C++ exception crossing wndProc back into
+    // the OS is undefined behavior, and the inner handlers do call
+    // throwing operations (std::make_unique, std::wstring formatting,
+    // std::vector growth, unordered_set::insert). Cap the boundary
+    // here: any C++ exception that escapes the handler chain is
+    // swallowed and we fall back to DefWindowProcW so the OS still
+    // gets a well-defined return value. Inner try/catches in
+    // handleItemChanged and reapplySelectionFromPane stay in place
+    // because they restore a finer-grained invariant before letting
+    // control continue. SEH (access violation, stack overflow, etc.)
+    // is intentionally NOT caught here — under /EHsc catch(...) does
+    // not see SEH, and swallowing a hardware fault on top of corrupt
+    // state would mask far worse bugs.
+    try {
+      return self->handleMessage(hwnd, msg, wParam, lParam);
+    } catch (...) {
+      // WM_CREATE returning anything other than -1 tells the system
+      // the window was constructed successfully, so a throw here
+      // would otherwise leave a half-built MainWindow alive on the
+      // message loop. Force CreateWindowExW to fail instead.
+      if (msg == WM_CREATE) {
+        return -1;
+      }
+      return DefWindowProcW(hwnd, msg, wParam, lParam);
+    }
   }
   return DefWindowProcW(hwnd, msg, wParam, lParam);
 }
