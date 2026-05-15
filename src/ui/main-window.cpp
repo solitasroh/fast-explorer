@@ -480,11 +480,15 @@ void MainWindow::handleGetDispInfo(NMHDR* hdr) {
   }
   const auto& store = pane_->store();
   const size_t row = static_cast<size_t>(disp->item.iItem);
-  if (row >= store.itemCount()) {
+  // publishedCount() acquire-loads the worker's release-store after the
+  // matching batch of push_backs, so rows below it are guaranteed to
+  // observe fully-initialized FileEntry records. itemCount() is unsafe
+  // here because vector::size() may be mid-modification on the worker.
+  if (row >= store.publishedCount()) {
     return;
   }
   // iItem is the visible row index from the list-view; map through
-  // visibleOrder so future sort() reorderings flow into LVN_GETDISPINFO
+  // visibleOrder so sort() reorderings flow into LVN_GETDISPINFO
   // without further plumbing. Identity until the first sort.
   const auto& entry = store.visibleAt(row);
   switch (disp->item.iSubItem) {

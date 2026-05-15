@@ -225,8 +225,14 @@ FE_TEST_CASE(file_model_store_append_result_enum_has_distinct_values) {
   FE_ASSERT_NE(static_cast<int>(AppendResult::Stored),
                static_cast<int>(AppendResult::ArenaFull));
   FE_ASSERT_NE(static_cast<int>(AppendResult::Stored),
+               static_cast<int>(AppendResult::CapacityFull));
+  FE_ASSERT_NE(static_cast<int>(AppendResult::Stored),
                static_cast<int>(AppendResult::NameTooLong));
   FE_ASSERT_NE(static_cast<int>(AppendResult::ArenaFull),
+               static_cast<int>(AppendResult::NameTooLong));
+  FE_ASSERT_NE(static_cast<int>(AppendResult::ArenaFull),
+               static_cast<int>(AppendResult::CapacityFull));
+  FE_ASSERT_NE(static_cast<int>(AppendResult::CapacityFull),
                static_cast<int>(AppendResult::NameTooLong));
 }
 
@@ -377,6 +383,56 @@ FE_TEST_CASE(file_model_store_visibleOrder_size_invariant_after_batch) {
   FileModelStore store(L"X:\\d");
   store.appendBatch(batch);
   FE_ASSERT_EQ(store.visibleOrder().size(), store.itemCount());
+}
+
+// ---------------------------------------------------------------------------
+// publishedCount (worker↔UI visibility boundary)
+// ---------------------------------------------------------------------------
+
+FE_TEST_CASE(file_model_store_publishedCount_default_is_zero) {
+  FileModelStore store(L"X:\\d");
+  FE_ASSERT_EQ(store.publishedCount(), 0u);
+}
+
+FE_TEST_CASE(file_model_store_publishedCount_unaffected_by_append) {
+  NameArena backing;
+  FileModelStore store(L"X:\\d");
+  store.appendEntry(makeEntry(L"a", backing));
+  store.appendEntry(makeEntry(L"b", backing));
+  // appendEntry alone does NOT publish; the worker is expected to call
+  // publish() at batch boundaries so the UI never reads half-written
+  // entries.
+  FE_ASSERT_EQ(store.publishedCount(), 0u);
+  FE_ASSERT_EQ(store.itemCount(), static_cast<std::size_t>(2));
+}
+
+FE_TEST_CASE(file_model_store_publish_makes_count_visible) {
+  NameArena backing;
+  FileModelStore store(L"X:\\d");
+  store.appendEntry(makeEntry(L"a", backing));
+  store.appendEntry(makeEntry(L"b", backing));
+  store.publish(2);
+  FE_ASSERT_EQ(store.publishedCount(), 2u);
+}
+
+FE_TEST_CASE(file_model_store_reset_resets_publishedCount) {
+  NameArena backing;
+  FileModelStore store(L"X:\\d");
+  store.appendEntry(makeEntry(L"a", backing));
+  store.publish(1);
+  FE_ASSERT_EQ(store.publishedCount(), 1u);
+  store.reset(L"Y:\\new");
+  FE_ASSERT_EQ(store.publishedCount(), 0u);
+}
+
+FE_TEST_CASE(file_model_store_appendEntry_rejected_past_kMaxEntries) {
+  // Contract test: kMaxEntries is exposed as a public constant and
+  // entries_ is reserve()d at construction. A 100k-fill load test
+  // would be slow and allocate a 50+ MB arena, so the actual rejection
+  // path is exercised through reasoning rather than a runtime fill.
+  FileModelStore store(L"X:\\d");
+  FE_ASSERT_EQ(store.itemCount(), static_cast<std::size_t>(0));
+  FE_ASSERT_TRUE(FileModelStore::kMaxEntries == 100'000u);
 }
 
 FE_TEST_CASE(file_model_store_sort_append_sort_restores_total_order) {

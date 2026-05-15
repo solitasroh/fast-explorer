@@ -168,13 +168,22 @@ bool PaneController::navigateInternal(const std::wstring& path) {
     DirectoryEnumerator enumerator;
     auto onBatch = [this, host, gen](std::size_t /*start*/,
                                      std::size_t /*count*/) {
+      // publish() before PostMessage so the UI thread that processes
+      // kWmFeEnumBatch observes the matching entries on its acquire-
+      // load of publishedCount().
+      const auto count = static_cast<std::uint32_t>(store_.itemCount());
+      store_.publish(count);
       if (host) {
         PostMessageW(host, kWmFeEnumBatch, static_cast<WPARAM>(gen),
-                     static_cast<LPARAM>(store_.itemCount()));
+                     static_cast<LPARAM>(count));
       }
     };
     const EnumerationError err =
         enumerator.run(backend_, localPath, tok, store_, onBatch);
+    // Final publish() covers the case where the last batch was flushed
+    // but onBatch was already invoked from inside enumerator.run; this
+    // is a no-op if publishedCount already matches.
+    store_.publish(static_cast<std::uint32_t>(store_.itemCount()));
     if (host) {
       const UINT msg = (err == EnumerationError::None ||
                         err == EnumerationError::Canceled)

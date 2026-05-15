@@ -1,5 +1,6 @@
 #pragma once
 
+#include <atomic>
 #include <cstddef>
 #include <cstdint>
 #include <span>
@@ -17,7 +18,8 @@ class RingLogger;
 
 enum class AppendResult : uint8_t {
   Stored = 0,
-  ArenaFull,
+  ArenaFull,      // NameArena commit budget exhausted
+  CapacityFull,   // entries_ has reached kMaxEntries
   NameTooLong,
 };
 
@@ -25,11 +27,24 @@ enum class AppendResult : uint8_t {
 // FileEntry::namePtr pointers it returns stay valid for the store's
 // lifetime, independent of the backend that produced them.
 //
-// Thread-safety: NOT thread-safe. A single worker thread mutates the
-// store; the UI thread reads from it only after the worker publishes
-// a batch through the higher-level message boundary.
+// Thread-safety: the worker thread appends and calls publish(); the
+// UI thread reads only entries below publishedCount() and never calls
+// any mutating method while workerActive. entries_ and visibleOrder_
+// are reserve()d up to kMaxEntries at construction so push_back never
+// reallocates — that keeps entries_[i] / visibleOrder_[i] pointers
+// stable for the UI thread as long as i < publishedCount().
+//
+// publishedCount() ordering: the worker store-releases after the
+// matching push_backs are visible; the UI acquire-loads before
+// dereferencing entries_/visibleOrder_, so reads in [0, published)
+// observe fully-initialized FileEntry records.
 class FileModelStore {
  public:
+  // Cap on entries per pane; chosen to match the design memory budget
+  // (§5.1) and pre-reserved at construction so neither entries_ nor
+  // visibleOrder_ ever reallocates and invalidates UI-thread reads.
+  static constexpr std::uint32_t kMaxEntries = 100'000;
+
   explicit FileModelStore(
       std::wstring rootPath,
       std::size_t arenaReserveBytes = NameArena::kDefaultReserveBytes);
@@ -54,7 +69,26 @@ class FileModelStore {
 
   std::uint32_t generation() const noexcept { return generation_; }
   const std::wstring& rootPath() const noexcept { return rootPath_; }
+  // itemCount() returns the raw entries_.size(). While a worker thread
+  // is appending, this read is non-atomic and races the worker's
+  // size mutation — call publishedCount() from the UI thread instead.
+  // Safe to call from the worker itself, or from any thread once the
+  // worker has joined.
   std::size_t itemCount() const noexcept { return entries_.size(); }
+
+  // Visibility boundary between worker (writer) and UI (reader). The
+  // worker calls publish(n) after a batch of appends is fully written
+  // and the UI calls publishedCount() before any entry read; only
+  // indices in [0, publishedCount()) are safe to dereference from the
+  // UI thread while the worker is still active. publish() is intended
+  // to be called from the worker only — UI-side calls would race the
+  // worker's append stream without any added synchronization.
+  void publish(std::uint32_t count) noexcept {
+    publishedCount_.store(count, std::memory_order_release);
+  }
+  std::uint32_t publishedCount() const noexcept {
+    return publishedCount_.load(std::memory_order_acquire);
+  }
 
   // entryAt's reference is invalidated by any subsequent append; only
   // FileEntry::namePtr remains valid because it points into the arena.
@@ -69,7 +103,11 @@ class FileModelStore {
   // always pushed onto the tail of visibleOrder, so insertion order
   // is preserved until the next sort.
   // Precondition: visibleIndex < itemCount(). Violations are UB in release.
+  // From the UI thread, guard the index against publishedCount() rather
+  // than itemCount() so the worker's append stream stays race-free.
   const FileEntry& visibleAt(std::size_t visibleIndex) const;
+  // The span's data()/size() are non-atomic; callers concurrent with
+  // a running worker must bound their iteration by publishedCount().
   std::span<const std::uint32_t> visibleOrder() const noexcept {
     return {visibleOrder_.data(), visibleOrder_.size()};
   }
@@ -98,6 +136,7 @@ class FileModelStore {
   NameArena nameArena_;
   std::vector<FileEntry> entries_;
   std::vector<std::uint32_t> visibleOrder_;
+  std::atomic<std::uint32_t> publishedCount_{0};
 };
 
 }  // namespace fast_explorer::core

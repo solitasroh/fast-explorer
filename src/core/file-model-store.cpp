@@ -9,7 +9,10 @@ namespace fast_explorer::core {
 FileModelStore::FileModelStore(std::wstring rootPath,
                                std::size_t arenaReserveBytes)
     : rootPath_(std::move(rootPath)),
-      nameArena_(arenaReserveBytes) {}
+      nameArena_(arenaReserveBytes) {
+  entries_.reserve(kMaxEntries);
+  visibleOrder_.reserve(kMaxEntries);
+}
 
 void FileModelStore::setLogger(RingLogger* logger) noexcept {
   nameArena_.setLogger(logger);
@@ -20,15 +23,19 @@ void FileModelStore::reset(std::wstring newRoot) {
   entries_.clear();
   visibleOrder_.clear();
   nameArena_.reset();
+  publishedCount_.store(0, std::memory_order_release);
   ++generation_;
 }
 
 AppendResult FileModelStore::appendEntry(const FileEntry& source) {
-  // visibleOrder_ stores raw indices as uint32_t (selected to match the
-  // 100k entries upper bound from the design memory budget). Guard the
-  // narrowing cast so a hypothetical >UINT32_MAX append is observable
-  // rather than silently wrapping.
-  assert(entries_.size() < UINT32_MAX);
+  // entries_ and visibleOrder_ are reserve()d up to kMaxEntries so
+  // push_back never reallocates, which is what gives UI-thread readers
+  // pointer stability on entries_[i] / visibleOrder_[i]. Crossing the
+  // reserve would silently reallocate and break that invariant, so we
+  // refuse the append rather than corrupt the read path.
+  if (entries_.size() >= kMaxEntries) {
+    return AppendResult::CapacityFull;
+  }
   const std::wstring_view inputName = nameView(source);
   if (inputName.size() > UINT16_MAX) {
     return AppendResult::NameTooLong;
