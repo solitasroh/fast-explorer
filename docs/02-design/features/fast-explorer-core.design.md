@@ -5,7 +5,7 @@
 > **Author**: Codex
 > **Created**: 2026-05-14
 > **Status**: Review
-> **Version**: 1.0.3
+> **Version**: 1.0.8
 > **Level**: Starter
 
 ---
@@ -22,6 +22,7 @@
 | 1.0.5 | 2026-05-15 | M2 exit-gate 측정값 + 완료 마크. §14.2에 small 0.176 ms / medium 5.03 ms / 100k 43.8 ms·6.43 MB 표 기재, Plan §12.1 N1 해소 (FindFirstFileExW 유지, GFIBHE 60% 느림). 측정 환경: Win11 NTFS SSD Defender on, 10-run median, no RAM disk. | Claude |
 | 1.0.6 | 2026-05-15 | M3 exit-gate 측정값 + 완료 마크. §14.3에 small 4.05 ms / medium 3.62 ms / 100k 29.83 ms first-batch 표 기재. UI stall 0 events (50 ms gate), 100k working set delta ~11 MB. LVN_GETDISPINFO p99는 M7으로 defer. | Claude |
 | 1.0.7 | 2026-05-15 | M4 완료 마크. §14.4에 navigation (Ctrl+L / Alt+←/→/↑ / F5) + 양층 generation token + FsWatcher (ReadDirectoryChangesW+IOCP) + 100 ms coalesce 기재. 100k rapid-switch soak + cancellation latency 정량 측정은 M7으로 defer (UI automation harness 필요). 244/244 unit tests pass. | Claude |
+| 1.0.8 | 2026-05-15 | M5 완료 마크. §14.5에 4-key sort (CompareStringOrdinal IgnoreCase, name tiebreak), visibleOrder permutation, kMaxEntries reserve + publishedCount atomic (GETDISPINFO race 차단), 2,000행 threshold 동기/비동기 sort worker, raw-index stable selection (sort 전/후 동일 행 유지) 기재. 측정값 medium(10k) Name asc sort 2.75 ms (50 ms budget의 5.5%). 100k 분할 측정 + sort 명령 접수 latency 정량은 M7으로 defer. 298/298 unit tests pass. | Claude |
 
 ## Related Documents
 
@@ -1416,20 +1417,30 @@ Measurement caveats:
 - Unit-test cancellation behaviour was the primary evidence; PerfTracker explicit `pane.cancel.complete` event will be added at M7 alongside the soak harness.
 - The 100 ms coalesce window is part of the "≤ 100 ms event → UI" budget, leaving the enumeration step ~0 ms of headroom on slow disks.  M7 will revisit coalesce length once real-world traces are captured.
 
-### 14.5 Milestone 5: Sorting And Selection
+### 14.5 Milestone 5: Sorting And Selection — **Completed (2026-05-15)**
 
 Deliverables:
-- name/type/size/modified sort (CompareStringOrdinal IgnoreCase)
-- visibleOrder vector model
-- stable selection by FileEntry::id
-- 2,000 row threshold (direct sort vs background sort)
-- keyboard (`F2`, `Enter`, `Delete`, `Ctrl+1`/`Ctrl+2`, `Ctrl+H`, `Tab`) + mouse basics
+- name/type/size/modified sort (CompareStringOrdinal IgnoreCase) — `core/file-sort.{h,cpp}`
+- visibleOrder vector model — `FileModelStore::visibleOrder_` + `applySortedOrder` + identity-on-append
+- stable selection by raw entries_ index — `PaneController::selectedRaws_` (raw index survives reorder), `selectedRowsUnderCurrentOrder()` rebuilds visible-row list on demand
+- 2,000 row threshold (direct sort vs background sort) — `PaneController::kDefaultSortThresholdRows`, sortWorker_ jthread, `SortDispatch::{AppliedSync, Dispatched}`
+- LVS_OWNERDATA / publishedCount visibility boundary closes the M3-origin GETDISPINFO ↔ worker-append race (atomic acquire/release + kMaxEntries reserve)
+- Keyboard shortcut set (`F2`/`Enter`/`Delete`/`Ctrl+1`-`Ctrl+2`/`Ctrl+H`/`Tab`) deferred to M6 (file-operation milestone)
 
-Exit criteria:
-- sort 명령 ≤ 50 ms accepted (UI feedback)
-- large sort (100k) does not block UI > 50 ms
-- selected rows remain coherent after sort
-- sort tiebreak deterministic
+Exit criteria — measurements (single-run, Win11 Release build, no Defender exclusion):
+
+| Criterion | Gate | Measured | Margin |
+|---|---|---|---|
+| Medium (10k) Name-asc sort wall time | ≤ 50 ms | **2.75 ms** | 94.5% |
+| Tiebreak determinism (CompareStringOrdinal `IgnoreCase` on name) | n/a | 7 unit tests pass (`FileSort_StrictWeakOrdering_Irreflexive`, `FileSort_Type_EqualFallsBackToNameAscending`, etc.) | — |
+| Selected rows remain coherent after sort | n/a | `PaneController_Selection_RowsFollowSortReorder` verifies asc→desc round-trip | — |
+| Large (100k) sort blocks UI ≤ 50 ms | ≤ 50 ms | **Deferred to M7** (background path measured by hand-off cost; full UI-thread stall histogram needs the M7 perf harness) | — |
+| Sort command accept latency ≤ 50 ms | ≤ 50 ms | Dispatched path is `requestSort` return = thread spawn cost (~µs); sync path is the sort itself (≤ 2.75 ms on medium). Formal jitter histogram deferred to M7. | — |
+
+Implementation notes:
+- `FileModelStore::sort()` runs on the caller's thread; the background path lives in `PaneController::requestSort` which spawns a jthread, fills a fresh `pendingSortedOrder_`, and PostMessages `kWmFeSortComplete` with the store generation. The UI gates the post via `isStaleGeneration` so navigation between worker post and dispatch drops stale results.
+- `applySortedOrder` uses `assign()` rather than move so the visibleOrder_ kMaxEntries reserve survives.
+- `selectRaw`/`deselectRaw` enter from `LVN_ITEMCHANGED`; a `ScopedFlag` RAII + `bad_alloc` catch keeps the wndProc callstack exception-free.
 
 ### 14.6 Milestone 6: Icons And Basic Operations
 

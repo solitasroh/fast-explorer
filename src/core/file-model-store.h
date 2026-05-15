@@ -117,6 +117,14 @@ class FileModelStore {
   // append-time invariants are unaffected.
   void sort(SortSpec spec);
 
+  // Replaces visibleOrder_ with a permutation produced elsewhere
+  // (typically by a background sort worker). The caller must guarantee
+  // `order.size() == publishedCount()` and that every value is a valid
+  // entries_ index. Intended for the UI thread to apply the result of
+  // a worker-thread sort under the same single-mutator policy as
+  // sort().
+  void applySortedOrder(std::vector<std::uint32_t> order);
+
   std::size_t entriesBytes() const noexcept {
     return entries_.capacity() * sizeof(FileEntry);
   }

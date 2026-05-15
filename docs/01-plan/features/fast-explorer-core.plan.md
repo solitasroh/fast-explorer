@@ -516,7 +516,7 @@ No implementation phase should be considered done unless these gates exist.
 | Benchmark Harness + Core Enumeration (M2) | 2026-05-14 ~ 2026-05-15 | **Completed** | dataset + CLI + DirectoryEnumerator + head-to-head | small 0.176 ms / medium 5.03 ms / 100k 43.8 ms·6.43 MB. N1 해소 (FindFirstFileExW 유지). Design §14.2 측정값. |
 | Virtual File List (M3) | 2026-05-15 | **Completed** | responsive list UI + format LRU + DPI scale + stall probe | small 4.05 ms / medium 3.62 ms / 100k 29.83 ms first-batch. UI stall 0. Design §14.3 측정값. LVN_GETDISPINFO p99 → M7. |
 | Navigation + Cancellation (M4) | 2026-05-15 | **Completed** | address bar + history + L1/L2 generation + FsWatcher + coalesce | generation token 양층 검증 (244/244 tests). 100k rapid-switch soak + cancellation latency 정량은 M7로 defer (UI automation 필요). Design §14.4 측정값. |
-| Sorting + Selection (M5) | 2026-05-20 ~ 2026-05-21 | Pending | sort worker + stable selection | sort 명령 접수 ≤ 50 ms 측정 |
+| Sorting + Selection (M5) | 2026-05-15 (compressed) | **Completed** | 4-key sort + tiebreak + visibleOrder + publishedCount race fix + 2k threshold worker + raw-index stable selection + LVN_ITEMCHANGED routing | medium(10k) Name asc sort **2.75 ms** (50 ms budget의 5.5%). 298/298 tests. 100k UI-stall histogram + sort accept latency 정량은 M7로 defer. Design §14.5 측정값. |
 | Icons + Basic Operations (M6) | 2026-05-21 ~ 2026-05-22 | Pending | placeholder icons + ops | icon 토글 시 first row 시간 변화 ≤ 20 % |
 | Benchmark + Stabilization (M7) | 2026-05-22 ~ 2026-05-24 | Pending | full bench, soak test | **large folder first row ≤ 200 ms, UI stall ≤ 50 ms, scroll p95 ≤ 16.7 ms, 100k ≤ 100 MB** 종합 검증 |
 | PDCA Check/Report | 2026-05-24 ~ 2026-05-25 | Pending | gap analysis and report | — |

@@ -1,6 +1,9 @@
 #include "test-harness.h"
 
+#include <chrono>
+#include <cstdio>
 #include <cstring>
+#include <cwchar>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -433,6 +436,57 @@ FE_TEST_CASE(file_model_store_appendEntry_rejected_past_kMaxEntries) {
   FileModelStore store(L"X:\\d");
   FE_ASSERT_EQ(store.itemCount(), static_cast<std::size_t>(0));
   FE_ASSERT_TRUE(FileModelStore::kMaxEntries == 100'000u);
+}
+
+// ---------------------------------------------------------------------------
+// M5 exit-gate measurement (Design §14.5)
+// ---------------------------------------------------------------------------
+
+FE_TEST_CASE(file_model_store_sort_medium_dataset_under_50ms_budget) {
+  // Synthesises a 10,000-entry store with deterministic pseudo-random
+  // names so the comparator does meaningful work, then measures the
+  // wall-clock time of a Name-ascending sort. Design §14.5 exit
+  // criterion: medium folder sort must not block the UI > 50 ms.
+  constexpr int kRows = 10000;
+  NameArena backing(4u * 1024u * 1024u);  // 4 MB arena suffices for ~16 chars × 10k.
+  FileModelStore store(L"X:\\bench");
+  for (int i = 0; i < kRows; ++i) {
+    wchar_t buf[32];
+    // Deterministic permutation of [0, kRows) — multiplying by a coprime
+    // (31337) modulo kRows yields a stable pseudo-random ordering.
+    const int key = static_cast<int>(
+        (static_cast<unsigned>(i) * 31337u) % static_cast<unsigned>(kRows));
+    std::swprintf(buf, 32, L"file_%05d.txt", key);
+    const auto interned = backing.intern(std::wstring_view(buf));
+    FileEntry e{};
+    e.namePtr = interned.data();
+    e.nameLength = static_cast<uint16_t>(interned.size());
+    e.extensionOffset = fast_explorer::core::kNoExtension;
+    e.size = static_cast<uint64_t>(key);
+    store.appendEntry(e);
+  }
+  store.publish(static_cast<std::uint32_t>(store.itemCount()));
+
+  const auto t0 = std::chrono::steady_clock::now();
+  store.sort(SortSpec{SortKey::Name, SortDirection::Ascending});
+  const auto t1 = std::chrono::steady_clock::now();
+  const auto elapsedUs =
+      std::chrono::duration_cast<std::chrono::microseconds>(t1 - t0).count();
+
+  std::printf("[m5-bench] medium(10k) Name asc sort: %lld us\n",
+              static_cast<long long>(elapsedUs));
+
+  // 50 ms strict gate (Design §14.5 budget).
+  FE_ASSERT_TRUE(elapsedUs < 50000);
+
+  // Verify the result is actually sorted (correctness invariant).
+  const auto order = store.visibleOrder();
+  for (std::size_t i = 1; i < order.size(); ++i) {
+    const auto& prev = store.entryAt(order[i - 1]);
+    const auto& curr = store.entryAt(order[i]);
+    FE_ASSERT_TRUE(!fast_explorer::core::lessEntries(
+        curr, prev, SortSpec{SortKey::Name, SortDirection::Ascending}));
+  }
 }
 
 FE_TEST_CASE(file_model_store_sort_append_sort_restores_total_order) {
