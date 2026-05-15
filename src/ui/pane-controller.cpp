@@ -120,6 +120,28 @@ bool PaneController::refresh() {
   return navigateInternal(currentPath_);
 }
 
+bool PaneController::requestSort(fast_explorer::core::SortKey key) {
+  using fast_explorer::core::SortDirection;
+  if (workerActive_.load(std::memory_order_acquire)) {
+    return false;
+  }
+  if (store_.itemCount() == 0) {
+    return false;
+  }
+  if (sorted_ && sortSpec_.key == key) {
+    sortSpec_.direction =
+        (sortSpec_.direction == SortDirection::Ascending)
+            ? SortDirection::Descending
+            : SortDirection::Ascending;
+  } else {
+    sortSpec_.key = key;
+    sortSpec_.direction = SortDirection::Ascending;
+  }
+  store_.sort(sortSpec_);
+  sorted_ = true;
+  return true;
+}
+
 bool PaneController::navigateInternal(const std::wstring& path) {
   using fast_explorer::core::DirectoryEnumerator;
   using fast_explorer::core::EnumerationError;
@@ -132,10 +154,15 @@ bool PaneController::navigateInternal(const std::wstring& path) {
 
   currentPath_ = path;
   store_.reset(path);
+  sorted_ = false;
   const uint32_t gen = store_.generation();
   const HWND host = hostWindow_;
   std::wstring localPath = path;
 
+  // Order matters: workerActive_ must be true before the thread starts
+  // appending, and the thread must clear it on exit (success, error,
+  // or cancellation) so requestSort() can re-arm.
+  workerActive_.store(true, std::memory_order_release);
   worker_ = std::jthread([this, host, gen,
                           localPath = std::move(localPath)](std::stop_token tok) {
     DirectoryEnumerator enumerator;
@@ -156,6 +183,11 @@ bool PaneController::navigateInternal(const std::wstring& path) {
       PostMessageW(host, msg, static_cast<WPARAM>(gen),
                    static_cast<LPARAM>(static_cast<int>(err)));
     }
+    // Release-store after PostMessageW so any future worker-side
+    // bookkeeping added between enumerator.run and the completion post
+    // remains protected by the same release boundary requestSort()
+    // acquires from.
+    workerActive_.store(false, std::memory_order_release);
   });
 
   if (host != nullptr) {

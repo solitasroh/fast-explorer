@@ -1,11 +1,14 @@
 #include "bench-fs-helper.h"
 #include "bench/dataset-generator.h"
+#include "core/file-sort.h"
 #include "test-harness.h"
 #include "ui/pane-controller.h"
 
 using fast_explorer::bench::generateDataset;
 using fast_explorer::bench::GenerateError;
 using fast_explorer::bench::PresetKind;
+using fast_explorer::core::SortDirection;
+using fast_explorer::core::SortKey;
 using fast_explorer::tests::TempDir;
 using fast_explorer::ui::PaneController;
 
@@ -173,4 +176,113 @@ FE_TEST_CASE(PaneController_OpenFolder_Twice_CancelsAndReopens) {
   pane.joinForTest();
   FE_ASSERT_WSTREQ(pane.currentPath(), b.path());
   FE_ASSERT_TRUE(pane.generation() >= 2u);
+}
+
+// ---------------------------------------------------------------------------
+// requestSort
+// ---------------------------------------------------------------------------
+
+FE_TEST_CASE(PaneController_Default_HasNoSortApplied) {
+  PaneController pc(nullptr);
+  FE_ASSERT_FALSE(pc.hasSortApplied());
+}
+
+FE_TEST_CASE(PaneController_RequestSort_EmptyStore_ReturnsFalse) {
+  PaneController pc(nullptr);
+  FE_ASSERT_FALSE(pc.requestSort(SortKey::Name));
+  FE_ASSERT_FALSE(pc.hasSortApplied());
+}
+
+FE_TEST_CASE(PaneController_RequestSort_AppliesNameAscending) {
+  TempDir tmp(L"pane-sort-name");
+  FE_ASSERT_EQ(generateDataset(PresetKind::Small, tmp.path(), 1).error,
+               GenerateError::None);
+  PaneController pane(nullptr);
+  FE_ASSERT_TRUE(pane.openFolder(tmp.path()));
+  pane.joinForTest();
+  FE_ASSERT_TRUE(pane.requestSort(SortKey::Name));
+  FE_ASSERT_TRUE(pane.hasSortApplied());
+  FE_ASSERT_EQ(static_cast<int>(pane.currentSortSpec().key),
+               static_cast<int>(SortKey::Name));
+  FE_ASSERT_EQ(static_cast<int>(pane.currentSortSpec().direction),
+               static_cast<int>(SortDirection::Ascending));
+}
+
+FE_TEST_CASE(PaneController_RequestSort_SameKeyTogglesDirection) {
+  TempDir tmp(L"pane-sort-toggle");
+  FE_ASSERT_EQ(generateDataset(PresetKind::Small, tmp.path(), 1).error,
+               GenerateError::None);
+  PaneController pane(nullptr);
+  FE_ASSERT_TRUE(pane.openFolder(tmp.path()));
+  pane.joinForTest();
+  FE_ASSERT_TRUE(pane.requestSort(SortKey::Name));
+  FE_ASSERT_EQ(static_cast<int>(pane.currentSortSpec().direction),
+               static_cast<int>(SortDirection::Ascending));
+  FE_ASSERT_TRUE(pane.requestSort(SortKey::Name));
+  FE_ASSERT_EQ(static_cast<int>(pane.currentSortSpec().direction),
+               static_cast<int>(SortDirection::Descending));
+  FE_ASSERT_TRUE(pane.requestSort(SortKey::Name));
+  FE_ASSERT_EQ(static_cast<int>(pane.currentSortSpec().direction),
+               static_cast<int>(SortDirection::Ascending));
+}
+
+FE_TEST_CASE(PaneController_RequestSort_DifferentKeyResetsToAscending) {
+  TempDir tmp(L"pane-sort-switch");
+  FE_ASSERT_EQ(generateDataset(PresetKind::Small, tmp.path(), 1).error,
+               GenerateError::None);
+  PaneController pane(nullptr);
+  FE_ASSERT_TRUE(pane.openFolder(tmp.path()));
+  pane.joinForTest();
+  pane.requestSort(SortKey::Name);
+  pane.requestSort(SortKey::Name);  // now Descending
+  FE_ASSERT_EQ(static_cast<int>(pane.currentSortSpec().direction),
+               static_cast<int>(SortDirection::Descending));
+  FE_ASSERT_TRUE(pane.requestSort(SortKey::Size));
+  FE_ASSERT_EQ(static_cast<int>(pane.currentSortSpec().key),
+               static_cast<int>(SortKey::Size));
+  FE_ASSERT_EQ(static_cast<int>(pane.currentSortSpec().direction),
+               static_cast<int>(SortDirection::Ascending));
+}
+
+FE_TEST_CASE(PaneController_OpenFolder_ResetsSortApplied) {
+  TempDir tmp(L"pane-sort-reset");
+  FE_ASSERT_EQ(generateDataset(PresetKind::Small, tmp.path(), 1).error,
+               GenerateError::None);
+  PaneController pane(nullptr);
+  FE_ASSERT_TRUE(pane.openFolder(tmp.path()));
+  pane.joinForTest();
+  FE_ASSERT_TRUE(pane.requestSort(SortKey::Name));
+  FE_ASSERT_TRUE(pane.hasSortApplied());
+  FE_ASSERT_TRUE(pane.openFolder(tmp.path()));
+  pane.joinForTest();
+  FE_ASSERT_FALSE(pane.hasSortApplied());
+}
+
+FE_TEST_CASE(PaneController_RequestSort_ActuallyReordersVisible) {
+  TempDir tmp(L"pane-sort-order");
+  FE_ASSERT_EQ(generateDataset(PresetKind::Small, tmp.path(), 1).error,
+               GenerateError::None);
+  PaneController pane(nullptr);
+  FE_ASSERT_TRUE(pane.openFolder(tmp.path()));
+  pane.joinForTest();
+
+  FE_ASSERT_TRUE(pane.requestSort(SortKey::Name));
+  const auto& storeAsc = pane.store();
+  std::wstring firstAsc(storeAsc.visibleAt(0).namePtr,
+                        storeAsc.visibleAt(0).nameLength);
+  std::wstring lastAsc(
+      storeAsc.visibleAt(storeAsc.itemCount() - 1).namePtr,
+      storeAsc.visibleAt(storeAsc.itemCount() - 1).nameLength);
+  FE_ASSERT_TRUE(firstAsc < lastAsc);
+
+  FE_ASSERT_TRUE(pane.requestSort(SortKey::Name));  // toggle to Desc
+  const auto& storeDesc = pane.store();
+  std::wstring firstDesc(storeDesc.visibleAt(0).namePtr,
+                         storeDesc.visibleAt(0).nameLength);
+  std::wstring lastDesc(
+      storeDesc.visibleAt(storeDesc.itemCount() - 1).namePtr,
+      storeDesc.visibleAt(storeDesc.itemCount() - 1).nameLength);
+  FE_ASSERT_TRUE(firstDesc > lastDesc);
+  FE_ASSERT_TRUE(firstAsc == lastDesc);
+  FE_ASSERT_TRUE(lastAsc == firstDesc);
 }

@@ -37,6 +37,7 @@ class MainWindow {
   LRESULT handleListViewNotify(NMHDR* hdr);
   bool isStaleGeneration(WPARAM wParam) const;
   void handleGetDispInfo(NMHDR* hdr);
+  void handleColumnClick(NMHDR* hdr);
   LRESULT handleCustomDraw(NMHDR* hdr);
   void handleAddressCommit();
   static LRESULT CALLBACK addressBarSubclassProc(HWND, UINT, WPARAM, LPARAM,

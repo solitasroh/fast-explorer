@@ -2,12 +2,14 @@
 
 #include <windows.h>
 
+#include <atomic>
 #include <cstdint>
 #include <string>
 #include <thread>
 #include <vector>
 
 #include "core/file-model-store.h"
+#include "core/file-sort.h"
 #include "core/fs-watcher.h"
 #include "core/win32-fs-backend.h"
 
@@ -45,6 +47,20 @@ class PaneController {
   // Used by F5 and the coalesced fs-change refresh.
   bool refresh();
 
+  // Apply a sort by the given key. If `key` matches the current sort
+  // key, the direction is toggled; otherwise the sort restarts in
+  // ascending direction. Returns false when an enumeration worker is
+  // still running (sort would race with the worker's appends) or when
+  // the store is empty; returns true after the underlying sort has
+  // been applied and currentSortSpec() / hasSortApplied() reflect the
+  // new state.
+  bool requestSort(fast_explorer::core::SortKey key);
+
+  fast_explorer::core::SortSpec currentSortSpec() const noexcept {
+    return sortSpec_;
+  }
+  bool hasSortApplied() const noexcept { return sorted_; }
+
   bool canGoBack() const noexcept { return !backStack_.empty(); }
   bool canGoForward() const noexcept { return !forwardStack_.empty(); }
 
@@ -73,6 +89,15 @@ class PaneController {
   fast_explorer::core::FileModelStore store_;
   fast_explorer::core::Win32FsBackend backend_;
   fast_explorer::core::FsWatcher fsWatcher_;
+  // True while the enumeration worker thread is still appending to
+  // store_. requestSort() bails out in that window because sort()
+  // mutates visibleOrder_ on the UI thread while the worker is
+  // mutating entries_ — std::vector offers no synchronization there.
+  std::atomic<bool> workerActive_{false};
+  fast_explorer::core::SortSpec sortSpec_{
+      fast_explorer::core::SortKey::Name,
+      fast_explorer::core::SortDirection::Ascending};
+  bool sorted_ = false;
   std::jthread worker_;
 };
 

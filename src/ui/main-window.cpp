@@ -29,13 +29,14 @@ struct ColumnSpec {
   const wchar_t* title;
   int widthPx;
   int alignment;
+  fast_explorer::core::SortKey sortKey;
 };
 
 constexpr ColumnSpec kColumns[] = {
-    {L"Name", 300, LVCFMT_LEFT},
-    {L"Size", 100, LVCFMT_RIGHT},
-    {L"Type", 100, LVCFMT_LEFT},
-    {L"Modified", 160, LVCFMT_LEFT},
+    {L"Name", 300, LVCFMT_LEFT, fast_explorer::core::SortKey::Name},
+    {L"Size", 100, LVCFMT_RIGHT, fast_explorer::core::SortKey::Size},
+    {L"Type", 100, LVCFMT_LEFT, fast_explorer::core::SortKey::Type},
+    {L"Modified", 160, LVCFMT_LEFT, fast_explorer::core::SortKey::Modified},
 };
 
 HWND createStatusBar(HWND parent, HINSTANCE instance) {
@@ -51,10 +52,12 @@ HWND createAddressBar(HWND parent, HINSTANCE instance) {
 }
 
 HWND createListView(HWND parent, HINSTANCE instance) {
+  // LVS_NOSORTHEADER omitted intentionally: the header must accept
+  // clicks so LVN_COLUMNCLICK reaches the controller for sort routing.
   return CreateWindowExW(
       0, WC_LISTVIEWW, L"",
       WS_CHILD | WS_VISIBLE | WS_BORDER | LVS_REPORT | LVS_OWNERDATA |
-          LVS_SHAREIMAGELISTS | LVS_NOSORTHEADER,
+          LVS_SHAREIMAGELISTS,
       0, 0, 0, 0, parent, nullptr, instance, nullptr);
 }
 
@@ -76,6 +79,53 @@ void rescaleColumnWidths(HWND lv, unsigned int dpi) {
   for (int i = 0; i < static_cast<int>(std::size(kColumns)); ++i) {
     ListView_SetColumnWidth(lv, i, scaleForDpi(kColumns[i].widthPx, dpi));
   }
+}
+
+// kColumns is the single source of truth for column index ↔ SortKey.
+// Both helpers below scan the same table so a new column or a reorder
+// only needs to be applied once.
+bool columnIndexToSortKey(int col, fast_explorer::core::SortKey& out) {
+  if (col < 0 || col >= static_cast<int>(std::size(kColumns))) {
+    return false;
+  }
+  out = kColumns[col].sortKey;
+  return true;
+}
+
+// Clears HDF_SORTUP/HDF_SORTDOWN on every header column, then sets the
+// arrow on `activeCol` according to `dir`. `activeCol < 0` clears all.
+void updateSortIndicator(HWND lv, int activeCol,
+                         fast_explorer::core::SortDirection dir) {
+  HWND header = ListView_GetHeader(lv);
+  if (header == nullptr) {
+    return;
+  }
+  const int colCount = Header_GetItemCount(header);
+  for (int i = 0; i < colCount; ++i) {
+    HDITEMW hdi{};
+    hdi.mask = HDI_FORMAT;
+    if (!Header_GetItem(header, i, &hdi)) {
+      continue;
+    }
+    hdi.fmt &= ~(HDF_SORTUP | HDF_SORTDOWN);
+    if (i == activeCol) {
+      hdi.fmt |=
+          (dir == fast_explorer::core::SortDirection::Ascending) ? HDF_SORTUP
+                                                                  : HDF_SORTDOWN;
+    }
+    // Header_SetItem failure leaves a single column's arrow stale; best
+    // effort across the row is preferable to bailing the whole sweep.
+    (void)Header_SetItem(header, i, &hdi);
+  }
+}
+
+int sortKeyToColumnIndex(fast_explorer::core::SortKey key) {
+  for (int i = 0; i < static_cast<int>(std::size(kColumns)); ++i) {
+    if (kColumns[i].sortKey == key) {
+      return i;
+    }
+  }
+  return -1;
 }
 
 void writeCellText(NMLVDISPINFOW& disp, const std::wstring& text) {
@@ -392,6 +442,9 @@ LRESULT MainWindow::handleListViewNotify(NMHDR* hdr) {
     case LVN_GETDISPINFOW:
       handleGetDispInfo(hdr);
       return 0;
+    case LVN_COLUMNCLICK:
+      handleColumnClick(hdr);
+      return 0;
     case LVN_ODCACHEHINT:
     case LVN_ODSTATECHANGED:
       return 0;
@@ -451,6 +504,32 @@ void MainWindow::handleGetDispInfo(NMHDR* hdr) {
       break;
     default:
       break;
+  }
+}
+
+void MainWindow::handleColumnClick(NMHDR* hdr) {
+  if (hdr == nullptr || !pane_ || listView_ == nullptr) {
+    return;
+  }
+  // NMLISTVIEW's first member is NMHDR by Win32 contract for LVN_*
+  // notifications, so the reinterpret is well-defined here. The
+  // dispatch in handleListViewNotify already gated on hdr->code.
+  auto* nmlv = reinterpret_cast<NMLISTVIEW*>(hdr);
+  fast_explorer::core::SortKey key;
+  if (!columnIndexToSortKey(nmlv->iSubItem, key)) {
+    return;
+  }
+  // requestSort guards against the enumeration worker still writing
+  // entries_; the GETDISPINFO read path against in-flight appends is
+  // tracked separately and addressed by the sort-worker milestone.
+  if (!pane_->requestSort(key)) {
+    return;
+  }
+  const auto spec = pane_->currentSortSpec();
+  updateSortIndicator(listView_, sortKeyToColumnIndex(spec.key), spec.direction);
+  const int count = static_cast<int>(pane_->store().itemCount());
+  if (count > 0) {
+    ListView_RedrawItems(listView_, 0, count - 1);
   }
 }
 
