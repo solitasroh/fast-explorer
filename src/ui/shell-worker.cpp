@@ -33,10 +33,13 @@ bool performShellDelete(const std::wstring& sourcePath) noexcept {
   if (FAILED(hr) || op == nullptr) {
     return false;
   }
-  // FOF_ALLOWUNDO + FOFX_RECYCLEONDELETE routes the delete through
-  // the recycle bin. FOF_NOCONFIRMATION / FOF_NOERRORUI keep the
-  // shell from popping its own dialogs — we report failure through
-  // the return value instead.
+  // FOF_ALLOWUNDO permits the recycle-bin path; FOFX_RECYCLEONDELETE
+  // forces it even when the shell would otherwise fall back to a
+  // permanent delete (e.g. items above the per-drive recycle quota).
+  // The two are intentionally combined — losing either one risks a
+  // silent permanent delete in edge cases. FOF_NOCONFIRMATION /
+  // FOF_NOERRORUI / FOF_SILENT suppress the shell's own dialogs;
+  // failures surface only through the HRESULT chain.
   hr = op->SetOperationFlags(FOF_ALLOWUNDO | FOFX_RECYCLEONDELETE |
                              FOF_NOCONFIRMATION | FOF_NOERRORUI |
                              FOF_SILENT);

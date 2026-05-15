@@ -17,7 +17,13 @@ namespace {
 
 bool fileExists(const std::wstring& path) {
   const DWORD attr = GetFileAttributesW(path.c_str());
-  return attr != INVALID_FILE_ATTRIBUTES;
+  if (attr != INVALID_FILE_ATTRIBUTES) {
+    return true;
+  }
+  // Distinguish "definitely missing" from "could not stat" (e.g. ACL
+  // denied) so the test only treats genuine absence as a delete win.
+  const DWORD err = GetLastError();
+  return err != ERROR_FILE_NOT_FOUND && err != ERROR_PATH_NOT_FOUND;
 }
 
 void writeEmptyFile(const std::wstring& path) {
