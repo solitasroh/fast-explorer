@@ -15,8 +15,10 @@
 #include "core/process-memory.h"
 #include "ui/column-formatter.h"
 #include "ui/dpi-scale.h"
+#include "ui/extension-icon-cache.h"
 #include "ui/format-cache.h"
 #include "ui/icon-cache.h"
+#include "ui/icon-provider.h"
 #include "ui/messages.h"
 #include "ui/pane-controller.h"
 #include "ui/status-text.h"
@@ -332,6 +334,7 @@ LRESULT MainWindow::handleMessage(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPa
     case kWmFeEnumBatch:      return onEnumBatch(wParam, lParam);
     case kWmFeEnumComplete:   return onEnumComplete(wParam);
     case kWmFeSortComplete:   return onSortComplete(wParam);
+    case kWmFeIconBatch:      return onIconBatch();
     case kWmFeEnumError:      return onEnumError(wParam, lParam);
     case kWmFeFsChange:       return onFsChange(hwnd);
     case WM_TIMER:            return onTimer(hwnd, msg, wParam, lParam);
@@ -371,6 +374,8 @@ LRESULT MainWindow::onCreate(HWND hwnd) {
     // image list via IconCache rather than the list-view.
     ListView_SetImageList(listView_, iconCache_->handle(), LVSIL_SMALL);
   }
+  extensionCache_ = std::make_unique<ExtensionIconCache>();
+  iconProvider_ = std::make_unique<IconProvider>(hwnd);
   return 0;
 }
 
@@ -513,6 +518,74 @@ LRESULT MainWindow::onSortComplete(WPARAM wParam) {
   return 0;
 }
 
+int MainWindow::resolveIconIndex(
+    const fast_explorer::core::FileEntry& entry) {
+  const int placeholder = placeholderIndexFor(entry);
+  if (isDirectory(entry) || !extensionCache_ || !iconProvider_) {
+    return placeholder;
+  }
+  const auto extView = fast_explorer::core::extensionView(entry);
+  if (extView.empty()) {
+    return placeholder;
+  }
+  const int cached = extensionCache_->lookup(extView);
+  if (cached != ExtensionIconCache::kMissingIndex) {
+    return cached;
+  }
+  // First sighting of this extension. Pin the row against the
+  // placeholder slot so later repaints stop re-requesting, then
+  // hand the real lookup off to the icon worker.
+  extensionCache_->insert(extView, placeholder);
+  iconProvider_->request(std::wstring(extView));
+  return placeholder;
+}
+
+LRESULT MainWindow::onIconBatch() {
+  if (iconProvider_ == nullptr) {
+    return 0;
+  }
+  auto results = iconProvider_->drainResults();
+  if (results.empty()) {
+    return 0;
+  }
+  if (iconCache_ == nullptr || !iconCache_->ok() ||
+      extensionCache_ == nullptr) {
+    // Defensive: drop the icons rather than leaking the HICON
+    // handles if any dependency is missing.
+    for (auto& r : results) {
+      if (r.icon != nullptr) {
+        DestroyIcon(r.icon);
+      }
+    }
+    return 0;
+  }
+  HIMAGELIST imageList = iconCache_->handle();
+  for (auto& r : results) {
+    if (r.icon == nullptr) {
+      continue;
+    }
+    const int slot = ImageList_AddIcon(imageList, r.icon);
+    DestroyIcon(r.icon);
+    if (slot < 0) {
+      continue;
+    }
+    // The pending entry already points at the placeholder; overwrite
+    // it with the real slot. We do not yet recycle the evicted slot
+    // (ImageList does not support per-slot removal in a way that
+    // preserves the other entries' indices), so the cache simply
+    // forgets about the displaced extension and the slot stays
+    // allocated until the window is destroyed.
+    extensionCache_->insert(r.extension, slot);
+  }
+  if (listView_ != nullptr && pane_) {
+    const int count = static_cast<int>(pane_->store().publishedCount());
+    if (count > 0) {
+      ListView_RedrawItems(listView_, 0, count - 1);
+    }
+  }
+  return 0;
+}
+
 LRESULT MainWindow::onFsChange(HWND hwnd) {
   // Debounce: every event restarts the timer; the actual refresh fires
   // once after kFsCoalesceMs of quiet.
@@ -598,7 +671,7 @@ void MainWindow::handleGetDispInfo(NMHDR* hdr) {
   // without further plumbing. Identity until the first sort.
   const auto& entry = store.visibleAt(row);
   if ((disp->item.mask & LVIF_IMAGE) != 0) {
-    disp->item.iImage = placeholderIndexFor(entry);
+    disp->item.iImage = resolveIconIndex(entry);
   }
   if ((disp->item.mask & LVIF_TEXT) == 0) {
     return;

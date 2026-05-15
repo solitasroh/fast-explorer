@@ -8,6 +8,7 @@
 namespace fast_explorer::core {
 class ProcessMemoryService;
 class PerfTracker;
+struct FileEntry;
 }
 
 namespace fast_explorer::ui {
@@ -51,11 +52,13 @@ class MainWindow {
   LRESULT onEnumComplete(WPARAM wParam);
   LRESULT onEnumError(WPARAM wParam, LPARAM lParam);
   LRESULT onSortComplete(WPARAM wParam);
+  LRESULT onIconBatch();
   LRESULT onFsChange(HWND hwnd);
 
   LRESULT handleListViewNotify(NMHDR* hdr);
   bool isStaleGeneration(WPARAM wParam) const;
   void handleGetDispInfo(NMHDR* hdr);
+  int resolveIconIndex(const fast_explorer::core::FileEntry& entry);
   void handleColumnClick(NMHDR* hdr);
   void handleItemChanged(NMHDR* hdr);
   void reapplySelectionFromPane();
@@ -92,6 +95,8 @@ class MainWindow {
   std::unique_ptr<PaneController> pane_;
   std::unique_ptr<class FormatCache> formatCache_;
   std::unique_ptr<class IconCache> iconCache_;
+  std::unique_ptr<class ExtensionIconCache> extensionCache_;
+  std::unique_ptr<class IconProvider> iconProvider_;
 };
 
 }  // namespace fast_explorer::ui

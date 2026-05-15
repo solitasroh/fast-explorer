@@ -11,6 +11,7 @@
 #include <queue>
 #include <string>
 #include <thread>
+#include <vector>
 
 namespace fast_explorer::ui {
 
@@ -38,9 +39,42 @@ class IconProvider {
   IconProvider(IconProvider&&) = delete;
   IconProvider& operator=(IconProvider&&) = delete;
 
+  // A resolved icon ready for the UI to insert into its HIMAGELIST.
+  // The UI thread owns the HICON once drainResults returns it and
+  // must call DestroyIcon (after ImageList_AddIcon copies the bits)
+  // or the OS will leak the icon handle. Made move-only so a stray
+  // copy cannot leave two IconResults claiming the same HICON.
+  struct IconResult {
+    std::wstring extension;
+    HICON icon = nullptr;
+
+    IconResult() = default;
+    IconResult(std::wstring ext, HICON h) noexcept
+        : extension(std::move(ext)), icon(h) {}
+    IconResult(const IconResult&) = delete;
+    IconResult& operator=(const IconResult&) = delete;
+    IconResult(IconResult&& other) noexcept
+        : extension(std::move(other.extension)), icon(other.icon) {
+      other.icon = nullptr;
+    }
+    IconResult& operator=(IconResult&& other) noexcept {
+      if (this != &other) {
+        extension = std::move(other.extension);
+        icon = other.icon;
+        other.icon = nullptr;
+      }
+      return *this;
+    }
+  };
+
   // Queues an extension for the worker to resolve. Safe to call from
   // any thread.
   void request(std::wstring extension);
+
+  // UI-thread: removes every resolved result that the worker has
+  // posted so far and returns them in arrival order. Call this when
+  // the host receives kWmFeIconBatch.
+  std::vector<IconResult> drainResults();
 
   // Returns how many requests the worker has dequeued and finished
   // its dummy-processing pass over. Acquire-load semantics.
@@ -55,11 +89,15 @@ class IconProvider {
 
  private:
   void workerMain(std::stop_token tok);
-  // Worker-side helpers. Splitting them up keeps workerMain a thin
-  // loop so the follow-up atom can drop the real SHGetFileInfoW
-  // call straight into processOne without re-growing this function.
+  // Worker-side helpers. processOne splits into the shell call
+  // (resolveIconForExtension) and the result publication
+  // (publishResult) so each path has a single reason to change and
+  // the coalesce-post invariant lives in one spot.
   std::optional<std::wstring> dequeueOne(std::stop_token tok);
   void processOne(const std::wstring& extension);
+  static HICON resolveIconForExtension(
+      const std::wstring& extension) noexcept;
+  void publishResult(const std::wstring& extension, HICON icon);
 
   HWND host_;
   // Queue + mutex_ guard pendingRequests_. cv_ is woken either by a
@@ -69,6 +107,15 @@ class IconProvider {
   std::queue<std::wstring> pendingRequests_;
   mutable std::mutex mutex_;
   std::condition_variable_any cv_;
+  // resultMutex_ guards resultsReady_; the UI thread drains it on
+  // kWmFeIconBatch. Kept separate from mutex_ so the worker can
+  // publish a result without contending with a request() caller.
+  std::vector<IconResult> resultsReady_;
+  mutable std::mutex resultMutex_;
+  // postPending_ coalesces kWmFeIconBatch notifications: once the
+  // worker has posted once, additional results just accumulate in
+  // resultsReady_ until the UI's drainResults clears the gate.
+  std::atomic<bool> postPending_{false};
   std::atomic<std::size_t> processed_{0};
   std::jthread worker_;
 };
