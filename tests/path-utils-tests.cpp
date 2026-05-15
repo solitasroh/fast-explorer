@@ -6,6 +6,7 @@
 
 using fast_explorer::core::ensureDirectoryRecursive;
 using fast_explorer::core::isUncPath;
+using fast_explorer::core::joinPath;
 using fast_explorer::core::PathConvertError;
 using fast_explorer::core::resolveAppDataSubdir;
 using fast_explorer::core::toDisplay;
@@ -235,4 +236,20 @@ FE_TEST_CASE(toInternal_accepts_drive_root) {
   std::wstring out;
   FE_ASSERT_EQ(toInternal(L"C:\\", out), PathConvertError::None);
   FE_ASSERT_WSTREQ(out, L"\\\\?\\C:\\");
+}
+
+FE_TEST_CASE(joinPath_AddsSeparator_WhenBaseLacksOne) {
+  FE_ASSERT_WSTREQ(joinPath(L"C:\\foo", L"bar"), L"C:\\foo\\bar");
+}
+
+FE_TEST_CASE(joinPath_PreservesTrailingBackslash) {
+  FE_ASSERT_WSTREQ(joinPath(L"C:\\", L"foo"), L"C:\\foo");
+}
+
+FE_TEST_CASE(joinPath_PreservesTrailingForwardSlash) {
+  FE_ASSERT_WSTREQ(joinPath(L"C:/foo/", L"bar"), L"C:/foo/bar");
+}
+
+FE_TEST_CASE(joinPath_EmptyBase_ReturnsLeaf) {
+  FE_ASSERT_WSTREQ(joinPath(L"", L"bar"), L"bar");
 }

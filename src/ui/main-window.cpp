@@ -618,6 +618,9 @@ LRESULT MainWindow::handleListViewNotify(NMHDR* hdr) {
     case LVN_COLUMNCLICK:
       handleColumnClick(hdr);
       return 0;
+    case LVN_ITEMACTIVATE:
+      handleItemActivate(hdr);
+      return 0;
     case LVN_ITEMCHANGED:
       handleItemChanged(hdr);
       return 0;
@@ -694,6 +697,18 @@ void MainWindow::handleGetDispInfo(NMHDR* hdr) {
     default:
       break;
   }
+}
+
+void MainWindow::handleItemActivate(NMHDR* hdr) {
+  if (hdr == nullptr || !pane_) {
+    return;
+  }
+  // NMITEMACTIVATE's first member is NMHDR by Win32 contract.
+  auto* nmia = reinterpret_cast<NMITEMACTIVATE*>(hdr);
+  if (nmia->iItem < 0) {
+    return;
+  }
+  pane_->openItem(static_cast<std::uint32_t>(nmia->iItem));
 }
 
 void MainWindow::handleItemChanged(NMHDR* hdr) {

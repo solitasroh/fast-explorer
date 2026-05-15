@@ -52,6 +52,13 @@ class PaneController {
   // Used by F5 and the coalesced fs-change refresh.
   bool refresh();
 
+  // Activate the file or folder at the given visible row. Folders
+  // navigate via openFolder; files are handed to the OS shell
+  // (ShellExecuteExW "open" verb) on the calling thread. Returns
+  // false on out-of-range row or when the shell call fails; folder
+  // activation propagates openFolder's return value.
+  bool openItem(std::uint32_t row);
+
   // Sort delegation. requestSort returns Rejected while the
   // enumeration worker is still running because sorting the store
   // mid-append would race; the coordinator handles the toggle vs

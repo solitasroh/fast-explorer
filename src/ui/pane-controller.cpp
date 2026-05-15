@@ -3,6 +3,8 @@
 #include <stop_token>
 #include <utility>
 
+#include <shellapi.h>
+
 #include "core/directory-enumerator.h"
 #include "core/fs-backend.h"
 #include "core/fs-watcher.h"
@@ -121,6 +123,38 @@ bool PaneController::refresh() {
     return false;
   }
   return navigateInternal(currentPath_);
+}
+
+namespace {
+
+bool shellOpenPath(const std::wstring& path, HWND host) noexcept {
+  SHELLEXECUTEINFOW info{};
+  info.cbSize = sizeof(info);
+  // SEE_MASK_NOCLOSEPROCESS is intentionally omitted — we do not
+  // track the launched process. FLAG_NO_UI lets the shell hide its
+  // error dialog and surface failure through the return value so
+  // callers can log instead.
+  info.fMask = SEE_MASK_FLAG_NO_UI;
+  info.hwnd = host;
+  info.lpVerb = L"open";
+  info.lpFile = path.c_str();
+  info.nShow = SW_SHOWNORMAL;
+  return ShellExecuteExW(&info) != FALSE;
+}
+
+}  // namespace
+
+bool PaneController::openItem(std::uint32_t row) {
+  if (row >= store_.publishedCount()) {
+    return false;
+  }
+  const auto& entry = store_.visibleAt(row);
+  const std::wstring fullPath = fast_explorer::core::joinPath(
+      currentPath_, fast_explorer::core::nameView(entry));
+  if (fast_explorer::core::isDirectory(entry)) {
+    return openFolder(fullPath);
+  }
+  return shellOpenPath(fullPath, hostWindow_);
 }
 
 void PaneController::selectRaw(std::uint32_t rawIndex) {

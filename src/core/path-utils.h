@@ -47,4 +47,10 @@ PathConvertError toInternal(std::wstring_view displayPath, std::wstring& out);
 // does not validate the rest of the path.
 std::wstring toDisplay(std::wstring_view internalPath);
 
+// Joins a base path with a leaf name, inserting a single '\\' between
+// them when one is needed. Existing trailing '\\' or '/' on the base
+// is left in place so an explicit drive-root like L"C:\\" still joins
+// correctly. Pure; does no I/O.
+std::wstring joinPath(std::wstring_view base, std::wstring_view leaf);
+
 }  // namespace fast_explorer::core

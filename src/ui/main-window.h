@@ -60,6 +60,7 @@ class MainWindow {
   void handleGetDispInfo(NMHDR* hdr);
   int resolveIconIndex(const fast_explorer::core::FileEntry& entry);
   void handleColumnClick(NMHDR* hdr);
+  void handleItemActivate(NMHDR* hdr);
   void handleItemChanged(NMHDR* hdr);
   void reapplySelectionFromPane();
   // Shared tail of every sort-apply path: refresh the column-header

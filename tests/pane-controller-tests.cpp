@@ -3,6 +3,7 @@
 #include "bench-fs-helper.h"
 #include "bench/dataset-generator.h"
 #include "core/file-sort.h"
+#include "core/path-utils.h"
 #include "test-harness.h"
 #include "ui/pane-controller.h"
 
@@ -378,6 +379,59 @@ FE_TEST_CASE(PaneController_Selection_RowsFollowSortReorder) {
   }
   FE_ASSERT_TRUE(rawsAtSelectedRows.count(rawA) == 1);
   FE_ASSERT_TRUE(rawsAtSelectedRows.count(rawB) == 1);
+}
+
+// ---------------------------------------------------------------------------
+// openItem
+// ---------------------------------------------------------------------------
+
+FE_TEST_CASE(PaneController_OpenItem_OutOfRange_ReturnsFalse) {
+  PaneController pc(nullptr);
+  // Empty store: row 0 is already past publishedCount().
+  FE_ASSERT_FALSE(pc.openItem(0));
+}
+
+FE_TEST_CASE(PaneController_OpenItem_OutOfRange_AfterPopulate_ReturnsFalse) {
+  TempDir tmp(L"pane-openitem-oob");
+  FE_ASSERT_EQ(generateDataset(PresetKind::Small, tmp.path(), 1).error,
+               GenerateError::None);
+  PaneController pane(nullptr);
+  FE_ASSERT_TRUE(pane.openFolder(tmp.path()));
+  pane.joinForTest();
+  const std::uint32_t count =
+      static_cast<std::uint32_t>(pane.store().publishedCount());
+  FE_ASSERT_FALSE(pane.openItem(count));
+  FE_ASSERT_FALSE(pane.openItem(count + 100));
+}
+
+FE_TEST_CASE(PaneController_OpenItem_FolderBranch_NavigatesIntoChild) {
+  // Build tmp/<child>/ and open it through openItem so the directory
+  // branch is exercised end-to-end without poking the shell.
+  TempDir tmp(L"pane-openitem-folder");
+  FE_ASSERT_TRUE(CreateDirectoryW(tmp.path().c_str(), nullptr) != 0);
+  const std::wstring childPath =
+      fast_explorer::core::joinPath(tmp.path(), L"child");
+  FE_ASSERT_TRUE(CreateDirectoryW(childPath.c_str(), nullptr) != 0);
+  PaneController pane(nullptr);
+  FE_ASSERT_TRUE(pane.openFolder(tmp.path()));
+  pane.joinForTest();
+
+  // Find the visible row whose name is L"child".
+  const auto& store = pane.store();
+  std::uint32_t childRow = UINT32_MAX;
+  for (std::uint32_t i = 0;
+       i < static_cast<std::uint32_t>(store.publishedCount()); ++i) {
+    const auto& entry = store.visibleAt(i);
+    if (std::wstring_view(entry.namePtr, entry.nameLength) == L"child") {
+      childRow = i;
+      break;
+    }
+  }
+  FE_ASSERT_TRUE(childRow != UINT32_MAX);
+
+  FE_ASSERT_TRUE(pane.openItem(childRow));
+  pane.joinForTest();
+  FE_ASSERT_WSTREQ(pane.currentPath(), childPath);
 }
 
 FE_TEST_CASE(PaneController_RequestSort_ActuallyReordersVisible) {

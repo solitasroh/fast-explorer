@@ -224,6 +224,17 @@ std::wstring toDisplay(std::wstring_view internalPath) {
   return std::wstring(internalPath);
 }
 
+std::wstring joinPath(std::wstring_view base, std::wstring_view leaf) {
+  std::wstring out;
+  out.reserve(base.size() + 1 + leaf.size());
+  out.assign(base);
+  if (!out.empty() && out.back() != L'\\' && out.back() != L'/') {
+    out.push_back(L'\\');
+  }
+  out.append(leaf);
+  return out;
+}
+
 bool resolveAppDataSubdir(const wchar_t* sub, std::wstring& out) {
   if (sub == nullptr || sub[0] == L'\0') {
     return false;
