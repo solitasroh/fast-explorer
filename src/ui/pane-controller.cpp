@@ -5,6 +5,7 @@
 
 #include "core/directory-enumerator.h"
 #include "core/fs-backend.h"
+#include "core/fs-watcher.h"
 #include "core/path-utils.h"
 #include "ui/messages.h"
 
@@ -120,6 +121,7 @@ bool PaneController::navigateInternal(const std::wstring& path) {
     worker_.request_stop();
     worker_.join();
   }
+  fsWatcher_.stop();
 
   currentPath_ = path;
   store_.reset(path);
@@ -149,6 +151,9 @@ bool PaneController::navigateInternal(const std::wstring& path) {
     }
   });
 
+  if (host != nullptr) {
+    fsWatcher_.watch(path, host, kWmFeFsChange);
+  }
   return true;
 }
 

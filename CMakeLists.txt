@@ -49,6 +49,8 @@ set(FE_APP_SOURCES
   src/core/file-model-store.cpp
   src/core/file-model-store.h
   src/core/fs-backend.h
+  src/core/fs-watcher.cpp
+  src/core/fs-watcher.h
   src/core/memory-fs-backend.cpp
   src/core/memory-fs-backend.h
   src/core/name-arena.cpp
@@ -151,6 +153,8 @@ add_executable(core-tests
   src/core/file-model-store.cpp
   src/core/file-model-store.h
   src/core/fs-backend.h
+  src/core/fs-watcher.cpp
+  src/core/fs-watcher.h
   src/core/memory-fs-backend.cpp
   src/core/memory-fs-backend.h
   src/core/name-arena.cpp
@@ -189,6 +193,8 @@ add_executable(FastExplorerBench
   src/core/file-model-store.cpp
   src/core/file-model-store.h
   src/core/fs-backend.h
+  src/core/fs-watcher.cpp
+  src/core/fs-watcher.h
   src/core/name-arena.cpp
   src/core/name-arena.h
   src/core/path-utils.cpp

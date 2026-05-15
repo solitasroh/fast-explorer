@@ -8,6 +8,7 @@
 #include <vector>
 
 #include "core/file-model-store.h"
+#include "core/fs-watcher.h"
 #include "core/win32-fs-backend.h"
 
 namespace fast_explorer::ui {
@@ -67,6 +68,7 @@ class PaneController {
   std::vector<std::wstring> forwardStack_;
   fast_explorer::core::FileModelStore store_;
   fast_explorer::core::Win32FsBackend backend_;
+  fast_explorer::core::FsWatcher fsWatcher_;
   std::jthread worker_;
 };
 

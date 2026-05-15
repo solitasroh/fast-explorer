@@ -345,6 +345,8 @@ LRESULT MainWindow::handleMessage(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPa
       setStatusText(text.c_str());
       return 0;
     }
+    case kWmFeFsChange:
+      return 0;
     case kWmFeEnumError: {
       if (isStaleGeneration(wParam)) {
         return 0;
