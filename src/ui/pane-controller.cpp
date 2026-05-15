@@ -25,16 +25,94 @@ uint32_t PaneController::generation() const noexcept {
   return store_.generation();
 }
 
-bool PaneController::openFolder(const std::wstring& path) {
-  using fast_explorer::core::DirectoryEnumerator;
-  using fast_explorer::core::EnumerationError;
+namespace {
+
+bool isPathValid(const std::wstring& path) {
   using fast_explorer::core::PathConvertError;
   using fast_explorer::core::toInternal;
-
   std::wstring internal;
-  if (toInternal(path, internal) != PathConvertError::None) {
+  return toInternal(path, internal) == PathConvertError::None;
+}
+
+std::wstring computeParent(const std::wstring& path) {
+  if (path.empty()) {
+    return std::wstring();
+  }
+  std::wstring p = path;
+  // Trim trailing separators except when we are already at the drive
+  // root form "X:\".
+  if (p.size() > 3) {
+    while (!p.empty() && (p.back() == L'\\' || p.back() == L'/')) {
+      p.pop_back();
+    }
+  }
+  if (p.size() <= 3) {
+    return std::wstring();
+  }
+  const size_t lastSep = p.find_last_of(L"\\/");
+  if (lastSep == std::wstring::npos) {
+    return std::wstring();
+  }
+  if (lastSep == 2 && p[1] == L':') {
+    return p.substr(0, 3);
+  }
+  return p.substr(0, lastSep);
+}
+
+}  // namespace
+
+bool PaneController::openFolder(const std::wstring& path) {
+  if (!isPathValid(path)) {
     return false;
   }
+  if (!currentPath_.empty()) {
+    backStack_.push_back(currentPath_);
+  }
+  forwardStack_.clear();
+  return navigateInternal(path);
+}
+
+bool PaneController::back() {
+  if (backStack_.empty()) {
+    return false;
+  }
+  const std::wstring target = backStack_.back();
+  if (!isPathValid(target)) {
+    return false;
+  }
+  backStack_.pop_back();
+  if (!currentPath_.empty()) {
+    forwardStack_.push_back(currentPath_);
+  }
+  return navigateInternal(target);
+}
+
+bool PaneController::forward() {
+  if (forwardStack_.empty()) {
+    return false;
+  }
+  const std::wstring target = forwardStack_.back();
+  if (!isPathValid(target)) {
+    return false;
+  }
+  forwardStack_.pop_back();
+  if (!currentPath_.empty()) {
+    backStack_.push_back(currentPath_);
+  }
+  return navigateInternal(target);
+}
+
+bool PaneController::up() {
+  const std::wstring parent = computeParent(currentPath_);
+  if (parent.empty()) {
+    return false;
+  }
+  return openFolder(parent);
+}
+
+bool PaneController::navigateInternal(const std::wstring& path) {
+  using fast_explorer::core::DirectoryEnumerator;
+  using fast_explorer::core::EnumerationError;
 
   if (worker_.joinable()) {
     worker_.request_stop();

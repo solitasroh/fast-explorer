@@ -69,6 +69,69 @@ FE_TEST_CASE(PaneController_OpenFolder_DrivesEnumerationOnRealFs) {
   FE_ASSERT_EQ(pane.store().itemCount(), kSmallPresetExpectedItems);
 }
 
+FE_TEST_CASE(PaneController_Back_NoHistory_ReturnsFalse) {
+  PaneController pc(nullptr);
+  FE_ASSERT_FALSE(pc.back());
+  FE_ASSERT_FALSE(pc.canGoBack());
+}
+
+FE_TEST_CASE(PaneController_Forward_NoHistory_ReturnsFalse) {
+  PaneController pc(nullptr);
+  FE_ASSERT_FALSE(pc.forward());
+  FE_ASSERT_FALSE(pc.canGoForward());
+}
+
+FE_TEST_CASE(PaneController_OpenThenBack_RestoresPrior) {
+  PaneController pc(nullptr);
+  FE_ASSERT_TRUE(pc.openFolder(L"C:\\a"));
+  FE_ASSERT_TRUE(pc.openFolder(L"C:\\b"));
+  FE_ASSERT_TRUE(pc.canGoBack());
+  FE_ASSERT_TRUE(pc.back());
+  FE_ASSERT_WSTREQ(pc.currentPath(), L"C:\\a");
+  FE_ASSERT_TRUE(pc.canGoForward());
+  FE_ASSERT_FALSE(pc.canGoBack());
+}
+
+FE_TEST_CASE(PaneController_BackThenForward_RestoresLatest) {
+  PaneController pc(nullptr);
+  pc.openFolder(L"C:\\a");
+  pc.openFolder(L"C:\\b");
+  pc.back();
+  FE_ASSERT_TRUE(pc.forward());
+  FE_ASSERT_WSTREQ(pc.currentPath(), L"C:\\b");
+  FE_ASSERT_FALSE(pc.canGoForward());
+}
+
+FE_TEST_CASE(PaneController_OpenAfterBack_ClearsForward) {
+  PaneController pc(nullptr);
+  pc.openFolder(L"C:\\a");
+  pc.openFolder(L"C:\\b");
+  pc.back();
+  FE_ASSERT_TRUE(pc.canGoForward());
+  FE_ASSERT_TRUE(pc.openFolder(L"C:\\c"));
+  FE_ASSERT_FALSE(pc.canGoForward());
+}
+
+FE_TEST_CASE(PaneController_Up_FromFolder_ReturnsParent) {
+  PaneController pc(nullptr);
+  pc.openFolder(L"C:\\foo\\bar");
+  FE_ASSERT_TRUE(pc.up());
+  FE_ASSERT_WSTREQ(pc.currentPath(), L"C:\\foo");
+}
+
+FE_TEST_CASE(PaneController_Up_FromDriveSubfolder_ReturnsDriveRoot) {
+  PaneController pc(nullptr);
+  pc.openFolder(L"C:\\foo");
+  FE_ASSERT_TRUE(pc.up());
+  FE_ASSERT_WSTREQ(pc.currentPath(), L"C:\\");
+}
+
+FE_TEST_CASE(PaneController_Up_FromDriveRoot_ReturnsFalse) {
+  PaneController pc(nullptr);
+  pc.openFolder(L"C:\\");
+  FE_ASSERT_FALSE(pc.up());
+}
+
 FE_TEST_CASE(PaneController_OpenFolder_Twice_CancelsAndReopens) {
   TempDir a(L"pane-a");
   TempDir b(L"pane-b");

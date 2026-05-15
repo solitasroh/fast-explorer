@@ -289,11 +289,29 @@ LRESULT MainWindow::handleMessage(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPa
       }
       return DefWindowProcW(hwnd, msg, wParam, lParam);
     case WM_COMMAND:
-      if (HIWORD(wParam) == 1 && LOWORD(wParam) == kAccelFocusAddress &&
-          addressBar_) {
-        SetFocus(addressBar_);
-        SendMessageW(addressBar_, EM_SETSEL, 0, -1);
-        return 0;
+      if (HIWORD(wParam) == 1) {
+        switch (LOWORD(wParam)) {
+          case kAccelFocusAddress:
+            if (addressBar_) {
+              SetFocus(addressBar_);
+              SendMessageW(addressBar_, EM_SETSEL, 0, -1);
+            }
+            return 0;
+          case kAccelNavBack:
+            if (pane_) pane_->back();
+            return 0;
+          case kAccelNavForward:
+            if (pane_) pane_->forward();
+            return 0;
+          case kAccelNavUp:
+            if (pane_) pane_->up();
+            return 0;
+          case kAccelRefresh:
+            if (pane_ && !pane_->currentPath().empty()) {
+              openFolder(pane_->currentPath());
+            }
+            return 0;
+        }
       }
       return DefWindowProcW(hwnd, msg, wParam, lParam);
     case kWmFeAddressCommit:

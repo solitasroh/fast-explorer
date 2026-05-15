@@ -19,6 +19,10 @@ inline constexpr UINT kWmFePerfEvent       = kWmFeBase + 0x08;
 inline constexpr UINT kWmFeAddressCommit   = kWmFeBase + 0x09;
 
 inline constexpr WORD kAccelFocusAddress = 100;
+inline constexpr WORD kAccelNavBack       = 101;
+inline constexpr WORD kAccelNavForward    = 102;
+inline constexpr WORD kAccelNavUp         = 103;
+inline constexpr WORD kAccelRefresh       = 104;
 
 static_assert(kWmFeBase >= WM_APP,
               "WM_FE_* must live in the WM_APP user range");
