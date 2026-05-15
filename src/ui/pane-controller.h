@@ -36,9 +36,7 @@ class PaneController {
   // because the worker hand-off overhead would dominate the sort.
   static constexpr std::uint32_t kDefaultSortThresholdRows = 2000;
 
-  explicit PaneController(HWND hostWindow,
-                          std::uint32_t sortThresholdRows =
-                              kDefaultSortThresholdRows);
+  explicit PaneController(HWND hostWindow);
   ~PaneController();
 
   PaneController(const PaneController&) = delete;
@@ -121,6 +119,14 @@ class PaneController {
   // destructor; tests need an explicit synchronization point to
   // assert results.
   void joinForTest() noexcept;
+
+  // Test helper: lowers the sort threshold so a small dataset can
+  // exercise the background path. Has no production caller — the
+  // sortThresholdRows_ field defaults to kDefaultSortThresholdRows
+  // and is set this way only from the test suite.
+  void setSortThresholdRowsForTest(std::uint32_t rows) noexcept {
+    sortThresholdRows_ = rows;
+  }
 
   uint32_t generation() const noexcept;
   const std::wstring& currentPath() const noexcept { return currentPath_; }

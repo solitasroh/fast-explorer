@@ -13,11 +13,24 @@
 
 namespace fast_explorer::ui {
 
-PaneController::PaneController(HWND hostWindow,
-                               std::uint32_t sortThresholdRows)
-    : hostWindow_(hostWindow),
-      store_(L""),
-      sortThresholdRows_(sortThresholdRows) {}
+namespace {
+
+// Joins a jthread idempotently, stopping it first so a worker that
+// is blocked in a long operation gets the signal before we wait on
+// it. Used by navigateInternal and requestSort to retire the
+// enumeration and sort workers before letting their captured state
+// be replaced.
+void stopAndJoin(std::jthread& thread) noexcept {
+  if (thread.joinable()) {
+    thread.request_stop();
+    thread.join();
+  }
+}
+
+}  // namespace
+
+PaneController::PaneController(HWND hostWindow)
+    : hostWindow_(hostWindow), store_(L"") {}
 
 PaneController::~PaneController() = default;
 
@@ -133,10 +146,7 @@ SortDispatch PaneController::requestSort(
   }
   // Any prior background sort must finish (or be cancelled) before a
   // new request can claim entries_ / pendingSortedOrder_.
-  if (sortWorker_.joinable()) {
-    sortWorker_.request_stop();
-    sortWorker_.join();
-  }
+  stopAndJoin(sortWorker_);
   const auto count = store_.publishedCount();
   if (count == 0) {
     return SortDispatch::Rejected;
@@ -248,17 +258,11 @@ bool PaneController::navigateInternal(const std::wstring& path) {
   using fast_explorer::core::DirectoryEnumerator;
   using fast_explorer::core::EnumerationError;
 
-  if (worker_.joinable()) {
-    worker_.request_stop();
-    worker_.join();
-  }
+  stopAndJoin(worker_);
   // The enumeration worker is about to reset() the store. Any pending
   // background sort references entries_ via entryAt(); join it first
   // so the sort sees a coherent snapshot or exits early.
-  if (sortWorker_.joinable()) {
-    sortWorker_.request_stop();
-    sortWorker_.join();
-  }
+  stopAndJoin(sortWorker_);
   pendingSortedOrder_.clear();
   selectedRaws_.clear();
   fsWatcher_.stop();

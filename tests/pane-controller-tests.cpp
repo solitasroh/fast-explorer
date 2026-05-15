@@ -270,7 +270,8 @@ FE_TEST_CASE(PaneController_BackgroundSort_FillsPendingAndAppliesOnDemand) {
                GenerateError::None);
   // sortThreshold = 50 forces the background path on the 200-entry
   // small preset.
-  PaneController pane(nullptr, 50);
+  PaneController pane(nullptr);
+  pane.setSortThresholdRowsForTest(50);
   FE_ASSERT_TRUE(pane.openFolder(tmp.path()));
   pane.joinForTest();
 
