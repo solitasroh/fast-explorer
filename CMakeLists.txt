@@ -44,6 +44,8 @@ set(FE_APP_SOURCES
   src/ui/icon-provider.cpp
   src/ui/icon-provider.h
   src/ui/jthread-utils.h
+  src/ui/shell-worker.cpp
+  src/ui/shell-worker.h
   src/ui/pane-controller.cpp
   src/ui/pane-controller.h
   src/ui/pane-sort-coordinator.cpp
@@ -142,6 +144,7 @@ add_executable(core-tests
   tests/icon-cache-tests.cpp
   tests/icon-provider-tests.cpp
   tests/pane-sort-coordinator-tests.cpp
+  tests/shell-worker-tests.cpp
   tests/bench-fs-helper.h
   src/ui/messages.h
   src/ui/column-formatter.cpp
@@ -156,6 +159,8 @@ add_executable(core-tests
   src/ui/icon-provider.cpp
   src/ui/icon-provider.h
   src/ui/jthread-utils.h
+  src/ui/shell-worker.cpp
+  src/ui/shell-worker.h
   src/ui/pane-controller.cpp
   src/ui/pane-controller.h
   src/ui/pane-sort-coordinator.cpp
