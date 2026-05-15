@@ -85,4 +85,12 @@ void FileModelStore::sort(SortSpec spec) {
             });
 }
 
+void FileModelStore::applySortedOrder(std::vector<std::uint32_t> order) {
+  assert(order.size() == publishedCount());
+  // assign() preserves visibleOrder_'s reserved capacity (kMaxEntries)
+  // — a move would adopt the worker's smaller capacity and break the
+  // "push_back never reallocates" invariant the UI read path relies on.
+  visibleOrder_.assign(order.begin(), order.end());
+}
+
 }  // namespace fast_explorer::core

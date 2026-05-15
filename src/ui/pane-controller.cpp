@@ -1,9 +1,11 @@
 #include "ui/pane-controller.h"
 
+#include <algorithm>
 #include <stop_token>
 #include <utility>
 
 #include "core/directory-enumerator.h"
+#include "core/file-sort.h"
 #include "core/fs-backend.h"
 #include "core/fs-watcher.h"
 #include "core/path-utils.h"
@@ -11,12 +13,15 @@
 
 namespace fast_explorer::ui {
 
-PaneController::PaneController(HWND hostWindow)
-    : hostWindow_(hostWindow), store_(L"") {}
+PaneController::PaneController(HWND hostWindow,
+                               std::uint32_t sortThresholdRows)
+    : hostWindow_(hostWindow),
+      store_(L""),
+      sortThresholdRows_(sortThresholdRows) {}
 
 PaneController::~PaneController() = default;
 
-void PaneController::joinForTest() {
+void PaneController::joinForTest() noexcept {
   if (worker_.joinable()) {
     worker_.join();
   }
@@ -120,13 +125,21 @@ bool PaneController::refresh() {
   return navigateInternal(currentPath_);
 }
 
-bool PaneController::requestSort(fast_explorer::core::SortKey key) {
+SortDispatch PaneController::requestSort(
+    fast_explorer::core::SortKey key) {
   using fast_explorer::core::SortDirection;
   if (workerActive_.load(std::memory_order_acquire)) {
-    return false;
+    return SortDispatch::Rejected;
   }
-  if (store_.itemCount() == 0) {
-    return false;
+  // Any prior background sort must finish (or be cancelled) before a
+  // new request can claim entries_ / pendingSortedOrder_.
+  if (sortWorker_.joinable()) {
+    sortWorker_.request_stop();
+    sortWorker_.join();
+  }
+  const auto count = store_.publishedCount();
+  if (count == 0) {
+    return SortDispatch::Rejected;
   }
   if (sorted_ && sortSpec_.key == key) {
     sortSpec_.direction =
@@ -137,9 +150,67 @@ bool PaneController::requestSort(fast_explorer::core::SortKey key) {
     sortSpec_.key = key;
     sortSpec_.direction = SortDirection::Ascending;
   }
-  store_.sort(sortSpec_);
+  if (count < sortThresholdRows_) {
+    store_.sort(sortSpec_);
+    sorted_ = true;
+    return SortDispatch::AppliedSync;
+  }
+
+  // Background path: the worker reads entries_ (stable while no
+  // enumeration is running — workerActive_ acquire-load above plus the
+  // navigateInternal join policy ensure the worker observes a frozen
+  // entries_) and writes pendingSortedOrder_. The UI commits via
+  // applyPendingSort() on kWmFeSortComplete; the generation gate
+  // (pendingSortGen_ vs store_.generation()) rejects stale results.
+  const auto spec = sortSpec_;
+  const HWND host = hostWindow_;
+  const auto gen = store_.generation();
+  pendingSortGen_ = gen;
+  sortWorker_ = std::jthread([this, host, spec, count, gen](
+                                 std::stop_token tok) {
+    std::vector<std::uint32_t> order;
+    order.resize(count);
+    for (std::uint32_t i = 0; i < count; ++i) {
+      order[i] = i;
+    }
+    if (tok.stop_requested()) {
+      return;
+    }
+    std::sort(order.begin(), order.end(),
+              [this, spec](std::uint32_t a, std::uint32_t b) {
+                return fast_explorer::core::lessEntries(
+                    store_.entryAt(a), store_.entryAt(b), spec);
+              });
+    if (tok.stop_requested()) {
+      return;
+    }
+    pendingSortedOrder_ = std::move(order);
+    if (host) {
+      PostMessageW(host, kWmFeSortComplete, static_cast<WPARAM>(gen), 0);
+    }
+  });
+  return SortDispatch::Dispatched;
+}
+
+void PaneController::applyPendingSort(std::uint32_t gen) {
+  if (workerActive_.load(std::memory_order_acquire)) {
+    return;
+  }
+  if (sortWorker_.joinable()) {
+    sortWorker_.join();
+  }
+  // Stale result: navigation happened between worker post and now.
+  if (gen != pendingSortGen_ || gen != store_.generation()) {
+    pendingSortedOrder_.clear();
+    return;
+  }
+  if (pendingSortedOrder_.size() != store_.publishedCount()) {
+    pendingSortedOrder_.clear();
+    return;
+  }
+  store_.applySortedOrder(std::move(pendingSortedOrder_));
+  pendingSortedOrder_.clear();
   sorted_ = true;
-  return true;
 }
 
 bool PaneController::navigateInternal(const std::wstring& path) {
@@ -150,6 +221,14 @@ bool PaneController::navigateInternal(const std::wstring& path) {
     worker_.request_stop();
     worker_.join();
   }
+  // The enumeration worker is about to reset() the store. Any pending
+  // background sort references entries_ via entryAt(); join it first
+  // so the sort sees a coherent snapshot or exits early.
+  if (sortWorker_.joinable()) {
+    sortWorker_.request_stop();
+    sortWorker_.join();
+  }
+  pendingSortedOrder_.clear();
   fsWatcher_.stop();
 
   currentPath_ = path;

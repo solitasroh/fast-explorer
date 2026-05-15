@@ -11,6 +11,7 @@ using fast_explorer::core::SortDirection;
 using fast_explorer::core::SortKey;
 using fast_explorer::tests::TempDir;
 using fast_explorer::ui::PaneController;
+using fast_explorer::ui::SortDispatch;
 
 constexpr uint64_t kSmallPresetExpectedItems = 200;
 
@@ -187,9 +188,10 @@ FE_TEST_CASE(PaneController_Default_HasNoSortApplied) {
   FE_ASSERT_FALSE(pc.hasSortApplied());
 }
 
-FE_TEST_CASE(PaneController_RequestSort_EmptyStore_ReturnsFalse) {
+FE_TEST_CASE(PaneController_RequestSort_EmptyStore_ReturnsRejected) {
   PaneController pc(nullptr);
-  FE_ASSERT_FALSE(pc.requestSort(SortKey::Name));
+  FE_ASSERT_EQ(static_cast<int>(pc.requestSort(SortKey::Name)),
+               static_cast<int>(SortDispatch::Rejected));
   FE_ASSERT_FALSE(pc.hasSortApplied());
 }
 
@@ -200,7 +202,8 @@ FE_TEST_CASE(PaneController_RequestSort_AppliesNameAscending) {
   PaneController pane(nullptr);
   FE_ASSERT_TRUE(pane.openFolder(tmp.path()));
   pane.joinForTest();
-  FE_ASSERT_TRUE(pane.requestSort(SortKey::Name));
+  FE_ASSERT_EQ(static_cast<int>(pane.requestSort(SortKey::Name)),
+               static_cast<int>(SortDispatch::AppliedSync));
   FE_ASSERT_TRUE(pane.hasSortApplied());
   FE_ASSERT_EQ(static_cast<int>(pane.currentSortSpec().key),
                static_cast<int>(SortKey::Name));
@@ -215,13 +218,13 @@ FE_TEST_CASE(PaneController_RequestSort_SameKeyTogglesDirection) {
   PaneController pane(nullptr);
   FE_ASSERT_TRUE(pane.openFolder(tmp.path()));
   pane.joinForTest();
-  FE_ASSERT_TRUE(pane.requestSort(SortKey::Name));
+  pane.requestSort(SortKey::Name);
   FE_ASSERT_EQ(static_cast<int>(pane.currentSortSpec().direction),
                static_cast<int>(SortDirection::Ascending));
-  FE_ASSERT_TRUE(pane.requestSort(SortKey::Name));
+  pane.requestSort(SortKey::Name);
   FE_ASSERT_EQ(static_cast<int>(pane.currentSortSpec().direction),
                static_cast<int>(SortDirection::Descending));
-  FE_ASSERT_TRUE(pane.requestSort(SortKey::Name));
+  pane.requestSort(SortKey::Name);
   FE_ASSERT_EQ(static_cast<int>(pane.currentSortSpec().direction),
                static_cast<int>(SortDirection::Ascending));
 }
@@ -237,7 +240,8 @@ FE_TEST_CASE(PaneController_RequestSort_DifferentKeyResetsToAscending) {
   pane.requestSort(SortKey::Name);  // now Descending
   FE_ASSERT_EQ(static_cast<int>(pane.currentSortSpec().direction),
                static_cast<int>(SortDirection::Descending));
-  FE_ASSERT_TRUE(pane.requestSort(SortKey::Size));
+  FE_ASSERT_EQ(static_cast<int>(pane.requestSort(SortKey::Size)),
+               static_cast<int>(SortDispatch::AppliedSync));
   FE_ASSERT_EQ(static_cast<int>(pane.currentSortSpec().key),
                static_cast<int>(SortKey::Size));
   FE_ASSERT_EQ(static_cast<int>(pane.currentSortSpec().direction),
@@ -251,11 +255,35 @@ FE_TEST_CASE(PaneController_OpenFolder_ResetsSortApplied) {
   PaneController pane(nullptr);
   FE_ASSERT_TRUE(pane.openFolder(tmp.path()));
   pane.joinForTest();
-  FE_ASSERT_TRUE(pane.requestSort(SortKey::Name));
+  pane.requestSort(SortKey::Name);
   FE_ASSERT_TRUE(pane.hasSortApplied());
   FE_ASSERT_TRUE(pane.openFolder(tmp.path()));
   pane.joinForTest();
   FE_ASSERT_FALSE(pane.hasSortApplied());
+}
+
+FE_TEST_CASE(PaneController_BackgroundSort_FillsPendingAndAppliesOnDemand) {
+  TempDir tmp(L"pane-sort-bg");
+  FE_ASSERT_EQ(generateDataset(PresetKind::Small, tmp.path(), 1).error,
+               GenerateError::None);
+  // sortThreshold = 50 forces the background path on the 200-entry
+  // small preset.
+  PaneController pane(nullptr, 50);
+  FE_ASSERT_TRUE(pane.openFolder(tmp.path()));
+  pane.joinForTest();
+
+  FE_ASSERT_EQ(static_cast<int>(pane.requestSort(SortKey::Name)),
+               static_cast<int>(SortDispatch::Dispatched));
+  // Background sort: hasSortApplied() flips only on applyPendingSort.
+  pane.applyPendingSort(pane.generation());
+  FE_ASSERT_TRUE(pane.hasSortApplied());
+
+  const auto& store = pane.store();
+  std::wstring first(store.visibleAt(0).namePtr,
+                     store.visibleAt(0).nameLength);
+  std::wstring last(store.visibleAt(store.publishedCount() - 1).namePtr,
+                    store.visibleAt(store.publishedCount() - 1).nameLength);
+  FE_ASSERT_TRUE(first < last);
 }
 
 FE_TEST_CASE(PaneController_RequestSort_ActuallyReordersVisible) {
@@ -266,7 +294,7 @@ FE_TEST_CASE(PaneController_RequestSort_ActuallyReordersVisible) {
   FE_ASSERT_TRUE(pane.openFolder(tmp.path()));
   pane.joinForTest();
 
-  FE_ASSERT_TRUE(pane.requestSort(SortKey::Name));
+  pane.requestSort(SortKey::Name);
   const auto& storeAsc = pane.store();
   std::wstring firstAsc(storeAsc.visibleAt(0).namePtr,
                         storeAsc.visibleAt(0).nameLength);
@@ -275,7 +303,7 @@ FE_TEST_CASE(PaneController_RequestSort_ActuallyReordersVisible) {
       storeAsc.visibleAt(storeAsc.itemCount() - 1).nameLength);
   FE_ASSERT_TRUE(firstAsc < lastAsc);
 
-  FE_ASSERT_TRUE(pane.requestSort(SortKey::Name));  // toggle to Desc
+  pane.requestSort(SortKey::Name);  // toggle to Desc
   const auto& storeDesc = pane.store();
   std::wstring firstDesc(storeDesc.visibleAt(0).namePtr,
                          storeDesc.visibleAt(0).nameLength);

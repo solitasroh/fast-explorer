@@ -398,6 +398,27 @@ LRESULT MainWindow::handleMessage(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPa
       setStatusText(text.c_str());
       return 0;
     }
+    case kWmFeSortComplete: {
+      if (!pane_ || listView_ == nullptr) {
+        return 0;
+      }
+      if (isStaleGeneration(wParam)) {
+        // Worker for a previous folder; pane state has moved on.
+        // applyPendingSort would also detect this via pendingSortGen_
+        // but the early return saves the indicator/redraw work.
+        return 0;
+      }
+      pane_->applyPendingSort(static_cast<std::uint32_t>(wParam));
+      const auto spec = pane_->currentSortSpec();
+      updateSortIndicator(listView_, sortKeyToColumnIndex(spec.key),
+                          spec.direction);
+      const int count =
+          static_cast<int>(pane_->store().publishedCount());
+      if (count > 0) {
+        ListView_RedrawItems(listView_, 0, count - 1);
+      }
+      return 0;
+    }
     case kWmFeFsChange:
       // Debounce: every event restarts the timer; the actual refresh
       // fires once after kFsCoalesceMs of quiet.
@@ -526,14 +547,21 @@ void MainWindow::handleColumnClick(NMHDR* hdr) {
   // requestSort guards against the enumeration worker still writing
   // entries_; the GETDISPINFO read path against in-flight appends is
   // tracked separately and addressed by the sort-worker milestone.
-  if (!pane_->requestSort(key)) {
+  const auto dispatch = pane_->requestSort(key);
+  if (dispatch == fast_explorer::ui::SortDispatch::Rejected) {
     return;
   }
+  // Update the arrow eagerly for both paths so the click feels
+  // responsive; the background path will still get its final repaint
+  // when kWmFeSortComplete commits applyPendingSort().
   const auto spec = pane_->currentSortSpec();
   updateSortIndicator(listView_, sortKeyToColumnIndex(spec.key), spec.direction);
-  const int count = static_cast<int>(pane_->store().itemCount());
-  if (count > 0) {
-    ListView_RedrawItems(listView_, 0, count - 1);
+  if (dispatch == fast_explorer::ui::SortDispatch::AppliedSync) {
+    const int count =
+        static_cast<int>(pane_->store().publishedCount());
+    if (count > 0) {
+      ListView_RedrawItems(listView_, 0, count - 1);
+    }
   }
 }
 

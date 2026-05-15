@@ -15,11 +15,32 @@
 
 namespace fast_explorer::ui {
 
+// Outcome of a requestSort() call. The two success cases require
+// different UI follow-up: AppliedSync means the store is already in
+// the new order and the caller can repaint immediately; Dispatched
+// means a background worker accepted the request and the caller must
+// wait for kWmFeSortComplete before reading store.visibleAt.
+enum class SortDispatch : uint8_t {
+  Rejected = 0,
+  AppliedSync,
+  Dispatched,
+};
+
 // Owns one pane's FileModelStore and drives DirectoryEnumerator on
 // a worker jthread, posting WM_FE_ENUM_* messages to hostWindow_.
 class PaneController {
  public:
-  explicit PaneController(HWND hostWindow);
+  // Item count at and above which requestSort runs on a background
+  // worker thread; smaller stores sort synchronously on the UI thread
+  // because the worker hand-off overhead would dominate the sort.
+  // The 2,000-row choice tracks the design §14.5 calibration: below
+  // it std::sort on the visible permutation finishes well inside the
+  // 50 ms UI budget without the jthread spin-up cost.
+  static constexpr std::uint32_t kDefaultSortThresholdRows = 2000;
+
+  explicit PaneController(HWND hostWindow,
+                          std::uint32_t sortThresholdRows =
+                              kDefaultSortThresholdRows);
   ~PaneController();
 
   PaneController(const PaneController&) = delete;
@@ -49,12 +70,26 @@ class PaneController {
 
   // Apply a sort by the given key. If `key` matches the current sort
   // key, the direction is toggled; otherwise the sort restarts in
-  // ascending direction. Returns false when an enumeration worker is
-  // still running (sort would race with the worker's appends) or when
-  // the store is empty; returns true after the underlying sort has
-  // been applied and currentSortSpec() / hasSortApplied() reflect the
-  // new state.
-  bool requestSort(fast_explorer::core::SortKey key);
+  // ascending direction. Returns Rejected when an enumeration worker
+  // is still running (sort would race with the worker's appends) or
+  // when the store is empty.
+  //
+  // Below `sortThresholdRows_` the sort runs synchronously on the UI
+  // thread (returns AppliedSync; hasSortApplied() is true). At or
+  // above it the sort is dispatched to a background worker (returns
+  // Dispatched) and the result becomes visible only after the host
+  // receives kWmFeSortComplete and calls applyPendingSort().
+  SortDispatch requestSort(fast_explorer::core::SortKey key);
+
+  // UI-thread entry point for committing a background-sort result.
+  // Joins the sort worker if it is still running and swaps the
+  // pending permutation into the store's visibleOrder_. `gen` is the
+  // store generation snapshot the sort worker captured; mismatched
+  // generations (e.g. navigation happened between the worker post
+  // and the UI dispatch) cause the pending order to be discarded.
+  // The caller (MainWindow) invokes this on kWmFeSortComplete and
+  // is responsible for the subsequent ListView_RedrawItems.
+  void applyPendingSort(std::uint32_t gen);
 
   fast_explorer::core::SortSpec currentSortSpec() const noexcept {
     return sortSpec_;
@@ -68,7 +103,7 @@ class PaneController {
   // production the worker's lifecycle is owned by the jthread
   // destructor; tests need an explicit synchronization point to
   // assert results.
-  void joinForTest();
+  void joinForTest() noexcept;
 
   uint32_t generation() const noexcept;
   const std::wstring& currentPath() const noexcept { return currentPath_; }
@@ -98,6 +133,15 @@ class PaneController {
       fast_explorer::core::SortKey::Name,
       fast_explorer::core::SortDirection::Ascending};
   bool sorted_ = false;
+  std::uint32_t sortThresholdRows_ = kDefaultSortThresholdRows;
+  // pendingSortedOrder_ and pendingSortGen_ are written by sortWorker_
+  // and read by applyPendingSort() on the UI thread. They MUST be
+  // declared before sortWorker_ so destruction joins the thread
+  // before the data it captures is destroyed; the same invariant is
+  // why worker_ is declared last.
+  std::vector<std::uint32_t> pendingSortedOrder_;
+  std::uint32_t pendingSortGen_ = 0;
+  std::jthread sortWorker_;
   std::jthread worker_;
 };
 
