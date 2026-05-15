@@ -4,6 +4,7 @@
 #include <shellapi.h>
 #include <stdio.h>
 
+#include <iterator>
 #include <string>
 
 #include "app/app-services.h"
@@ -12,6 +13,7 @@
 #include "core/process-memory.h"
 #include "core/ring-logger.h"
 #include "ui/main-window.h"
+#include "ui/messages.h"
 #include "ui/stall-probe.h"
 
 namespace {
@@ -62,7 +64,8 @@ void logStall(fast_explorer::core::RingLogger& logger,
 }
 
 int runMessageLoop(fast_explorer::core::PerfTracker& perf,
-                   fast_explorer::core::RingLogger& logger) {
+                   fast_explorer::core::RingLogger& logger,
+                   HWND hwnd, HACCEL accel) {
   using fast_explorer::core::PerfTracker;
   using fast_explorer::ui::classifyStall;
   MSG msg{};
@@ -71,6 +74,9 @@ int runMessageLoop(fast_explorer::core::PerfTracker& perf,
   QueryPerformanceFrequency(&freq);
   const uint64_t hz = static_cast<uint64_t>(freq.QuadPart);
   while (GetMessageW(&msg, nullptr, 0, 0) > 0) {
+    if (accel && TranslateAcceleratorW(hwnd, accel, &msg)) {
+      continue;
+    }
     if (!firstMessageSeen) {
       perf.record(PerfTracker::EventId::AppInteractive);
       firstMessageSeen = true;
@@ -173,6 +179,12 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance,
 
       fast_explorer::ui::MainWindow window(services.memory(), services.perf());
       if (window.create(instance, showCommand)) {
+        ACCEL accels[] = {
+            {static_cast<BYTE>(FCONTROL | FVIRTKEY), L'L',
+             fast_explorer::ui::kAccelFocusAddress},
+        };
+        HACCEL hAccel =
+            CreateAcceleratorTableW(accels, static_cast<int>(std::size(accels)));
         if (!openPath.empty()) {
           if (!window.openFolder(openPath)) {
             logger.error(L"--open path invalid: %ls", openPath.c_str());
@@ -180,7 +192,11 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance,
             logger.info(L"--open: enumerating %ls", openPath.c_str());
           }
         }
-        exitCode = runMessageLoop(services.perf(), logger);
+        exitCode = runMessageLoop(services.perf(), logger, window.handle(),
+                                  hAccel);
+        if (hAccel) {
+          DestroyAcceleratorTable(hAccel);
+        }
       } else {
         logger.error(L"MainWindow::create failed (lastError=%lu)", GetLastError());
       }

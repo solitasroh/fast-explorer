@@ -41,6 +41,12 @@ HWND createStatusBar(HWND parent, HINSTANCE instance) {
                          parent, nullptr, instance, nullptr);
 }
 
+HWND createAddressBar(HWND parent, HINSTANCE instance) {
+  return CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", L"",
+                         WS_CHILD | WS_VISIBLE | WS_TABSTOP | ES_AUTOHSCROLL,
+                         0, 0, 0, 0, parent, nullptr, instance, nullptr);
+}
+
 HWND createListView(HWND parent, HINSTANCE instance) {
   return CreateWindowExW(
       0, WC_LISTVIEWW, L"",
@@ -121,6 +127,9 @@ bool MainWindow::openFolder(const std::wstring& path) {
   if (!pane_->openFolder(path)) {
     return false;
   }
+  if (addressBar_) {
+    SetWindowTextW(addressBar_, path.c_str());
+  }
   const std::wstring text = loadingStatusText(path);
   setStatusText(text.c_str());
   return true;
@@ -128,6 +137,45 @@ bool MainWindow::openFolder(const std::wstring& path) {
 
 bool MainWindow::isStaleGeneration(WPARAM wParam) const {
   return !pane_ || static_cast<uint32_t>(wParam) != pane_->generation();
+}
+
+LRESULT CALLBACK MainWindow::addressBarSubclassProc(
+    HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam,
+    UINT_PTR /*uIdSubclass*/, DWORD_PTR /*dwRefData*/) {
+  if (msg == WM_NCDESTROY) {
+    RemoveWindowSubclass(hwnd, &MainWindow::addressBarSubclassProc, 0);
+    return DefSubclassProc(hwnd, msg, wParam, lParam);
+  }
+  if (msg == WM_GETDLGCODE && wParam == VK_RETURN) {
+    return DLGC_WANTMESSAGE;
+  }
+  if (msg == WM_KEYDOWN && wParam == VK_RETURN) {
+    HWND parent = GetParent(hwnd);
+    if (parent) {
+      SendMessageW(parent, kWmFeAddressCommit, 0, 0);
+    }
+    return 0;
+  }
+  if (msg == WM_CHAR && wParam == VK_RETURN) {
+    return 0;  // suppress the system beep on Enter
+  }
+  return DefSubclassProc(hwnd, msg, wParam, lParam);
+}
+
+void MainWindow::handleAddressCommit() {
+  if (!addressBar_) {
+    return;
+  }
+  const int len = GetWindowTextLengthW(addressBar_);
+  std::wstring text(static_cast<size_t>(len), L'\0');
+  if (len > 0) {
+    GetWindowTextW(addressBar_, text.data(), len + 1);
+    text.resize(static_cast<size_t>(len));
+  }
+  if (text.empty()) {
+    return;
+  }
+  openFolder(text);
 }
 
 void MainWindow::setStatusText(const wchar_t* text) {
@@ -190,6 +238,11 @@ LRESULT MainWindow::handleMessage(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPa
       }
       ListView_SetItemCountEx(listView_, 0, 0);
       statusBar_ = createStatusBar(hwnd, instance_);
+      addressBar_ = createAddressBar(hwnd, instance_);
+      if (addressBar_) {
+        SetWindowSubclass(addressBar_, &MainWindow::addressBarSubclassProc, 0,
+                          0);
+      }
       pane_ = std::make_unique<PaneController>(hwnd);
       formatCache_ = std::make_unique<FormatCache>();
       return 0;
@@ -218,10 +271,16 @@ LRESULT MainWindow::handleMessage(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPa
           GetWindowRect(statusBar_, &sb);
           statusH = sb.bottom - sb.top;
         }
-        const int listH =
-            std::max<int>(0, (client.bottom - client.top) - statusH);
-        SetWindowPos(listView_, nullptr, 0, 0, client.right - client.left,
-                     listH, SWP_NOZORDER | SWP_NOACTIVATE);
+        const int addressH = addressBar_ ? scaleForDpi(28, GetDpiForWindow(hwnd)) : 0;
+        const int clientW = client.right - client.left;
+        const int clientH = client.bottom - client.top;
+        if (addressBar_) {
+          SetWindowPos(addressBar_, nullptr, 0, 0, clientW, addressH,
+                       SWP_NOZORDER | SWP_NOACTIVATE);
+        }
+        const int listH = std::max<int>(0, clientH - statusH - addressH);
+        SetWindowPos(listView_, nullptr, 0, addressH, clientW, listH,
+                     SWP_NOZORDER | SWP_NOACTIVATE);
       }
       if (wParam == SIZE_MINIMIZED) {
         memory_.notifyMinimized();
@@ -229,6 +288,17 @@ LRESULT MainWindow::handleMessage(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPa
         memory_.notifyRestored();
       }
       return DefWindowProcW(hwnd, msg, wParam, lParam);
+    case WM_COMMAND:
+      if (HIWORD(wParam) == 1 && LOWORD(wParam) == kAccelFocusAddress &&
+          addressBar_) {
+        SetFocus(addressBar_);
+        SendMessageW(addressBar_, EM_SETSEL, 0, -1);
+        return 0;
+      }
+      return DefWindowProcW(hwnd, msg, wParam, lParam);
+    case kWmFeAddressCommit:
+      handleAddressCommit();
+      return 0;
     case kWmFeEnumBatch: {
       if (isStaleGeneration(wParam)) {
         return 0;

@@ -38,6 +38,9 @@ class MainWindow {
   bool isStaleGeneration(WPARAM wParam) const;
   void handleGetDispInfo(NMHDR* hdr);
   LRESULT handleCustomDraw(NMHDR* hdr);
+  void handleAddressCommit();
+  static LRESULT CALLBACK addressBarSubclassProc(HWND, UINT, WPARAM, LPARAM,
+                                                 UINT_PTR, DWORD_PTR);
 
   static constexpr const wchar_t* kClassName = L"FastExplorer.MainWindow";
   static constexpr int kDefaultWidth = 1280;
@@ -51,6 +54,7 @@ class MainWindow {
   HWND hwnd_ = nullptr;
   HWND listView_ = nullptr;
   HWND statusBar_ = nullptr;
+  HWND addressBar_ = nullptr;
   bool firstBatchSeen_ = false;
   std::unique_ptr<PaneController> pane_;
   std::unique_ptr<class FormatCache> formatCache_;

@@ -16,10 +16,13 @@ inline constexpr UINT kWmFeIconBatch       = kWmFeBase + 0x05;
 inline constexpr UINT kWmFeOperationResult = kWmFeBase + 0x06;
 inline constexpr UINT kWmFeFsChange        = kWmFeBase + 0x07;
 inline constexpr UINT kWmFePerfEvent       = kWmFeBase + 0x08;
+inline constexpr UINT kWmFeAddressCommit   = kWmFeBase + 0x09;
+
+inline constexpr WORD kAccelFocusAddress = 100;
 
 static_assert(kWmFeBase >= WM_APP,
               "WM_FE_* must live in the WM_APP user range");
-static_assert(kWmFePerfEvent <= 0xBFFFu,
+static_assert(kWmFeAddressCommit <= 0xBFFFu,
               "WM_FE_* must not spill past the WM_APP user range");
 
 }  // namespace fast_explorer::ui
