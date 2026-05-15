@@ -106,6 +106,63 @@ FE_TEST_CASE(ShellWorker_Delete_NonexistentPath_DoesNotHangWorker) {
   FE_ASSERT_EQ(worker.processedForTest(), static_cast<std::size_t>(1));
 }
 
+FE_TEST_CASE(ShellWorker_Rename_RenamesFileOnDisk) {
+  TempDir tmp(L"shellworker-rename");
+  FE_ASSERT_TRUE(CreateDirectoryW(tmp.path().c_str(), nullptr) != 0);
+  const std::wstring source = tmp.path() + L"\\before.txt";
+  const std::wstring renamed = tmp.path() + L"\\after.txt";
+  writeEmptyFile(source);
+  FE_ASSERT_TRUE(fileExists(source));
+
+  ShellWorker worker(nullptr);
+  ShellCommand cmd;
+  cmd.kind = ShellCommandKind::Rename;
+  cmd.sourcePath = source;
+  cmd.newName = L"after.txt";
+  worker.request(std::move(cmd));
+  worker.waitForProcessedForTest(1);
+
+  FE_ASSERT_FALSE(fileExists(source));
+  FE_ASSERT_TRUE(fileExists(renamed));
+}
+
+FE_TEST_CASE(ShellWorker_CreateFolder_AddsFolderUnderParent) {
+  TempDir tmp(L"shellworker-create");
+  FE_ASSERT_TRUE(CreateDirectoryW(tmp.path().c_str(), nullptr) != 0);
+  const std::wstring childPath = tmp.path() + L"\\newfolder";
+
+  ShellWorker worker(nullptr);
+  ShellCommand cmd;
+  cmd.kind = ShellCommandKind::CreateFolder;
+  cmd.sourcePath = tmp.path();
+  cmd.newName = L"newfolder";
+  worker.request(std::move(cmd));
+  worker.waitForProcessedForTest(1);
+
+  FE_ASSERT_TRUE(fileExists(childPath));
+  const DWORD attr = GetFileAttributesW(childPath.c_str());
+  FE_ASSERT_TRUE((attr & FILE_ATTRIBUTE_DIRECTORY) != 0);
+}
+
+FE_TEST_CASE(ShellWorker_Rename_EmptyName_DoesNotChangeFile) {
+  // Guard against renaming to an empty name; the helper should
+  // refuse without touching the file system.
+  TempDir tmp(L"shellworker-rename-empty");
+  FE_ASSERT_TRUE(CreateDirectoryW(tmp.path().c_str(), nullptr) != 0);
+  const std::wstring source = tmp.path() + L"\\original.txt";
+  writeEmptyFile(source);
+
+  ShellWorker worker(nullptr);
+  ShellCommand cmd;
+  cmd.kind = ShellCommandKind::Rename;
+  cmd.sourcePath = source;
+  cmd.newName = L"";
+  worker.request(std::move(cmd));
+  worker.waitForProcessedForTest(1);
+
+  FE_ASSERT_TRUE(fileExists(source));
+}
+
 FE_TEST_CASE(ShellWorker_ShellCommandKind_DistinctValues) {
   FE_ASSERT_NE(static_cast<int>(ShellCommandKind::Rename),
                static_cast<int>(ShellCommandKind::CreateFolder));

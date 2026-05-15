@@ -11,58 +11,146 @@ namespace fast_explorer::ui {
 
 namespace {
 
-// Releases a COM interface pointer and clears it.
+// Minimal RAII wrapper for a COM interface pointer. Releases on
+// destruction so each helper can early-return from any HRESULT
+// failure without remembering to chain release calls. put() yields
+// a T** suitable for COM creation APIs (CoCreateInstance,
+// SHCreateItemFromParsingName).
 template <class T>
-void safeRelease(T*& p) noexcept {
-  if (p != nullptr) {
-    p->Release();
-    p = nullptr;
+class ComScope {
+ public:
+  ComScope() = default;
+  ~ComScope() { reset(); }
+  ComScope(const ComScope&) = delete;
+  ComScope& operator=(const ComScope&) = delete;
+  ComScope(ComScope&& other) noexcept : p_(other.p_) { other.p_ = nullptr; }
+  ComScope& operator=(ComScope&& other) noexcept {
+    if (this != &other) {
+      reset();
+      p_ = other.p_;
+      other.p_ = nullptr;
+    }
+    return *this;
   }
-}
 
-// Runs the recycle-bin delete sequence on the worker's STA thread.
-// Returns true if PerformOperations succeeded; otherwise the file
-// system is unchanged. The watcher path (kWmFeFsChange + coalesce
-// refresh) will pick up the result automatically — no extra
-// channel is needed back to the UI for the success case.
-bool performShellDelete(const std::wstring& sourcePath) noexcept {
-  IFileOperation* op = nullptr;
+  T* get() const noexcept { return p_; }
+  T* operator->() const noexcept { return p_; }
+  T** put() noexcept {
+    reset();
+    return &p_;
+  }
+  explicit operator bool() const noexcept { return p_ != nullptr; }
+  void reset() noexcept {
+    if (p_ != nullptr) {
+      p_->Release();
+      p_ = nullptr;
+    }
+  }
+
+ private:
+  T* p_ = nullptr;
+};
+
+// FOF_ALLOWUNDO permits recycle-bin routing; FOFX_RECYCLEONDELETE
+// forces it even when the drive's recycle quota is exceeded, so a
+// delete cannot silently slip into a permanent removal. The
+// remaining flags suppress every shell dialog so failure surfaces
+// only through HRESULT.
+constexpr DWORD kSilentRecycleFlags = FOF_ALLOWUNDO |
+                                      FOFX_RECYCLEONDELETE |
+                                      FOF_NOCONFIRMATION |
+                                      FOF_NOERRORUI |
+                                      FOF_SILENT;
+
+// Creates an IFileOperation already configured for silent-recycle
+// behaviour. Returns empty scope on failure.
+ComScope<IFileOperation> makeFileOp() noexcept {
+  ComScope<IFileOperation> op;
   HRESULT hr = CoCreateInstance(CLSID_FileOperation, nullptr,
                                 CLSCTX_INPROC_SERVER,
-                                IID_PPV_ARGS(&op));
-  if (FAILED(hr) || op == nullptr) {
-    return false;
+                                IID_PPV_ARGS(op.put()));
+  if (FAILED(hr) || !op) {
+    return {};
   }
-  // FOF_ALLOWUNDO permits the recycle-bin path; FOFX_RECYCLEONDELETE
-  // forces it even when the shell would otherwise fall back to a
-  // permanent delete (e.g. items above the per-drive recycle quota).
-  // The two are intentionally combined — losing either one risks a
-  // silent permanent delete in edge cases. FOF_NOCONFIRMATION /
-  // FOF_NOERRORUI / FOF_SILENT suppress the shell's own dialogs;
-  // failures surface only through the HRESULT chain.
-  hr = op->SetOperationFlags(FOF_ALLOWUNDO | FOFX_RECYCLEONDELETE |
-                             FOF_NOCONFIRMATION | FOF_NOERRORUI |
-                             FOF_SILENT);
+  hr = op->SetOperationFlags(kSilentRecycleFlags);
   if (FAILED(hr)) {
-    safeRelease(op);
-    return false;
+    return {};
   }
-  IShellItem* item = nullptr;
-  hr = SHCreateItemFromParsingName(sourcePath.c_str(), nullptr,
-                                   IID_PPV_ARGS(&item));
-  if (FAILED(hr) || item == nullptr) {
-    safeRelease(op);
-    return false;
-  }
-  hr = op->DeleteItem(item, nullptr);
-  safeRelease(item);
+  return op;
+}
+
+// Resolves an IShellItem from an absolute Win32 path. Returns empty
+// scope when the shell cannot parse the path (missing parent, etc).
+ComScope<IShellItem> shellItem(const std::wstring& path) noexcept {
+  ComScope<IShellItem> item;
+  HRESULT hr = SHCreateItemFromParsingName(path.c_str(), nullptr,
+                                           IID_PPV_ARGS(item.put()));
   if (FAILED(hr)) {
-    safeRelease(op);
+    return {};
+  }
+  return item;
+}
+
+// The watcher path (kWmFeFsChange + coalesce refresh) observes the
+// result of these operations and refreshes the pane automatically —
+// the helpers below report success/failure through the bool return
+// only; no extra channel is plumbed back to the UI.
+
+bool performShellDelete(const std::wstring& sourcePath) noexcept {
+  auto op = makeFileOp();
+  if (!op) {
     return false;
   }
-  hr = op->PerformOperations();
-  safeRelease(op);
-  return SUCCEEDED(hr);
+  auto item = shellItem(sourcePath);
+  if (!item) {
+    return false;
+  }
+  HRESULT hr = op->DeleteItem(item.get(), nullptr);
+  if (FAILED(hr)) {
+    return false;
+  }
+  return SUCCEEDED(op->PerformOperations());
+}
+
+bool performShellRename(const std::wstring& sourcePath,
+                        const std::wstring& newName) noexcept {
+  if (newName.empty()) {
+    return false;
+  }
+  auto op = makeFileOp();
+  if (!op) {
+    return false;
+  }
+  auto item = shellItem(sourcePath);
+  if (!item) {
+    return false;
+  }
+  HRESULT hr = op->RenameItem(item.get(), newName.c_str(), nullptr);
+  if (FAILED(hr)) {
+    return false;
+  }
+  return SUCCEEDED(op->PerformOperations());
+}
+
+bool performShellCreateFolder(const std::wstring& parentPath,
+                              const std::wstring& folderName) noexcept {
+  if (folderName.empty()) {
+    return false;
+  }
+  auto op = makeFileOp();
+  if (!op) {
+    return false;
+  }
+  auto parent = shellItem(parentPath);
+  if (!parent) {
+    return false;
+  }
+  HRESULT hr = op->NewItem(parent.get(), FILE_ATTRIBUTE_DIRECTORY,
+                           folderName.c_str(), nullptr, nullptr);
+  if (FAILED(hr)) {
+    return false;
+  }
+  return SUCCEEDED(op->PerformOperations());
 }
 
 }  // namespace
@@ -120,8 +208,10 @@ void ShellWorker::processOne(const ShellCommand& command) {
       (void)performShellDelete(command.sourcePath);
       break;
     case ShellCommandKind::Rename:
+      (void)performShellRename(command.sourcePath, command.newName);
+      break;
     case ShellCommandKind::CreateFolder:
-      // Wired in the follow-up sub-step.
+      (void)performShellCreateFolder(command.sourcePath, command.newName);
       break;
   }
   processed_.fetch_add(1, std::memory_order_release);
@@ -129,8 +219,12 @@ void ShellWorker::processOne(const ShellCommand& command) {
 }
 
 void ShellWorker::workerMain(std::stop_token tok) {
-  // IFileOperation requires the STA apartment; the next sub-step's
-  // CoCreateInstance call will rely on this initialisation.
+  // IFileOperation requires the STA apartment. If CoInitializeEx
+  // fails (e.g. RPC_E_CHANGED_MODE from a host that pre-initialised
+  // the thread as MTA), the loop keeps draining the queue and every
+  // command becomes a silent no-op rather than blocking the queue
+  // forever — failure is surfaced through performShell*'s bool
+  // return and the watcher refresh path.
   const HRESULT coInitResult =
       CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
 
