@@ -37,6 +37,8 @@ set(FE_APP_SOURCES
   src/ui/dpi-scale.h
   src/ui/format-cache.cpp
   src/ui/format-cache.h
+  src/ui/icon-cache.cpp
+  src/ui/icon-cache.h
   src/ui/jthread-utils.h
   src/ui/pane-controller.cpp
   src/ui/pane-controller.h
@@ -132,6 +134,7 @@ add_executable(core-tests
   tests/status-text-tests.cpp
   tests/stall-probe-tests.cpp
   tests/file-sort-tests.cpp
+  tests/icon-cache-tests.cpp
   tests/pane-sort-coordinator-tests.cpp
   tests/bench-fs-helper.h
   src/ui/messages.h
@@ -140,6 +143,8 @@ add_executable(core-tests
   src/ui/dpi-scale.h
   src/ui/format-cache.cpp
   src/ui/format-cache.h
+  src/ui/icon-cache.cpp
+  src/ui/icon-cache.h
   src/ui/jthread-utils.h
   src/ui/pane-controller.cpp
   src/ui/pane-controller.h
@@ -181,8 +186,10 @@ add_executable(core-tests
 target_include_directories(core-tests PRIVATE src tests)
 
 target_link_libraries(core-tests PRIVATE
+  comctl32
   shell32
   ole32
+  user32
 )
 
 # ---------------------------------------------------------------------------

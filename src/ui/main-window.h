@@ -91,6 +91,7 @@ class MainWindow {
   bool reapplyingSelection_ = false;
   std::unique_ptr<PaneController> pane_;
   std::unique_ptr<class FormatCache> formatCache_;
+  std::unique_ptr<class IconCache> iconCache_;
 };
 
 }  // namespace fast_explorer::ui

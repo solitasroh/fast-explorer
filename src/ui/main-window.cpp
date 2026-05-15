@@ -16,6 +16,7 @@
 #include "ui/column-formatter.h"
 #include "ui/dpi-scale.h"
 #include "ui/format-cache.h"
+#include "ui/icon-cache.h"
 #include "ui/messages.h"
 #include "ui/pane-controller.h"
 #include "ui/status-text.h"
@@ -364,6 +365,12 @@ LRESULT MainWindow::onCreate(HWND hwnd) {
   }
   pane_ = std::make_unique<PaneController>(hwnd);
   formatCache_ = std::make_unique<FormatCache>();
+  iconCache_ = std::make_unique<IconCache>(GetDpiForWindow(hwnd));
+  if (iconCache_->ok()) {
+    // LVS_SHAREIMAGELISTS keeps ownership with us, so we destroy the
+    // image list via IconCache rather than the list-view.
+    ListView_SetImageList(listView_, iconCache_->handle(), LVSIL_SMALL);
+  }
   return 0;
 }
 
@@ -571,7 +578,10 @@ void MainWindow::handleGetDispInfo(NMHDR* hdr) {
     return;
   }
   auto* disp = reinterpret_cast<NMLVDISPINFOW*>(hdr);
-  if ((disp->item.mask & LVIF_TEXT) == 0 || disp->item.iItem < 0) {
+  if (disp->item.iItem < 0) {
+    return;
+  }
+  if ((disp->item.mask & (LVIF_TEXT | LVIF_IMAGE)) == 0) {
     return;
   }
   const auto& store = pane_->store();
@@ -587,6 +597,12 @@ void MainWindow::handleGetDispInfo(NMHDR* hdr) {
   // visibleOrder so sort() reorderings flow into LVN_GETDISPINFO
   // without further plumbing. Identity until the first sort.
   const auto& entry = store.visibleAt(row);
+  if ((disp->item.mask & LVIF_IMAGE) != 0) {
+    disp->item.iImage = placeholderIndexFor(entry);
+  }
+  if ((disp->item.mask & LVIF_TEXT) == 0) {
+    return;
+  }
   switch (disp->item.iSubItem) {
     case 0: {
       const auto view = fast_explorer::core::nameView(entry);
