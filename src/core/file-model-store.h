@@ -3,6 +3,7 @@
 #include <atomic>
 #include <cstddef>
 #include <cstdint>
+#include <memory>
 #include <span>
 #include <string>
 #include <string_view>
@@ -27,23 +28,24 @@ enum class AppendResult : uint8_t {
 // FileEntry::namePtr pointers it returns stay valid for the store's
 // lifetime, independent of the backend that produced them.
 //
-// Thread-safety: the worker thread appends and calls publish(); the
-// UI thread reads only entries below publishedCount() and never calls
-// any mutating method while workerActive. entries_ and visibleOrder_
-// are reserve()d up to kMaxEntries at construction so push_back never
-// reallocates — that keeps entries_[i] / visibleOrder_[i] pointers
-// stable for the UI thread as long as i < publishedCount().
-//
-// publishedCount() ordering: the worker store-releases after the
-// matching push_backs are visible; the UI acquire-loads before
-// dereferencing entries_/visibleOrder_, so reads in [0, published)
-// observe fully-initialized FileEntry records.
+// Storage layout: entries_ and visibleOrder_ are fixed-size raw
+// arrays of kMaxEntries elements, allocated once at construction.
+// workerSize_ tracks how many slots the worker has populated and is
+// atomic so the UI thread can acquire-load a value that synchronizes
+// with the worker's writes. The earlier std::vector layout relied on
+// reserve() + non-atomic m_size; that left vector::size() formally a
+// data race even when reallocation was impossible. Plain arrays plus
+// an explicit atomic size make the same access pattern standard-
+// compliant: the worker is the only thread that writes workerSize_,
+// readers (entryAt / visibleAt / itemCount) take an acquire load,
+// and publishedCount_ still gates "fully constructed batch boundary"
+// visibility on top of that.
 class FileModelStore {
  public:
-  // Cap on entries per pane. entries_ and visibleOrder_ are reserved
-  // up to this value at construction so push_back never reallocates;
-  // UI-thread reads of entries_[i] / visibleOrder_[i] therefore see
-  // stable pointers for any i below publishedCount().
+  // Cap on entries per pane. entries_ and visibleOrder_ are sized to
+  // this value at construction so push_back never reallocates and
+  // UI-thread reads of entries_[i] / visibleOrder_[i] see stable
+  // pointers for any i below publishedCount().
   static constexpr std::uint32_t kMaxEntries = 100'000;
 
   explicit FileModelStore(
@@ -60,7 +62,8 @@ class FileModelStore {
   // copied into the store's arena and the stored FileEntry's namePtr
   // is rewritten to point at that copy. ArenaFull means the arena is
   // exhausted; NameTooLong means the interned name would not fit in
-  // FileEntry::nameLength (uint16_t).
+  // FileEntry::nameLength (uint16_t); CapacityFull means kMaxEntries
+  // has been reached.
   AppendResult appendEntry(const FileEntry& source);
 
   // Append multiple entries. Returns the number of entries that were
@@ -70,12 +73,16 @@ class FileModelStore {
 
   std::uint32_t generation() const noexcept { return generation_; }
   const std::wstring& rootPath() const noexcept { return rootPath_; }
-  // itemCount() returns the raw entries_.size(). While a worker thread
-  // is appending, this read is non-atomic and races the worker's
-  // size mutation — call publishedCount() from the UI thread instead.
-  // Safe to call from the worker itself, or from any thread once the
-  // worker has joined.
-  std::size_t itemCount() const noexcept { return entries_.size(); }
+  // workerSize_ acquire-load. UI-thread callers MUST NOT use this to
+  // bound an entryAt/visibleAt loop while a worker is in flight: the
+  // worker may have advanced workerSize_ past the most recent batch
+  // boundary, and an entry between publishedCount() and itemCount()
+  // can be observed in the middle of being written by the next
+  // batch's appendEntry. Use publishedCount() for UI indexing; this
+  // accessor is for memory accounting and worker-internal logic.
+  std::size_t itemCount() const noexcept {
+    return workerSize_.load(std::memory_order_acquire);
+  }
 
   // Visibility boundary between worker (writer) and UI (reader). The
   // worker calls publish(n) after a batch of appends is fully written
@@ -107,10 +114,15 @@ class FileModelStore {
   // From the UI thread, guard the index against publishedCount() rather
   // than itemCount() so the worker's append stream stays race-free.
   const FileEntry& visibleAt(std::size_t visibleIndex) const;
-  // The span's data()/size() are non-atomic; callers concurrent with
-  // a running worker must bound their iteration by publishedCount().
+  // The span's data() is stable for the store's lifetime — using it
+  // after the store is destroyed is UB, and forwarding it to another
+  // thread requires the caller to keep the store alive for that
+  // thread's lifetime. The span's size reflects workerSize_ at the
+  // call site; callers concurrent with a running worker must bound
+  // their iteration by publishedCount().
   std::span<const std::uint32_t> visibleOrder() const noexcept {
-    return {visibleOrder_.data(), visibleOrder_.size()};
+    return {visibleOrder_.get(),
+            workerSize_.load(std::memory_order_acquire)};
   }
 
   // Reorders the visible permutation by the given SortSpec. O(n log n).
@@ -123,11 +135,14 @@ class FileModelStore {
   // `order.size() == publishedCount()` and that every value is a valid
   // entries_ index. Intended for the UI thread to apply the result of
   // a worker-thread sort under the same single-mutator policy as
-  // sort().
+  // sort(). After this call only the [0, publishedCount()) prefix of
+  // visibleOrder_ is meaningful — if the caller subsequently advances
+  // publishedCount past that prefix, the unsorted tail (identity
+  // values written by appendEntry) will be exposed.
   void applySortedOrder(std::vector<std::uint32_t> order);
 
   std::size_t entriesBytes() const noexcept {
-    return entries_.capacity() * sizeof(FileEntry);
+    return static_cast<std::size_t>(kMaxEntries) * sizeof(FileEntry);
   }
   std::size_t nameArenaCommittedBytes() const noexcept {
     return nameArena_.committedBytes();
@@ -143,8 +158,12 @@ class FileModelStore {
   std::wstring rootPath_;
   std::uint32_t generation_ = 0;
   NameArena nameArena_;
-  std::vector<FileEntry> entries_;
-  std::vector<std::uint32_t> visibleOrder_;
+  std::unique_ptr<FileEntry[]> entries_;
+  std::unique_ptr<std::uint32_t[]> visibleOrder_;
+  // workerSize_ is single-writer (the enumeration worker, via
+  // appendEntry on its own thread). All readers — including UI-thread
+  // accessors — see writes through the acquire/release pair below.
+  std::atomic<std::uint32_t> workerSize_{0};
   std::atomic<std::uint32_t> publishedCount_{0};
 };
 
