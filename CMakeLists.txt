@@ -37,8 +37,11 @@ set(FE_APP_SOURCES
   src/ui/dpi-scale.h
   src/ui/format-cache.cpp
   src/ui/format-cache.h
+  src/ui/jthread-utils.h
   src/ui/pane-controller.cpp
   src/ui/pane-controller.h
+  src/ui/pane-sort-coordinator.cpp
+  src/ui/pane-sort-coordinator.h
   src/ui/status-text.cpp
   src/ui/status-text.h
   src/ui/stall-probe.cpp
@@ -136,8 +139,11 @@ add_executable(core-tests
   src/ui/dpi-scale.h
   src/ui/format-cache.cpp
   src/ui/format-cache.h
+  src/ui/jthread-utils.h
   src/ui/pane-controller.cpp
   src/ui/pane-controller.h
+  src/ui/pane-sort-coordinator.cpp
+  src/ui/pane-sort-coordinator.h
   src/ui/status-text.cpp
   src/ui/status-text.h
   src/ui/stall-probe.cpp
