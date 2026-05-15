@@ -197,6 +197,8 @@ add_executable(FastExplorerBench
   src/core/file-entry.h
   src/core/file-model-store.cpp
   src/core/file-model-store.h
+  src/core/file-sort.cpp
+  src/core/file-sort.h
   src/core/fs-backend.h
   src/core/fs-watcher.cpp
   src/core/fs-watcher.h

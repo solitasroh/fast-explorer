@@ -8,6 +8,7 @@
 #include <vector>
 
 #include "core/file-entry.h"
+#include "core/file-sort.h"
 #include "core/name-arena.h"
 
 namespace fast_explorer::core {
@@ -57,7 +58,26 @@ class FileModelStore {
 
   // entryAt's reference is invalidated by any subsequent append; only
   // FileEntry::namePtr remains valid because it points into the arena.
+  // Precondition: index < itemCount(). Violations are UB in release.
   const FileEntry& entryAt(std::size_t index) const;
+
+  // Visible-order accessors. The store maintains a permutation of
+  // entry indices so the UI can reorder rows (sort) without rewriting
+  // the underlying FileEntry array. Until sort() is called the
+  // permutation is identity (0, 1, ..., itemCount-1), so visibleAt(i)
+  // and entryAt(i) return the same record. Newly appended entries are
+  // always pushed onto the tail of visibleOrder, so insertion order
+  // is preserved until the next sort.
+  // Precondition: visibleIndex < itemCount(). Violations are UB in release.
+  const FileEntry& visibleAt(std::size_t visibleIndex) const;
+  std::span<const std::uint32_t> visibleOrder() const noexcept {
+    return {visibleOrder_.data(), visibleOrder_.size()};
+  }
+
+  // Reorders the visible permutation by the given SortSpec. O(n log n).
+  // Does not touch entries_ or the name arena, so namePtr stability and
+  // append-time invariants are unaffected.
+  void sort(SortSpec spec);
 
   std::size_t entriesBytes() const noexcept {
     return entries_.capacity() * sizeof(FileEntry);
@@ -77,6 +97,7 @@ class FileModelStore {
   std::uint32_t generation_ = 0;
   NameArena nameArena_;
   std::vector<FileEntry> entries_;
+  std::vector<std::uint32_t> visibleOrder_;
 };
 
 }  // namespace fast_explorer::core

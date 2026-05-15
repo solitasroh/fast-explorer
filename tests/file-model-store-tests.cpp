@@ -7,12 +7,16 @@
 
 #include "core/file-entry.h"
 #include "core/file-model-store.h"
+#include "core/file-sort.h"
 #include "core/name-arena.h"
 
 using fast_explorer::core::AppendResult;
 using fast_explorer::core::FileEntry;
 using fast_explorer::core::FileModelStore;
 using fast_explorer::core::NameArena;
+using fast_explorer::core::SortDirection;
+using fast_explorer::core::SortKey;
+using fast_explorer::core::SortSpec;
 using fast_explorer::core::file_entry_flags::kIsDirectory;
 using fast_explorer::core::nameView;
 
@@ -224,4 +228,177 @@ FE_TEST_CASE(file_model_store_append_result_enum_has_distinct_values) {
                static_cast<int>(AppendResult::NameTooLong));
   FE_ASSERT_NE(static_cast<int>(AppendResult::ArenaFull),
                static_cast<int>(AppendResult::NameTooLong));
+}
+
+// ---------------------------------------------------------------------------
+// visibleOrder / sort
+// ---------------------------------------------------------------------------
+
+namespace {
+constexpr SortSpec kNameAsc{SortKey::Name, SortDirection::Ascending};
+constexpr SortSpec kNameDesc{SortKey::Name, SortDirection::Descending};
+constexpr SortSpec kSizeAsc{SortKey::Size, SortDirection::Ascending};
+}  // namespace
+
+FE_TEST_CASE(file_model_store_visibleOrder_default_is_empty) {
+  FileModelStore store(L"X:\\d");
+  FE_ASSERT_EQ(store.visibleOrder().size(), static_cast<std::size_t>(0));
+}
+
+FE_TEST_CASE(file_model_store_visibleOrder_identity_after_appends) {
+  NameArena backing;
+  FileModelStore store(L"X:\\d");
+  store.appendEntry(makeEntry(L"a", backing));
+  store.appendEntry(makeEntry(L"b", backing));
+  store.appendEntry(makeEntry(L"c", backing));
+  const auto order = store.visibleOrder();
+  FE_ASSERT_EQ(order.size(), static_cast<std::size_t>(3));
+  FE_ASSERT_EQ(order[0], 0u);
+  FE_ASSERT_EQ(order[1], 1u);
+  FE_ASSERT_EQ(order[2], 2u);
+}
+
+FE_TEST_CASE(file_model_store_visibleAt_matches_entryAt_before_sort) {
+  NameArena backing;
+  FileModelStore store(L"X:\\d");
+  store.appendEntry(makeEntry(L"x", backing, 10));
+  store.appendEntry(makeEntry(L"y", backing, 20));
+  FE_ASSERT_EQ(store.visibleAt(0).size, store.entryAt(0).size);
+  FE_ASSERT_EQ(store.visibleAt(1).size, store.entryAt(1).size);
+}
+
+FE_TEST_CASE(file_model_store_reset_clears_visibleOrder) {
+  NameArena backing;
+  FileModelStore store(L"X:\\d");
+  store.appendEntry(makeEntry(L"a", backing));
+  store.appendEntry(makeEntry(L"b", backing));
+  FE_ASSERT_EQ(store.visibleOrder().size(), static_cast<std::size_t>(2));
+  store.reset(L"Y:\\new");
+  FE_ASSERT_EQ(store.visibleOrder().size(), static_cast<std::size_t>(0));
+}
+
+FE_TEST_CASE(file_model_store_sort_name_asc_reorders_visible) {
+  NameArena backing;
+  FileModelStore store(L"X:\\d");
+  store.appendEntry(makeEntry(L"charlie", backing));
+  store.appendEntry(makeEntry(L"alpha", backing));
+  store.appendEntry(makeEntry(L"bravo", backing));
+  store.sort(kNameAsc);
+  FE_ASSERT_EQ(std::wstring_view(store.visibleAt(0).namePtr,
+                                  store.visibleAt(0).nameLength),
+               std::wstring_view(L"alpha"));
+  FE_ASSERT_EQ(std::wstring_view(store.visibleAt(1).namePtr,
+                                  store.visibleAt(1).nameLength),
+               std::wstring_view(L"bravo"));
+  FE_ASSERT_EQ(std::wstring_view(store.visibleAt(2).namePtr,
+                                  store.visibleAt(2).nameLength),
+               std::wstring_view(L"charlie"));
+}
+
+FE_TEST_CASE(file_model_store_sort_name_desc_reverses_order) {
+  NameArena backing;
+  FileModelStore store(L"X:\\d");
+  store.appendEntry(makeEntry(L"alpha", backing));
+  store.appendEntry(makeEntry(L"bravo", backing));
+  store.appendEntry(makeEntry(L"charlie", backing));
+  store.sort(kNameDesc);
+  FE_ASSERT_EQ(std::wstring_view(store.visibleAt(0).namePtr,
+                                  store.visibleAt(0).nameLength),
+               std::wstring_view(L"charlie"));
+  FE_ASSERT_EQ(std::wstring_view(store.visibleAt(2).namePtr,
+                                  store.visibleAt(2).nameLength),
+               std::wstring_view(L"alpha"));
+}
+
+FE_TEST_CASE(file_model_store_sort_preserves_entry_storage_order) {
+  NameArena backing;
+  FileModelStore store(L"X:\\d");
+  store.appendEntry(makeEntry(L"zeta", backing, 100));
+  store.appendEntry(makeEntry(L"alpha", backing, 200));
+  store.sort(kNameAsc);
+  FE_ASSERT_EQ(std::wstring_view(store.entryAt(0).namePtr,
+                                  store.entryAt(0).nameLength),
+               std::wstring_view(L"zeta"));
+  FE_ASSERT_EQ(store.entryAt(0).size, static_cast<uint64_t>(100));
+  FE_ASSERT_EQ(std::wstring_view(store.entryAt(1).namePtr,
+                                  store.entryAt(1).nameLength),
+               std::wstring_view(L"alpha"));
+  FE_ASSERT_EQ(store.entryAt(1).size, static_cast<uint64_t>(200));
+}
+
+FE_TEST_CASE(file_model_store_sort_size_ascending) {
+  NameArena backing;
+  FileModelStore store(L"X:\\d");
+  store.appendEntry(makeEntry(L"big", backing, 1000));
+  store.appendEntry(makeEntry(L"tiny", backing, 1));
+  store.appendEntry(makeEntry(L"mid", backing, 100));
+  store.sort(kSizeAsc);
+  FE_ASSERT_EQ(store.visibleAt(0).size, static_cast<uint64_t>(1));
+  FE_ASSERT_EQ(store.visibleAt(1).size, static_cast<uint64_t>(100));
+  FE_ASSERT_EQ(store.visibleAt(2).size, static_cast<uint64_t>(1000));
+}
+
+FE_TEST_CASE(file_model_store_append_after_sort_tail_pushes_to_visibleOrder_end) {
+  NameArena backing;
+  FileModelStore store(L"X:\\d");
+  store.appendEntry(makeEntry(L"alpha", backing));
+  store.appendEntry(makeEntry(L"bravo", backing));
+  store.sort(kNameAsc);
+  store.appendEntry(makeEntry(L"aardvark", backing));
+  // The newly appended entry is at the tail of visibleOrder, not at the
+  // sorted position. A subsequent sort is required to re-place it.
+  FE_ASSERT_EQ(store.visibleOrder().size(), static_cast<std::size_t>(3));
+  FE_ASSERT_EQ(std::wstring_view(store.visibleAt(2).namePtr,
+                                  store.visibleAt(2).nameLength),
+               std::wstring_view(L"aardvark"));
+}
+
+FE_TEST_CASE(file_model_store_sort_empty_store_is_noop) {
+  FileModelStore store(L"X:\\d");
+  store.sort(kNameAsc);
+  FE_ASSERT_EQ(store.visibleOrder().size(), static_cast<std::size_t>(0));
+}
+
+FE_TEST_CASE(file_model_store_sort_single_entry_is_noop) {
+  NameArena backing;
+  FileModelStore store(L"X:\\d");
+  store.appendEntry(makeEntry(L"only", backing));
+  store.sort(kNameAsc);
+  FE_ASSERT_EQ(store.visibleOrder().size(), static_cast<std::size_t>(1));
+  FE_ASSERT_EQ(store.visibleOrder()[0], 0u);
+}
+
+FE_TEST_CASE(file_model_store_visibleOrder_size_invariant_after_batch) {
+  NameArena backing;
+  std::vector<FileEntry> batch;
+  for (int i = 0; i < 50; ++i) {
+    batch.push_back(makeEntry(L"item", backing, static_cast<uint64_t>(i)));
+  }
+  FileModelStore store(L"X:\\d");
+  store.appendBatch(batch);
+  FE_ASSERT_EQ(store.visibleOrder().size(), store.itemCount());
+}
+
+FE_TEST_CASE(file_model_store_sort_append_sort_restores_total_order) {
+  NameArena backing;
+  FileModelStore store(L"X:\\d");
+  store.appendEntry(makeEntry(L"bravo", backing));
+  store.appendEntry(makeEntry(L"delta", backing));
+  store.sort(kNameAsc);
+  store.appendEntry(makeEntry(L"alpha", backing));
+  store.appendEntry(makeEntry(L"charlie", backing));
+  store.sort(kNameAsc);
+  FE_ASSERT_EQ(store.visibleOrder().size(), static_cast<std::size_t>(4));
+  FE_ASSERT_EQ(std::wstring_view(store.visibleAt(0).namePtr,
+                                  store.visibleAt(0).nameLength),
+               std::wstring_view(L"alpha"));
+  FE_ASSERT_EQ(std::wstring_view(store.visibleAt(1).namePtr,
+                                  store.visibleAt(1).nameLength),
+               std::wstring_view(L"bravo"));
+  FE_ASSERT_EQ(std::wstring_view(store.visibleAt(2).namePtr,
+                                  store.visibleAt(2).nameLength),
+               std::wstring_view(L"charlie"));
+  FE_ASSERT_EQ(std::wstring_view(store.visibleAt(3).namePtr,
+                                  store.visibleAt(3).nameLength),
+               std::wstring_view(L"delta"));
 }
