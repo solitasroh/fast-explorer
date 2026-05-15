@@ -132,6 +132,7 @@ add_executable(core-tests
   tests/status-text-tests.cpp
   tests/stall-probe-tests.cpp
   tests/file-sort-tests.cpp
+  tests/pane-sort-coordinator-tests.cpp
   tests/bench-fs-helper.h
   src/ui/messages.h
   src/ui/column-formatter.cpp
