@@ -430,7 +430,10 @@ void MainWindow::handleGetDispInfo(NMHDR* hdr) {
   if (row >= store.itemCount()) {
     return;
   }
-  const auto& entry = store.entryAt(row);
+  // iItem is the visible row index from the list-view; map through
+  // visibleOrder so future sort() reorderings flow into LVN_GETDISPINFO
+  // without further plumbing. Identity until the first sort.
+  const auto& entry = store.visibleAt(row);
   switch (disp->item.iSubItem) {
     case 0: {
       const auto view = fast_explorer::core::nameView(entry);
