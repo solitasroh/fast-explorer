@@ -312,6 +312,7 @@ LRESULT MainWindow::handleMessage(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPa
             }
             return 0;
         }
+        return 0;  // unknown accelerator: swallow, do not Def-process
       }
       return DefWindowProcW(hwnd, msg, wParam, lParam);
     case kWmFeAddressCommit:

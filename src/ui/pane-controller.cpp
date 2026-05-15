@@ -38,7 +38,9 @@ std::wstring computeParent(const std::wstring& path) {
   if (path.empty()) {
     return std::wstring();
   }
-  std::wstring p = path;
+  // Normalize away the \\?\ extended-length prefix so the separator
+  // walk below sees a plain "X:\..." form.
+  std::wstring p = fast_explorer::core::toDisplay(path);
   // Trim trailing separators except when we are already at the drive
   // root form "X:\".
   if (p.size() > 3) {

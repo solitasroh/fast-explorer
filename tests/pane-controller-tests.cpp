@@ -132,6 +132,16 @@ FE_TEST_CASE(PaneController_Up_FromDriveRoot_ReturnsFalse) {
   FE_ASSERT_FALSE(pc.up());
 }
 
+FE_TEST_CASE(PaneController_Up_FromExtendedPrefix_NormalizesToDisplay) {
+  PaneController pc(nullptr);
+  // openFolder accepts the \\?\ extended-length form and stores it
+  // verbatim.  computeParent should still produce the canonical "C:\"
+  // display form by toDisplay-normalising the input first.
+  pc.openFolder(L"\\\\?\\C:\\foo");
+  FE_ASSERT_TRUE(pc.up());
+  FE_ASSERT_WSTREQ(pc.currentPath(), L"C:\\");
+}
+
 FE_TEST_CASE(PaneController_OpenFolder_Twice_CancelsAndReopens) {
   TempDir a(L"pane-a");
   TempDir b(L"pane-b");
