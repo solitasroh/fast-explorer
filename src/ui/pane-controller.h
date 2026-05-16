@@ -67,6 +67,13 @@ class PaneController {
   // refresh path observes the resulting file-system change.
   bool deleteItem(std::uint32_t row);
 
+  // Queue a rename of the file/folder at the given visible row to
+  // newName (leaf, not a full path). Returns false on empty
+  // newName or out-of-range row; true means the command is on the
+  // ShellWorker queue. The watcher refresh path picks up the
+  // resulting directory change.
+  bool renameItem(std::uint32_t row, const std::wstring& newName);
+
   // Sort delegation. requestSort returns Rejected while the
   // enumeration worker is still running because sorting the store
   // mid-append would race; the coordinator handles the toggle vs
@@ -137,6 +144,13 @@ class PaneController {
 
  private:
   bool navigateInternal(const std::wstring& path);
+
+  // Validates `row` against publishedCount() and writes the
+  // absolute path of the visible entry at that row to `out`.
+  // Returns false on out-of-range row (out is left untouched).
+  // Shared by openItem / deleteItem / renameItem to keep the
+  // row-to-source-path lookup in one place.
+  bool resolveRowSourcePath(std::uint32_t row, std::wstring& out) const;
 
   // Declared in destruction-reverse order so worker_ joins (via its
   // std::jthread destructor) before sortCoord_, backend_, or store_

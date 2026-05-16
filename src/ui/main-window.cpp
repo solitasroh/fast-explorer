@@ -75,10 +75,14 @@ HWND createAddressBar(HWND parent, HINSTANCE instance) {
 HWND createListView(HWND parent, HINSTANCE instance) {
   // LVS_NOSORTHEADER omitted intentionally: the header must accept
   // clicks so LVN_COLUMNCLICK reaches the controller for sort routing.
+  // LVS_EDITLABELS lets ListView_EditLabel pop an in-place edit; under
+  // LVS_OWNERDATA the list-view does not store the edited text itself,
+  // so LVN_ENDLABELEDIT must return FALSE and the model is updated
+  // through the controller.
   return CreateWindowExW(
       0, WC_LISTVIEWW, L"",
       WS_CHILD | WS_VISIBLE | WS_BORDER | LVS_REPORT | LVS_OWNERDATA |
-          LVS_SHAREIMAGELISTS,
+          LVS_SHAREIMAGELISTS | LVS_EDITLABELS,
       0, 0, 0, 0, parent, nullptr, instance, nullptr);
 }
 
@@ -253,6 +257,48 @@ void MainWindow::deleteFocusedItem() {
     return;
   }
   pane_->deleteItem(static_cast<std::uint32_t>(focused));
+}
+
+void MainWindow::beginRenameFocusedItem() {
+  if (!pane_ || listView_ == nullptr) {
+    return;
+  }
+  // Same accelerator-vs-focused-control rationale as deleteFocusedItem.
+  if (GetFocus() != listView_) {
+    return;
+  }
+  const int focused = ListView_GetNextItem(listView_, -1, LVNI_FOCUSED);
+  if (focused < 0) {
+    return;
+  }
+  ListView_EditLabel(listView_, focused);
+}
+
+LRESULT MainWindow::handleBeginLabelEdit() {
+  // Returning FALSE permits the in-place edit to proceed. The
+  // edit control is owned by the list-view and pre-filled via
+  // LVN_GETDISPINFO with the current entry name.
+  return FALSE;
+}
+
+LRESULT MainWindow::handleEndLabelEdit(NMHDR* hdr) {
+  if (hdr == nullptr || !pane_) {
+    return FALSE;
+  }
+  auto* disp = reinterpret_cast<NMLVDISPINFOW*>(hdr);
+  // pszText is null when the user cancels with Escape.
+  if (disp->item.pszText == nullptr || disp->item.iItem < 0) {
+    return FALSE;
+  }
+  const std::wstring newName(disp->item.pszText);
+  if (newName.empty()) {
+    return FALSE;
+  }
+  pane_->renameItem(static_cast<std::uint32_t>(disp->item.iItem), newName);
+  // Always return FALSE under LVS_OWNERDATA: the list-view holds no
+  // text of its own, and the visible row will refresh once the
+  // watcher observes the on-disk rename and re-enumerates.
+  return FALSE;
 }
 
 void MainWindow::handleAddressCommit() {
@@ -469,6 +515,9 @@ LRESULT MainWindow::onCommand(HWND hwnd, UINT msg, WPARAM wParam,
       case kAccelDelete:
         deleteFocusedItem();
         return 0;
+      case kAccelRename:
+        beginRenameFocusedItem();
+        return 0;
     }
     // Unknown accelerator id: swallow without calling DefWindowProc so
     // an unbound key does not produce a system beep.
@@ -646,6 +695,10 @@ LRESULT MainWindow::handleListViewNotify(NMHDR* hdr) {
     case LVN_ITEMCHANGED:
       handleItemChanged(hdr);
       return 0;
+    case LVN_BEGINLABELEDITW:
+      return handleBeginLabelEdit();
+    case LVN_ENDLABELEDITW:
+      return handleEndLabelEdit(hdr);
     case LVN_ODCACHEHINT:
     case LVN_ODSTATECHANGED:
       return 0;

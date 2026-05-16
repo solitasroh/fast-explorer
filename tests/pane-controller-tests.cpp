@@ -531,3 +531,64 @@ FE_TEST_CASE(PaneController_DeleteItem_ValidRow_RemovesFileFromDisk) {
   pane.shellWorkerForTest().waitForProcessedForTest(1);
   FE_ASSERT_FALSE(diskFileExists(victim));
 }
+
+FE_TEST_CASE(PaneController_RenameItem_EmptyStore_ReturnsFalse) {
+  PaneController pane(nullptr);
+  FE_ASSERT_FALSE(pane.renameItem(0, L"whatever"));
+  FE_ASSERT_FALSE(pane.renameItem(100, L"whatever"));
+}
+
+FE_TEST_CASE(PaneController_RenameItem_EmptyNewName_ReturnsFalse) {
+  TempDir tmp(L"pane-rename-empty-name");
+  FE_ASSERT_EQ(generateDataset(PresetKind::Small, tmp.path(), 1).error,
+               GenerateError::None);
+  PaneController pane(nullptr);
+  FE_ASSERT_TRUE(pane.openFolder(tmp.path()));
+  pane.joinForTest();
+  FE_ASSERT_FALSE(pane.renameItem(0, L""));
+}
+
+FE_TEST_CASE(PaneController_RenameItem_OutOfRangeRow_ReturnsFalse) {
+  TempDir tmp(L"pane-rename-oob");
+  FE_ASSERT_EQ(generateDataset(PresetKind::Small, tmp.path(), 1).error,
+               GenerateError::None);
+  PaneController pane(nullptr);
+  FE_ASSERT_TRUE(pane.openFolder(tmp.path()));
+  pane.joinForTest();
+  const std::uint32_t count =
+      static_cast<std::uint32_t>(pane.store().publishedCount());
+  FE_ASSERT_FALSE(pane.renameItem(count, L"target.txt"));
+  FE_ASSERT_FALSE(pane.renameItem(count + 100, L"target.txt"));
+}
+
+FE_TEST_CASE(PaneController_RenameItem_ValidRow_RenamesOnDisk) {
+  TempDir tmp(L"pane-rename-real");
+  FE_ASSERT_TRUE(CreateDirectoryW(tmp.path().c_str(), nullptr) != 0);
+  const std::wstring before =
+      fast_explorer::core::joinPath(tmp.path(), L"before.txt");
+  const std::wstring after =
+      fast_explorer::core::joinPath(tmp.path(), L"after.txt");
+  writeEmptyDiskFile(before);
+  FE_ASSERT_TRUE(diskFileExists(before));
+
+  PaneController pane(nullptr);
+  FE_ASSERT_TRUE(pane.openFolder(tmp.path()));
+  pane.joinForTest();
+
+  std::uint32_t sourceRow = UINT32_MAX;
+  const auto& store = pane.store();
+  for (std::uint32_t i = 0;
+       i < static_cast<std::uint32_t>(store.publishedCount()); ++i) {
+    const auto& entry = store.visibleAt(i);
+    if (std::wstring_view(entry.namePtr, entry.nameLength) == L"before.txt") {
+      sourceRow = i;
+      break;
+    }
+  }
+  FE_ASSERT_TRUE(sourceRow != UINT32_MAX);
+
+  FE_ASSERT_TRUE(pane.renameItem(sourceRow, L"after.txt"));
+  pane.shellWorkerForTest().waitForProcessedForTest(1);
+  FE_ASSERT_FALSE(diskFileExists(before));
+  FE_ASSERT_TRUE(diskFileExists(after));
+}

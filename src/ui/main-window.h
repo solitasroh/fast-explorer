@@ -74,6 +74,12 @@ class MainWindow {
   // Bound to the Delete accelerator. No-op when the list has no
   // focused item.
   void deleteFocusedItem();
+  // Starts an in-place edit on the focused list-view row. Bound to
+  // the F2 accelerator. The actual rename is dispatched from
+  // handleEndLabelEdit when the user commits.
+  void beginRenameFocusedItem();
+  LRESULT handleBeginLabelEdit();
+  LRESULT handleEndLabelEdit(NMHDR* hdr);
   static LRESULT CALLBACK addressBarSubclassProc(HWND, UINT, WPARAM, LPARAM,
                                                  UINT_PTR, DWORD_PTR);
 

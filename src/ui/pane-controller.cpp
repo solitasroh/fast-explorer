@@ -145,28 +145,51 @@ bool shellOpenPath(const std::wstring& path, HWND host) noexcept {
 
 }  // namespace
 
-bool PaneController::openItem(std::uint32_t row) {
+bool PaneController::resolveRowSourcePath(std::uint32_t row,
+                                          std::wstring& out) const {
   if (row >= store_.publishedCount()) {
     return false;
   }
   const auto& entry = store_.visibleAt(row);
-  const std::wstring fullPath = fast_explorer::core::joinPath(
+  out = fast_explorer::core::joinPath(
       currentPath_, fast_explorer::core::nameView(entry));
-  if (fast_explorer::core::isDirectory(entry)) {
+  return true;
+}
+
+bool PaneController::openItem(std::uint32_t row) {
+  std::wstring fullPath;
+  if (!resolveRowSourcePath(row, fullPath)) {
+    return false;
+  }
+  // resolveRowSourcePath already validated row < publishedCount(),
+  // so this second visibleAt read is safe.
+  if (fast_explorer::core::isDirectory(store_.visibleAt(row))) {
     return openFolder(fullPath);
   }
   return shellOpenPath(fullPath, hostWindow_);
 }
 
 bool PaneController::deleteItem(std::uint32_t row) {
-  if (row >= store_.publishedCount()) {
+  ShellCommand cmd;
+  if (!resolveRowSourcePath(row, cmd.sourcePath)) {
     return false;
   }
-  const auto& entry = store_.visibleAt(row);
-  ShellCommand cmd;
   cmd.kind = ShellCommandKind::Delete;
-  cmd.sourcePath = fast_explorer::core::joinPath(
-      currentPath_, fast_explorer::core::nameView(entry));
+  shellWorker_.request(std::move(cmd));
+  return true;
+}
+
+bool PaneController::renameItem(std::uint32_t row,
+                                const std::wstring& newName) {
+  if (newName.empty()) {
+    return false;
+  }
+  ShellCommand cmd;
+  if (!resolveRowSourcePath(row, cmd.sourcePath)) {
+    return false;
+  }
+  cmd.kind = ShellCommandKind::Rename;
+  cmd.newName = newName;
   shellWorker_.request(std::move(cmd));
   return true;
 }
