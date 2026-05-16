@@ -4,6 +4,8 @@
 
 #include <atomic>
 #include <cstdint>
+#include <functional>
+#include <mutex>
 #include <thread>
 
 namespace fast_explorer::core {
@@ -25,7 +27,7 @@ class RingLogger;
 
 class ProcessMemoryService {
  public:
-  using LowMemoryCallback = void (*)();
+  using LowMemoryCallback = std::function<void()>;
 
   // Logger reference is required for diagnostic output. The service does
   // not extend the logger's lifetime; the owner (typically AppServices)
@@ -47,13 +49,15 @@ class ProcessMemoryService {
   void notifyMinimized() noexcept;
   void notifyRestored() noexcept;
 
-  // Cache hook. Replaces any previous callback. Pass nullptr to
-  // clear. This is a fire-and-forget release-store: the notifier
-  // thread may already be inside the previous callback when this
-  // returns. To quiesce, call stop() (which joins the notifier).
-  // Callbacks therefore must only touch objects with lifetime that
-  // outlives the service, not per-window state captured by address.
-  void setLowMemoryCallback(LowMemoryCallback cb) noexcept;
+  // Cache hook. Replaces any previous callback. Pass an empty
+  // std::function to clear. The notifier thread may already be
+  // inside the previous callback when this returns; to quiesce
+  // call stop() (which joins the notifier). The notifier copies
+  // the current callback under the internal mutex before
+  // releasing the lock and invoking it, so a captured shared
+  // state (HWND, this pointer) stays valid for the duration of
+  // the in-flight invocation even after this setter returns.
+  void setLowMemoryCallback(LowMemoryCallback cb);
 
   // Snapshot helpers for diagnostics / bench gates.
   static SIZE_T workingSetBytes() noexcept;
@@ -64,7 +68,11 @@ class ProcessMemoryService {
 
   RingLogger& logger_;
   std::atomic<bool> running_{false};
-  std::atomic<LowMemoryCallback> callback_{nullptr};
+  // callback_ is std::function which is not trivially atomic;
+  // protect with callbackMutex_. Both setLowMemoryCallback and
+  // the notifier loop acquire it briefly.
+  std::mutex callbackMutex_;
+  LowMemoryCallback callback_;
   std::atomic<int64_t> lastEmptyTicks_{0};  // QPC ticks; throttles EmptyWorkingSet
   HANDLE notification_ = nullptr;
   HANDLE stopEvent_ = nullptr;

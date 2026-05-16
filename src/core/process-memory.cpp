@@ -120,8 +120,9 @@ void ProcessMemoryService::notifyRestored() noexcept {
   SetPriorityClass(GetCurrentProcess(), PROCESS_MODE_BACKGROUND_END);
 }
 
-void ProcessMemoryService::setLowMemoryCallback(LowMemoryCallback cb) noexcept {
-  callback_.store(cb, std::memory_order_release);
+void ProcessMemoryService::setLowMemoryCallback(LowMemoryCallback cb) {
+  std::lock_guard lk(callbackMutex_);
+  callback_ = std::move(cb);
 }
 
 SIZE_T ProcessMemoryService::workingSetBytes() noexcept {
@@ -165,12 +166,18 @@ void ProcessMemoryService::notifierLoop() {
 
     BOOL stillLow = TRUE;
     if (QueryMemoryResourceNotification(notification_, &stillLow) && stillLow) {
-      const LowMemoryCallback cb = callback_.load(std::memory_order_acquire);
+      // Copy the callback under the lock and release before invoking
+      // so user code does not run under our mutex.
+      LowMemoryCallback localCb;
+      {
+        std::lock_guard lk(callbackMutex_);
+        localCb = callback_;
+      }
       logger_.warn(
           L"low memory notification fired; working set=%zu KB",
           workingSetBytes() / 1024);
-      if (cb) {
-        cb();
+      if (localCb) {
+        localCb();
       }
     }
 

@@ -3,7 +3,6 @@
 #include <commctrl.h>
 
 #include <algorithm>
-#include <atomic>
 #include <cstring>
 #include <iterator>
 #include <new>
@@ -31,20 +30,6 @@ namespace {
 
 constexpr UINT_PTR kTimerFsCoalesce = 1;
 constexpr UINT kFsCoalesceMs = 100;
-
-// Set by MainWindow::onCreate so the low-memory callback (which runs
-// on ProcessMemoryService's notifier thread and has no captured
-// state — the C-style hook signature is void(*)()) can post back to
-// the main window. Cleared in WM_NCDESTROY before the callback is
-// unregistered so a fire-in-flight finds a still-valid HWND.
-std::atomic<HWND> g_lowMemoryTargetHwnd{nullptr};
-
-void postLowMemoryToMainWindow() noexcept {
-  if (HWND hwnd = g_lowMemoryTargetHwnd.load(std::memory_order_acquire);
-      hwnd != nullptr) {
-    PostMessageW(hwnd, kWmFeLowMemory, 0, 0);
-  }
-}
 
 // RAII scope guard for the selection-reapply reentrancy flag. Ensures
 // the flag is cleared even if the LVIS_SELECTED reapply throws — a
@@ -468,13 +453,11 @@ LRESULT MainWindow::handleMessage(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPa
       PostQuitMessage(0);
       return 0;
     case WM_NCDESTROY:
-      // Tear down the low-memory hook before clearing the HWND so a
-      // notifier-thread fire-in-flight either still sees a valid
-      // HWND and posts (the message lands in a window pending
-      // destruction — PostMessageW handles this), or sees a null
-      // callback and skips entirely.
+      // Clear the registration so future low-memory events do not
+      // PostMessage to a destroyed window. A notifier already
+      // inside the prior callback keeps its captured HWND and the
+      // PostMessage is benign (dropped if the window is gone).
       memory_.setLowMemoryCallback(nullptr);
-      g_lowMemoryTargetHwnd.store(nullptr, std::memory_order_release);
       SetWindowLongPtrW(hwnd, GWLP_USERDATA, 0);
       hwnd_ = nullptr;
       return DefWindowProcW(hwnd, msg, wParam, lParam);
@@ -509,13 +492,15 @@ LRESULT MainWindow::onCreate(HWND hwnd) {
   }
   extensionCache_ = std::make_unique<ExtensionIconCache>();
   iconProvider_ = std::make_unique<IconProvider>(hwnd);
-  // Release-store HWND first, then release-store the callback. The
-  // notifier acquire-loads the callback before invoking it; observing
-  // the non-null callback synchronizes-with the prior HWND store, so
-  // the free function below cannot observe a stale uninitialized
-  // HWND. Reverse order on teardown (see WM_NCDESTROY).
-  g_lowMemoryTargetHwnd.store(hwnd, std::memory_order_release);
-  memory_.setLowMemoryCallback(&postLowMemoryToMainWindow);
+  // Lambda captures the HWND by value; the notifier copies the
+  // callback under ProcessMemoryService's mutex before invoking,
+  // so an in-flight call holds its own copy of the lambda and the
+  // captured HWND remains valid even after WM_NCDESTROY clears the
+  // registration. PostMessage on a HWND mid-destruction is well-
+  // defined (the message is dropped if the window is gone).
+  memory_.setLowMemoryCallback([hwnd]() {
+    PostMessageW(hwnd, kWmFeLowMemory, 0, 0);
+  });
   return 0;
 }
 
