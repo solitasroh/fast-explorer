@@ -53,6 +53,7 @@ class MainWindow {
   LRESULT onEnumError(WPARAM wParam, LPARAM lParam);
   LRESULT onSortComplete(WPARAM wParam);
   LRESULT onIconBatch();
+  LRESULT onOperationResult();
   LRESULT onFsChange(HWND hwnd);
 
   LRESULT handleListViewNotify(NMHDR* hdr);

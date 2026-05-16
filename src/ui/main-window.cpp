@@ -444,6 +444,7 @@ LRESULT MainWindow::handleMessage(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPa
     case kWmFeEnumComplete:   return onEnumComplete(wParam);
     case kWmFeSortComplete:   return onSortComplete(wParam);
     case kWmFeIconBatch:      return onIconBatch();
+    case kWmFeOperationResult: return onOperationResult();
     case kWmFeEnumError:      return onEnumError(wParam, lParam);
     case kWmFeFsChange:       return onFsChange(hwnd);
     case WM_TIMER:            return onTimer(hwnd, msg, wParam, lParam);
@@ -702,6 +703,21 @@ LRESULT MainWindow::onIconBatch() {
       ListView_RedrawItems(listView_, 0, count - 1);
     }
   }
+  return 0;
+}
+
+LRESULT MainWindow::onOperationResult() {
+  if (!pane_) {
+    return 0;
+  }
+  auto results = pane_->drainShellResults();
+  if (results.empty()) {
+    return 0;
+  }
+  // Surface only the latest outcome — repeated rapid operations
+  // would otherwise flicker the status bar through every step.
+  const std::wstring text = opResultStatusText(results.back());
+  setStatusText(text.c_str());
   return 0;
 }
 

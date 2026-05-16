@@ -46,10 +46,11 @@ std::vector<IconProvider::IconResult> IconProvider::drainResults() {
   {
     std::lock_guard lk(resultMutex_);
     out.swap(resultsReady_);
+    // Clear inside the lock so a worker push that lands between
+    // the swap and the gate-clear is observed by the worker's
+    // own CAS as un-posted, forcing a fresh kWmFeIconBatch.
+    postPending_.store(false, std::memory_order_release);
   }
-  // Drain releases the coalesce gate so the next worker result can
-  // post a fresh kWmFeIconBatch.
-  postPending_.store(false, std::memory_order_release);
   return out;
 }
 

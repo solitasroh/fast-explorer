@@ -58,4 +58,64 @@ std::wstring errorStatusText(fast_explorer::core::EnumerationError err) {
   return out;
 }
 
+namespace {
+
+std::wstring_view leafOf(const std::wstring& path) noexcept {
+  if (path.empty()) {
+    return {};
+  }
+  const std::size_t sep = path.find_last_of(L"\\/");
+  if (sep == std::wstring::npos) {
+    return path;
+  }
+  return std::wstring_view(path).substr(sep + 1);
+}
+
+void appendQuoted(std::wstring& out, std::wstring_view name) {
+  out.append(L"'");
+  out.append(name);
+  out.append(L"'");
+}
+
+}  // namespace
+
+std::wstring opResultStatusText(const OperationResult& result) {
+  std::wstring out;
+  out.reserve(64);
+  const std::wstring_view leaf = leafOf(result.sourcePath);
+  switch (result.kind) {
+    case ShellCommandKind::Delete:
+      if (result.success) {
+        out.append(L"Moved ");
+        appendQuoted(out, leaf);
+        out.append(L" to Recycle Bin");
+      } else {
+        out.append(L"Failed to delete ");
+        appendQuoted(out, leaf);
+      }
+      break;
+    case ShellCommandKind::Rename:
+      if (result.success) {
+        out.append(L"Renamed ");
+        appendQuoted(out, leaf);
+        out.append(L" to ");
+        appendQuoted(out, result.newName);
+      } else {
+        out.append(L"Failed to rename ");
+        appendQuoted(out, leaf);
+      }
+      break;
+    case ShellCommandKind::CreateFolder:
+      if (result.success) {
+        out.append(L"Created folder ");
+        appendQuoted(out, result.newName);
+      } else {
+        out.append(L"Failed to create folder ");
+        appendQuoted(out, result.newName);
+      }
+      break;
+  }
+  return out;
+}
+
 }  // namespace fast_explorer::ui

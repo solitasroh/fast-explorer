@@ -11,6 +11,7 @@
 #include <queue>
 #include <string>
 #include <thread>
+#include <vector>
 
 namespace fast_explorer::ui {
 
@@ -38,14 +39,22 @@ struct ShellCommand {
   std::wstring newName;
 };
 
-// Background coordinator for IFileOperation-driven mutations. Owns
-// an STA jthread that pulls commands off a thread-safe queue and
-// runs them inside CoInitializeEx(COINIT_APARTMENTTHREADED) so the
-// shell's COM components (which assume STA for IFileOperation) work
-// correctly. The actual IFileOperation call and progress callbacks
-// arrive in the follow-up sub-step; this skeleton stands up the
-// worker lifecycle, request queue, and stop-token shutdown so the
-// next sub-step can drop the COM code into a single seam.
+// Per-command outcome posted back to the UI thread once the STA
+// worker finishes the IFileOperation. sourcePath / newName mirror
+// the request fields so the UI can format a "renamed X to Y"
+// status without having to track the in-flight command separately.
+struct OperationResult {
+  ShellCommandKind kind = ShellCommandKind::Rename;
+  std::wstring sourcePath;
+  std::wstring newName;
+  bool success = false;
+};
+
+// STA worker for IFileOperation-driven mutations. Owns a jthread
+// that pulls commands off a thread-safe queue, runs them inside
+// CoInitializeEx(COINIT_APARTMENTTHREADED) as IFileOperation
+// requires, and publishes per-command OperationResults back to
+// the host window via a coalesced kWmFeOperationResult.
 class ShellWorker {
  public:
   explicit ShellWorker(HWND host);
@@ -59,6 +68,11 @@ class ShellWorker {
   // Queues a command for the worker to run. Safe to call from any
   // thread; ownership of the strings inside ShellCommand transfers.
   void request(ShellCommand command);
+
+  // Drains all completed operation results into the returned
+  // vector and resets the coalesce gate. Safe to call from the UI
+  // thread after observing kWmFeOperationResult.
+  std::vector<OperationResult> drainResults();
 
   // Returns how many commands the worker has dequeued and finished
   // its dummy-processing pass over. Acquire-load semantics.
@@ -74,12 +88,16 @@ class ShellWorker {
   void workerMain(std::stop_token tok);
   std::optional<ShellCommand> dequeueOne(std::stop_token tok);
   void processOne(const ShellCommand& command);
+  void publishResult(OperationResult result);
 
   HWND host_;
   std::queue<ShellCommand> pendingCommands_;
   mutable std::mutex mutex_;
   std::condition_variable_any cv_;
   std::atomic<std::size_t> processed_{0};
+  std::vector<OperationResult> resultsReady_;
+  std::mutex resultMutex_;
+  std::atomic<bool> postPending_{false};
   std::jthread worker_;
 };
 

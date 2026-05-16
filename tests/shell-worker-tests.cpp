@@ -9,6 +9,7 @@
 #include "ui/shell-worker.h"
 
 using fast_explorer::tests::TempDir;
+using fast_explorer::ui::OperationResult;
 using fast_explorer::ui::ShellCommand;
 using fast_explorer::ui::ShellCommandKind;
 using fast_explorer::ui::ShellWorker;
@@ -170,4 +171,87 @@ FE_TEST_CASE(ShellWorker_ShellCommandKind_DistinctValues) {
                static_cast<int>(ShellCommandKind::Delete));
   FE_ASSERT_NE(static_cast<int>(ShellCommandKind::CreateFolder),
                static_cast<int>(ShellCommandKind::Delete));
+}
+
+FE_TEST_CASE(ShellWorker_Delete_RealFile_ResultRecordsSuccessTrue) {
+  TempDir tmp(L"shellworker-result-del-ok");
+  FE_ASSERT_TRUE(CreateDirectoryW(tmp.path().c_str(), nullptr) != 0);
+  const std::wstring target = tmp.path() + L"\\victim.txt";
+  writeEmptyFile(target);
+
+  ShellWorker worker(nullptr);
+  ShellCommand cmd;
+  cmd.kind = ShellCommandKind::Delete;
+  cmd.sourcePath = target;
+  worker.request(std::move(cmd));
+  worker.waitForProcessedForTest(1);
+
+  auto results = worker.drainResults();
+  FE_ASSERT_EQ(results.size(), static_cast<std::size_t>(1));
+  FE_ASSERT_EQ(static_cast<int>(results[0].kind),
+               static_cast<int>(ShellCommandKind::Delete));
+  FE_ASSERT_WSTREQ(results[0].sourcePath, target);
+  FE_ASSERT_TRUE(results[0].success);
+}
+
+FE_TEST_CASE(ShellWorker_Delete_Missing_ResultRecordsSuccessFalse) {
+  ShellWorker worker(nullptr);
+  ShellCommand cmd;
+  cmd.kind = ShellCommandKind::Delete;
+  cmd.sourcePath = L"C:\\does\\not\\exist\\missing.txt";
+  worker.request(std::move(cmd));
+  worker.waitForProcessedForTest(1);
+
+  auto results = worker.drainResults();
+  FE_ASSERT_EQ(results.size(), static_cast<std::size_t>(1));
+  FE_ASSERT_FALSE(results[0].success);
+}
+
+FE_TEST_CASE(ShellWorker_Rename_Real_ResultCarriesNewName) {
+  TempDir tmp(L"shellworker-result-ren");
+  FE_ASSERT_TRUE(CreateDirectoryW(tmp.path().c_str(), nullptr) != 0);
+  const std::wstring source = tmp.path() + L"\\before.txt";
+  writeEmptyFile(source);
+
+  ShellWorker worker(nullptr);
+  ShellCommand cmd;
+  cmd.kind = ShellCommandKind::Rename;
+  cmd.sourcePath = source;
+  cmd.newName = L"after.txt";
+  worker.request(std::move(cmd));
+  worker.waitForProcessedForTest(1);
+
+  auto results = worker.drainResults();
+  FE_ASSERT_EQ(results.size(), static_cast<std::size_t>(1));
+  FE_ASSERT_EQ(static_cast<int>(results[0].kind),
+               static_cast<int>(ShellCommandKind::Rename));
+  FE_ASSERT_WSTREQ(results[0].sourcePath, source);
+  FE_ASSERT_WSTREQ(results[0].newName, L"after.txt");
+  FE_ASSERT_TRUE(results[0].success);
+}
+
+FE_TEST_CASE(ShellWorker_CreateFolder_Real_ResultRecordsSuccess) {
+  TempDir tmp(L"shellworker-result-cf");
+  FE_ASSERT_TRUE(CreateDirectoryW(tmp.path().c_str(), nullptr) != 0);
+
+  ShellWorker worker(nullptr);
+  ShellCommand cmd;
+  cmd.kind = ShellCommandKind::CreateFolder;
+  cmd.sourcePath = tmp.path();
+  cmd.newName = L"newsub";
+  worker.request(std::move(cmd));
+  worker.waitForProcessedForTest(1);
+
+  auto results = worker.drainResults();
+  FE_ASSERT_EQ(results.size(), static_cast<std::size_t>(1));
+  FE_ASSERT_EQ(static_cast<int>(results[0].kind),
+               static_cast<int>(ShellCommandKind::CreateFolder));
+  FE_ASSERT_WSTREQ(results[0].newName, L"newsub");
+  FE_ASSERT_TRUE(results[0].success);
+}
+
+FE_TEST_CASE(ShellWorker_Drain_EmptyByDefault) {
+  ShellWorker worker(nullptr);
+  auto results = worker.drainResults();
+  FE_ASSERT_TRUE(results.empty());
 }

@@ -81,6 +81,12 @@ class PaneController {
   // this method takes the leaf as given.
   bool createSubfolder(const std::wstring& name);
 
+  // Drains the ShellWorker's accumulated operation results.
+  // Invoked by the UI thread after kWmFeOperationResult.
+  std::vector<OperationResult> drainShellResults() {
+    return shellWorker_.drainResults();
+  }
+
   // Sort delegation. requestSort returns Rejected while the
   // enumeration worker is still running because sorting the store
   // mid-append would race; the coordinator handles the toggle vs
