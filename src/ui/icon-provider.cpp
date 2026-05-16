@@ -10,27 +10,26 @@
 namespace fast_explorer::ui {
 
 IconProvider::IconProvider(HWND host)
-    : host_(host),
+    : results_(host, kWmFeIconBatch),
       worker_([this](std::stop_token tok) { workerMain(tok); }) {}
 
 IconProvider::~IconProvider() {
-  // Stop and join the worker explicitly so resultsReady_ is stable
-  // before we touch it. The default jthread teardown would run
-  // *after* this body, leaving any HICON the worker resolved between
-  // its last drain and our destructor to leak — message-loop
-  // shutdown can swallow the kWmFeIconBatch post.
+  // Stop and join the worker explicitly so the channel is quiet
+  // before we drain orphan HICONs. The default jthread teardown
+  // would run *after* this body, leaving any HICON the worker
+  // resolved between its last UI-side drain and our destructor to
+  // leak — message-loop shutdown can swallow the kWmFeIconBatch
+  // post.
   if (worker_.joinable()) {
     worker_.request_stop();
     worker_.join();
   }
-  std::lock_guard lk(resultMutex_);
-  for (auto& r : resultsReady_) {
+  for (auto& r : results_.drainResults()) {
     if (r.icon != nullptr) {
       DestroyIcon(r.icon);
       r.icon = nullptr;
     }
   }
-  resultsReady_.clear();
 }
 
 void IconProvider::request(std::wstring extension) {
@@ -39,19 +38,6 @@ void IconProvider::request(std::wstring extension) {
     pendingRequests_.push(std::move(extension));
   }
   cv_.notify_one();
-}
-
-std::vector<IconProvider::IconResult> IconProvider::drainResults() {
-  std::vector<IconResult> out;
-  {
-    std::lock_guard lk(resultMutex_);
-    out.swap(resultsReady_);
-    // Clear inside the lock so a worker push that lands between
-    // the swap and the gate-clear is observed by the worker's
-    // own CAS as un-posted, forcing a fresh kWmFeIconBatch.
-    postPending_.store(false, std::memory_order_release);
-  }
-  return out;
 }
 
 void IconProvider::waitForProcessedForTest(
@@ -94,35 +80,14 @@ HICON IconProvider::resolveIconForExtension(
   return sfi.hIcon;
 }
 
-void IconProvider::publishResult(const std::wstring& extension, HICON icon) {
-  {
-    std::lock_guard lk(resultMutex_);
-    resultsReady_.emplace_back(extension, icon);
-  }
-  // Coalesce the host notification: a single kWmFeIconBatch wakes
-  // the UI to drain however many results have accumulated since
-  // its last drain, so we only post when no batch is in flight.
-  bool expected = false;
-  if (postPending_.compare_exchange_strong(expected, true,
-                                           std::memory_order_acq_rel)) {
-    if (host_ != nullptr) {
-      PostMessageW(host_, kWmFeIconBatch, 0, 0);
-    } else {
-      // No host to deliver to — keep postPending_ clear so a future
-      // drain in the destructor still drains the queue.
-      postPending_.store(false, std::memory_order_release);
-    }
-  }
-}
-
 void IconProvider::processOne(const std::wstring& extension) {
   HICON icon = resolveIconForExtension(extension);
   if (icon != nullptr) {
-    publishResult(extension, icon);
+    results_.publish(IconResult{extension, icon});
   }
   // Release-store + notify_all so waitForProcessedForTest sees this
-  // request as completed. Ordering also publishes the resultsReady_
-  // mutation above through the same release boundary.
+  // request as completed. The channel's publish() already serializes
+  // the result vector mutation under its own mutex.
   processed_.fetch_add(1, std::memory_order_release);
   processed_.notify_all();
 }

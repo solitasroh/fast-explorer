@@ -13,6 +13,8 @@
 #include <thread>
 #include <vector>
 
+#include "ui/result-channel.h"
+
 namespace fast_explorer::ui {
 
 // Identifies which IFileOperation verb the worker should run on the
@@ -72,7 +74,9 @@ class ShellWorker {
   // Drains all completed operation results into the returned
   // vector and resets the coalesce gate. Safe to call from the UI
   // thread after observing kWmFeOperationResult.
-  std::vector<OperationResult> drainResults();
+  std::vector<OperationResult> drainResults() {
+    return results_.drainResults();
+  }
 
   // Returns how many commands the worker has dequeued and finished
   // its dummy-processing pass over. Acquire-load semantics.
@@ -88,16 +92,12 @@ class ShellWorker {
   void workerMain(std::stop_token tok);
   std::optional<ShellCommand> dequeueOne(std::stop_token tok);
   void processOne(const ShellCommand& command);
-  void publishResult(OperationResult result);
 
-  HWND host_;
   std::queue<ShellCommand> pendingCommands_;
   mutable std::mutex mutex_;
   std::condition_variable_any cv_;
   std::atomic<std::size_t> processed_{0};
-  std::vector<OperationResult> resultsReady_;
-  std::mutex resultMutex_;
-  std::atomic<bool> postPending_{false};
+  ResultChannel<OperationResult> results_;
   std::jthread worker_;
 };
 

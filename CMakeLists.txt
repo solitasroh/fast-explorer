@@ -52,6 +52,7 @@ set(FE_APP_SOURCES
   src/ui/pane-controller.h
   src/ui/pane-sort-coordinator.cpp
   src/ui/pane-sort-coordinator.h
+  src/ui/result-channel.h
   src/ui/status-text.cpp
   src/ui/status-text.h
   src/ui/stall-probe.cpp
@@ -148,6 +149,7 @@ add_executable(core-tests
   tests/icon-provider-tests.cpp
   tests/pane-sort-coordinator-tests.cpp
   tests/shell-worker-tests.cpp
+  tests/result-channel-tests.cpp
   tests/bench-fs-helper.h
   src/ui/messages.h
   src/ui/column-formatter.cpp
@@ -170,6 +172,7 @@ add_executable(core-tests
   src/ui/pane-controller.h
   src/ui/pane-sort-coordinator.cpp
   src/ui/pane-sort-coordinator.h
+  src/ui/result-channel.h
   src/ui/status-text.cpp
   src/ui/status-text.h
   src/ui/stall-probe.cpp

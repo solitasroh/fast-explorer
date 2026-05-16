@@ -13,6 +13,8 @@
 #include <thread>
 #include <vector>
 
+#include "ui/result-channel.h"
+
 namespace fast_explorer::ui {
 
 // Background icon resolver. Owns an STA jthread that pulls
@@ -74,7 +76,9 @@ class IconProvider {
   // UI-thread: removes every resolved result that the worker has
   // posted so far and returns them in arrival order. Call this when
   // the host receives kWmFeIconBatch.
-  std::vector<IconResult> drainResults();
+  std::vector<IconResult> drainResults() {
+    return results_.drainResults();
+  }
 
   // Returns how many requests the worker has dequeued and finished
   // its dummy-processing pass over. Acquire-load semantics.
@@ -90,16 +94,13 @@ class IconProvider {
  private:
   void workerMain(std::stop_token tok);
   // Worker-side helpers. processOne splits into the shell call
-  // (resolveIconForExtension) and the result publication
-  // (publishResult) so each path has a single reason to change and
-  // the coalesce-post invariant lives in one spot.
+  // (resolveIconForExtension) and the result publication so each
+  // path has a single reason to change.
   std::optional<std::wstring> dequeueOne(std::stop_token tok);
   void processOne(const std::wstring& extension);
   static HICON resolveIconForExtension(
       const std::wstring& extension) noexcept;
-  void publishResult(const std::wstring& extension, HICON icon);
 
-  HWND host_;
   // Queue + mutex_ guard pendingRequests_. cv_ is woken either by a
   // new request() or by the jthread's stop signal. The
   // condition_variable_any overload that takes a stop_token returns
@@ -107,15 +108,7 @@ class IconProvider {
   std::queue<std::wstring> pendingRequests_;
   mutable std::mutex mutex_;
   std::condition_variable_any cv_;
-  // resultMutex_ guards resultsReady_; the UI thread drains it on
-  // kWmFeIconBatch. Kept separate from mutex_ so the worker can
-  // publish a result without contending with a request() caller.
-  std::vector<IconResult> resultsReady_;
-  mutable std::mutex resultMutex_;
-  // postPending_ coalesces kWmFeIconBatch notifications: once the
-  // worker has posted once, additional results just accumulate in
-  // resultsReady_ until the UI's drainResults clears the gate.
-  std::atomic<bool> postPending_{false};
+  ResultChannel<IconResult> results_;
   std::atomic<std::size_t> processed_{0};
   std::jthread worker_;
 };

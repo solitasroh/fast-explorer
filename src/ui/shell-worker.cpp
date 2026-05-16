@@ -158,12 +158,12 @@ bool performShellCreateFolder(const std::wstring& parentPath,
 }  // namespace
 
 ShellWorker::ShellWorker(HWND host)
-    : host_(host),
+    : results_(host, kWmFeOperationResult),
       worker_([this](std::stop_token tok) { workerMain(tok); }) {}
 
 ShellWorker::~ShellWorker() {
   // Stop and join before any member with worker-visible state goes
-  // away. resultsReady_ is destroyed afterwards under the implicit
+  // away. results_ is destroyed afterwards under the implicit
   // dtor; no extra cleanup needed (no COM-handle ownership in the
   // result payload).
   if (worker_.joinable()) {
@@ -222,43 +222,9 @@ void ShellWorker::processOne(const ShellCommand& command) {
   result.sourcePath = command.sourcePath;
   result.newName = command.newName;
   result.success = success;
-  publishResult(std::move(result));
+  results_.publish(std::move(result));
   processed_.fetch_add(1, std::memory_order_release);
   processed_.notify_all();
-}
-
-void ShellWorker::publishResult(OperationResult result) {
-  {
-    std::lock_guard lk(resultMutex_);
-    resultsReady_.push_back(std::move(result));
-  }
-  // Coalesce: drainResults() clears postPending_; one PostMessage
-  // per accumulated batch wakes the UI exactly once.
-  bool expected = false;
-  if (postPending_.compare_exchange_strong(expected, true,
-                                           std::memory_order_acq_rel)) {
-    if (host_ != nullptr) {
-      PostMessageW(host_, kWmFeOperationResult, 0, 0);
-    } else {
-      // Nothing to deliver to — let the next publish post again.
-      postPending_.store(false, std::memory_order_release);
-    }
-  }
-}
-
-std::vector<OperationResult> ShellWorker::drainResults() {
-  std::vector<OperationResult> out;
-  {
-    std::lock_guard lk(resultMutex_);
-    out.swap(resultsReady_);
-    // Clearing postPending_ inside the lock seals the gap that
-    // otherwise lets a worker publish between the swap and the
-    // store: under the lock, any push that happens-before the
-    // clear is in `out` already, and any push after the clear
-    // sees postPending_ == false and posts a fresh message.
-    postPending_.store(false, std::memory_order_release);
-  }
-  return out;
 }
 
 void ShellWorker::workerMain(std::stop_token tok) {
