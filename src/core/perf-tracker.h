@@ -26,6 +26,8 @@ class PerfTracker {
     AppShutdownStart = 3,
     PaneOpenStart = 4,
     PaneFirstBatch = 5,
+    // auxiliary = process working set bytes at sample time.
+    MemoryProbe = 6,
     // additional event ids appended below as needed
   };
 

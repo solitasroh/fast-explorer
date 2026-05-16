@@ -152,6 +152,7 @@ add_executable(core-tests
   tests/pane-sort-coordinator-tests.cpp
   tests/shell-worker-tests.cpp
   tests/result-channel-tests.cpp
+  tests/perf-tracker-tests.cpp
   tests/bench-fs-helper.h
   src/ui/messages.h
   src/ui/column-formatter.cpp
@@ -204,6 +205,8 @@ add_executable(core-tests
   src/core/name-arena.cpp
   src/core/name-arena.h
   src/core/path-utils.cpp
+  src/core/perf-tracker.cpp
+  src/core/perf-tracker.h
   src/core/ring-logger.cpp
   src/core/ring-logger.h
   src/core/win32-fs-backend.cpp

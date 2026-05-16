@@ -201,6 +201,7 @@ bool MainWindow::openFolder(const std::wstring& path) {
     return false;
   }
   perf_.record(fast_explorer::core::PerfTracker::EventId::PaneOpenStart);
+  fast_explorer::core::recordMemoryProbe(perf_);
   firstBatchSeen_ = false;
   if (!pane_->openFolder(path)) {
     return false;
@@ -608,6 +609,7 @@ LRESULT MainWindow::onEnumBatch(WPARAM wParam, LPARAM lParam) {
   if (!firstBatchSeen_) {
     perf_.record(fast_explorer::core::PerfTracker::EventId::PaneFirstBatch,
                  count);
+    fast_explorer::core::recordMemoryProbe(perf_);
     firstBatchSeen_ = true;
   }
   if (listView_) {
@@ -624,6 +626,7 @@ LRESULT MainWindow::onEnumComplete(WPARAM wParam) {
     return 0;
   }
   const size_t finalCount = pane_->store().itemCount();
+  fast_explorer::core::recordMemoryProbe(perf_);
   const std::wstring text = readyStatusText(finalCount);
   setStatusText(text.c_str());
   maybeStartPendingFolderEdit();

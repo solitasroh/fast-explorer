@@ -113,6 +113,7 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance,
 
   AppServices services;
   services.perf().record(PerfTracker::EventId::AppLaunchStart);
+  fast_explorer::core::recordMemoryProbe(services.perf());
 
   if (!services.start()) {
     OutputDebugStringW(L"[fast-explorer] AppServices::start failed\n");
@@ -218,6 +219,7 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance,
       logger.error(L"OleInitialize failed (hr=0x%08lX)", ole.hr());
     }
     services.perf().record(PerfTracker::EventId::AppShutdownStart);
+    fast_explorer::core::recordMemoryProbe(services.perf());
     services.perf().dumpToCallback(&perfLineToLogger, &logger);
     logger.info(L"working set @ shutdown = %zu KB",
                 fast_explorer::core::ProcessMemoryService::workingSetBytes() / 1024);

@@ -24,6 +24,13 @@ namespace fast_explorer::core {
 //
 // Cache providers should call setLowMemoryCallback() with their evict hook.
 class RingLogger;
+class PerfTracker;
+
+// Helper that pairs an EventId::MemoryProbe record with the
+// current process working-set size in one call site. Hides the
+// two-call sequence from sampling callers (app launch / shutdown,
+// pane phase boundaries, future probes).
+void recordMemoryProbe(PerfTracker& tracker) noexcept;
 
 class ProcessMemoryService {
  public:

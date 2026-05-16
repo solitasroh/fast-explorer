@@ -2,9 +2,15 @@
 
 #include <psapi.h>
 
+#include "core/perf-tracker.h"
 #include "core/ring-logger.h"
 
 namespace fast_explorer::core {
+
+void recordMemoryProbe(PerfTracker& tracker) noexcept {
+  tracker.record(PerfTracker::EventId::MemoryProbe,
+                 ProcessMemoryService::workingSetBytes());
+}
 
 namespace {
 
