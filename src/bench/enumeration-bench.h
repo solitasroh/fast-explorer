@@ -29,10 +29,20 @@ struct Percentiles {
 // ExtensionIconCache, IconProvider STA thread + COM apartment)
 // are NOT included; the full-app cost is observed by running the
 // UI build.
+//
+// The per-cycle vector + maxCycleDriftBytes are the soak signal:
+// each cycle = one runOnce call where the FileModelStore is
+// constructed, populated, then destroyed at scope exit. Sampling
+// AFTER runOnce returns therefore captures the residual working
+// set when no store is alive, and drift = postCycle - baseline
+// shows whether successive open-close-open cycles reclaim back to
+// the starting state (drift ≈ 0) or accumulate (drift > 0).
 struct WorkingSetSamples {
   uint64_t baselineBytes = 0;   // before any run
   uint64_t peakBytes = 0;       // max post-enum across runs (store still alive)
   uint64_t finalBytes = 0;      // after all runs (stores destroyed)
+  std::vector<uint64_t> postCycleBytes;  // one entry per cycle, store destroyed
+  uint64_t maxCycleDriftBytes = 0;       // max(postCycleBytes[i] - baselineBytes)
 };
 
 struct EnumerationBenchResult {

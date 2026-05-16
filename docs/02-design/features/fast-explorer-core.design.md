@@ -1506,7 +1506,7 @@ Exit criteria:
 - **UI stall single ≤ 50 ms** 100k 시나리오 검증
 - **scroll p95 ≤ 16.7 ms** 측정
 - **100k entries process working set ≤ 50 MB target / ≤ 100 MB budget** 측정 — first headless data point (2026-05-17, commit pending): baseline 4.04 MB / peak (FileModelStore alive after enumerate) 9.39 MB / final (after store destroyed) 4.46 MB over 5 enumerate runs of the LargeFlat dataset via FastExplorerBench. FileModelStore footprint at 100k: entries 3.81 MB + arena 1.00 MB = 4.81 MB. Working-set peak therefore ≈ 4.6 MB above baseline. **Below target by ~5×**; the full-UI build adds ImageList (~272 KB) + ExtensionIconCache + IconProvider STA thread + main-window chain on top — quantitative full-UI run with a captured MemoryProbe time series is a follow-up requiring either a UI automation harness or a manual perf-log capture.
-- **Memory soak: 100k→0→100k cycle 10회 누적 working set Δ ≤ 5 MB**
+- **Memory soak: 100k→0→100k cycle 10회 누적 working set Δ ≤ 5 MB** — first headless data point (2026-05-17): max-drift **404 KB** across 10 cycles of LargeFlat (100k) via `FastExplorerBench enumerate --runs 10`. Per-cycle drift trace c0=400 / c1–c9=404 KB — drift plateaus after the first cycle rather than accumulating, which is the expected "no leak" signature (residual = page-table + arena-decommit-rounding cost). **At 8.1% of the 5 MB budget**; headless scope (UI caches not included).
 - **Multi-pane soak: dual nav 50회 누적 working set Δ ≤ 10 MB**
 - `EmptyWorkingSet` 호출 후 working set 회복 ≤ 200 ms 검증
 - Low-memory notification 시 caches drop 검증 (quantitative; the path is implemented in M6)

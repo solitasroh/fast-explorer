@@ -138,6 +138,7 @@ EnumerationBenchResult runEnumerationBench(const std::wstring& path,
   result.workingSet.baselineBytes =
       fast_explorer::core::ProcessMemoryService::workingSetBytes();
   result.runs.reserve(static_cast<size_t>(runs));
+  result.workingSet.postCycleBytes.reserve(static_cast<size_t>(runs));
   for (int i = 0; i < runs; ++i) {
     const RunOutcome outcome = runOnce(backend, path);
     // A partial result (e.g. access_denied after first batch) is
@@ -155,6 +156,19 @@ EnumerationBenchResult runEnumerationBench(const std::wstring& path,
     result.lastRunArenaCommittedBytes = outcome.storeArenaCommittedBytes;
     if (outcome.workingSetBytesPostEnum > result.workingSet.peakBytes) {
       result.workingSet.peakBytes = outcome.workingSetBytesPostEnum;
+    }
+    // runOnce has returned: the FileModelStore is destroyed. This
+    // sample is the residual working set with no store alive — the
+    // soak signal. Drift relative to baseline is the cycle's
+    // contribution to long-running memory growth.
+    const uint64_t postCycle =
+        fast_explorer::core::ProcessMemoryService::workingSetBytes();
+    result.workingSet.postCycleBytes.push_back(postCycle);
+    if (postCycle > result.workingSet.baselineBytes) {
+      const uint64_t drift = postCycle - result.workingSet.baselineBytes;
+      if (drift > result.workingSet.maxCycleDriftBytes) {
+        result.workingSet.maxCycleDriftBytes = drift;
+      }
     }
   }
   result.workingSet.finalBytes =

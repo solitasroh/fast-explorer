@@ -114,3 +114,37 @@ FE_TEST_CASE(EnumerationBench_WorkingSet_BaselineNonZeroPeakGreaterOrEqual) {
   // process so it remains positive.
   FE_ASSERT_TRUE(r.workingSet.finalBytes > 0);
 }
+
+FE_TEST_CASE(EnumerationBench_Soak_PostCyclePopulatedPerRun) {
+  const std::wstring dir = makeFreshTempDirPath(L"enumbench-soak");
+  const auto gen = generateDataset(PresetKind::Small, dir, 1);
+  if (gen.error != GenerateError::None) {
+    removeDirectoryRecursive(dir);
+    FE_ASSERT_TRUE(false);
+  }
+  // 5 cycles is enough to verify the field shape without a long
+  // soak; the §14.7 gate runs 10 cycles against the 100k preset
+  // and is exercised through bench-cli rather than this unit test.
+  constexpr int kCycles = 5;
+  EnumerationBenchResult r = runEnumerationBench(dir, kCycles);
+  removeDirectoryRecursive(dir);
+  FE_ASSERT_EQ(r.error, EnumerationBenchError::None);
+  FE_ASSERT_EQ(r.workingSet.postCycleBytes.size(),
+               static_cast<std::size_t>(kCycles));
+  for (uint64_t cycleBytes : r.workingSet.postCycleBytes) {
+    FE_ASSERT_TRUE(cycleBytes > 0);
+  }
+  // maxCycleDriftBytes is the max of (postCycle - baseline) clamped
+  // to 0 for cycles below baseline. By construction it equals the
+  // max over postCycleBytes minus baselineBytes, when positive.
+  uint64_t expectedMax = 0;
+  for (uint64_t cycleBytes : r.workingSet.postCycleBytes) {
+    if (cycleBytes > r.workingSet.baselineBytes) {
+      const uint64_t d = cycleBytes - r.workingSet.baselineBytes;
+      if (d > expectedMax) {
+        expectedMax = d;
+      }
+    }
+  }
+  FE_ASSERT_EQ(r.workingSet.maxCycleDriftBytes, expectedMax);
+}

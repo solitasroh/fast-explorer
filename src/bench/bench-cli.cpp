@@ -310,6 +310,18 @@ int runEnumerate(const EnumerateArgs& args, std::FILE* out, std::FILE* err) {
                 static_cast<unsigned long long>(r.workingSet.baselineBytes / 1024),
                 static_cast<unsigned long long>(r.workingSet.peakBytes / 1024),
                 static_cast<unsigned long long>(r.workingSet.finalBytes / 1024));
+  std::fwprintf(out, L"soak: cycles=%zu  max-drift=%llu KB",
+                r.workingSet.postCycleBytes.size(),
+                static_cast<unsigned long long>(
+                    r.workingSet.maxCycleDriftBytes / 1024));
+  for (size_t i = 0; i < r.workingSet.postCycleBytes.size(); ++i) {
+    const uint64_t cycleBytes = r.workingSet.postCycleBytes[i];
+    const int64_t drift = static_cast<int64_t>(cycleBytes) -
+                          static_cast<int64_t>(r.workingSet.baselineBytes);
+    std::fwprintf(out, L"  c%zu=%lld", i,
+                  static_cast<long long>(drift / 1024));
+  }
+  std::fwprintf(out, L" KB\n");
   return kExitOk;
 }
 
