@@ -43,6 +43,8 @@ set(FE_APP_SOURCES
   src/ui/format-cache.h
   src/ui/icon-cache.cpp
   src/ui/icon-cache.h
+  src/ui/icon-cache-coordinator.cpp
+  src/ui/icon-cache-coordinator.h
   src/ui/icon-provider.cpp
   src/ui/icon-provider.h
   src/ui/jthread-utils.h
@@ -163,6 +165,8 @@ add_executable(core-tests
   src/ui/format-cache.h
   src/ui/icon-cache.cpp
   src/ui/icon-cache.h
+  src/ui/icon-cache-coordinator.cpp
+  src/ui/icon-cache-coordinator.h
   src/ui/icon-provider.cpp
   src/ui/icon-provider.h
   src/ui/jthread-utils.h

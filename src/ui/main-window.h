@@ -57,19 +57,14 @@ class MainWindow {
   LRESULT onLowMemory();
   LRESULT onFsChange(HWND hwnd);
 
-  // Replaces the per-window ImageList with a fresh placeholder-only
-  // list and clears the extension cache so subsequent rows
-  // re-request their icons. Bound to kWmFeLowMemory.
-  void shrinkIconCache();
   // Forces a repaint of every published row through LVN_GETDISPINFO.
-  // Shared by onIconBatch (new HICONs landed) and shrinkIconCache
-  // (slot indices were reset).
+  // Called by the icon-batch and low-memory paths after the
+  // coordinator updates the ImageList / extension cache state.
   void redrawVisibleRows();
 
   LRESULT handleListViewNotify(NMHDR* hdr);
   bool isStaleGeneration(WPARAM wParam) const;
   void handleGetDispInfo(NMHDR* hdr);
-  int resolveIconIndex(const fast_explorer::core::FileEntry& entry);
   void handleColumnClick(NMHDR* hdr);
   void handleItemActivate(NMHDR* hdr);
   void handleItemChanged(NMHDR* hdr);
@@ -125,9 +120,7 @@ class MainWindow {
   bool reapplyingSelection_ = false;
   std::unique_ptr<PaneController> pane_;
   std::unique_ptr<class FormatCache> formatCache_;
-  std::unique_ptr<class IconCache> iconCache_;
-  std::unique_ptr<class ExtensionIconCache> extensionCache_;
-  std::unique_ptr<class IconProvider> iconProvider_;
+  std::unique_ptr<class IconCacheCoordinator> iconCoord_;
 };
 
 }  // namespace fast_explorer::ui
