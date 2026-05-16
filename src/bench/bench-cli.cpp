@@ -305,6 +305,11 @@ int runEnumerate(const EnumerateArgs& args, std::FILE* out, std::FILE* err) {
                 static_cast<unsigned long long>(r.lastRunEntriesBytes),
                 static_cast<unsigned long long>(r.lastRunArenaCommittedBytes),
                 static_cast<unsigned long long>(storeTotal));
+  std::fwprintf(out,
+                L"working-set: baseline=%llu KB  peak=%llu KB  final=%llu KB\n",
+                static_cast<unsigned long long>(r.workingSet.baselineBytes / 1024),
+                static_cast<unsigned long long>(r.workingSet.peakBytes / 1024),
+                static_cast<unsigned long long>(r.workingSet.finalBytes / 1024));
   return kExitOk;
 }
 

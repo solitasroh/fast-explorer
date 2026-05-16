@@ -9,6 +9,7 @@
 #include "core/file-model-store.h"
 #include "core/fs-backend.h"
 #include "core/path-utils.h"
+#include "core/process-memory.h"
 #include "core/win32-fs-backend.h"
 
 namespace fast_explorer::bench {
@@ -39,6 +40,7 @@ struct RunOutcome {
   EnumerationRun run;
   uint64_t storeEntriesBytes = 0;
   uint64_t storeArenaCommittedBytes = 0;
+  uint64_t workingSetBytesPostEnum = 0;
   fast_explorer::core::EnumerationError err =
       fast_explorer::core::EnumerationError::None;
 };
@@ -68,6 +70,11 @@ RunOutcome runOnce(fast_explorer::core::IFsBackend& backend,
   out.run.entriesObserved = observed;
   out.storeEntriesBytes = store.entriesBytes();
   out.storeArenaCommittedBytes = store.nameArenaCommittedBytes();
+  // Sample working set while the store is still alive; on the next
+  // line scope-exit destroys it and the post-destroy reading would
+  // be lower than the actual enumeration cost.
+  out.workingSetBytesPostEnum =
+      fast_explorer::core::ProcessMemoryService::workingSetBytes();
   return out;
 }
 
@@ -128,6 +135,8 @@ EnumerationBenchResult runEnumerationBench(const std::wstring& path,
   }
 
   fast_explorer::core::Win32FsBackend backend;
+  result.workingSet.baselineBytes =
+      fast_explorer::core::ProcessMemoryService::workingSetBytes();
   result.runs.reserve(static_cast<size_t>(runs));
   for (int i = 0; i < runs; ++i) {
     const RunOutcome outcome = runOnce(backend, path);
@@ -144,7 +153,12 @@ EnumerationBenchResult runEnumerationBench(const std::wstring& path,
     result.totalEntries = outcome.run.entriesObserved;
     result.lastRunEntriesBytes = outcome.storeEntriesBytes;
     result.lastRunArenaCommittedBytes = outcome.storeArenaCommittedBytes;
+    if (outcome.workingSetBytesPostEnum > result.workingSet.peakBytes) {
+      result.workingSet.peakBytes = outcome.workingSetBytesPostEnum;
+    }
   }
+  result.workingSet.finalBytes =
+      fast_explorer::core::ProcessMemoryService::workingSetBytes();
 
   std::vector<uint64_t> samples;
   samples.reserve(result.runs.size());

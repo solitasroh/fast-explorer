@@ -91,3 +91,26 @@ FE_TEST_CASE(EnumerationBench_SmallDataset_ReportsTwoHundredEntries) {
   FE_ASSERT_TRUE(r.lastRunEntriesBytes > 0);
   FE_ASSERT_TRUE(r.lastRunArenaCommittedBytes > 0);
 }
+
+FE_TEST_CASE(EnumerationBench_WorkingSet_BaselineNonZeroPeakGreaterOrEqual) {
+  const std::wstring dir = makeFreshTempDirPath(L"enumbench-ws");
+  const auto gen = generateDataset(PresetKind::Small, dir, 1);
+  if (gen.error != GenerateError::None) {
+    removeDirectoryRecursive(dir);
+    FE_ASSERT_TRUE(false);
+  }
+  EnumerationBenchResult r = runEnumerationBench(dir, 2);
+  removeDirectoryRecursive(dir);
+  FE_ASSERT_EQ(r.error, EnumerationBenchError::None);
+  // GetProcessMemoryInfo returns non-zero for a live process.
+  FE_ASSERT_TRUE(r.workingSet.baselineBytes > 0);
+  // Peak is sampled after enumeration while the store is alive, so
+  // it must be at least as large as the baseline (the store +
+  // enumerator state never shrink the working set below the
+  // pre-run reading).
+  FE_ASSERT_TRUE(r.workingSet.peakBytes >= r.workingSet.baselineBytes);
+  // Final is sampled after every store is destroyed; it may or may
+  // not match baseline depending on OS reclaim, but it is a live
+  // process so it remains positive.
+  FE_ASSERT_TRUE(r.workingSet.finalBytes > 0);
+}

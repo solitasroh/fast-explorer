@@ -207,6 +207,8 @@ add_executable(core-tests
   src/core/path-utils.cpp
   src/core/perf-tracker.cpp
   src/core/perf-tracker.h
+  src/core/process-memory.cpp
+  src/core/process-memory.h
   src/core/ring-logger.cpp
   src/core/ring-logger.h
   src/core/win32-fs-backend.cpp
@@ -220,6 +222,7 @@ target_link_libraries(core-tests PRIVATE
   shell32
   ole32
   user32
+  psapi
 )
 
 # ---------------------------------------------------------------------------
@@ -250,6 +253,10 @@ add_executable(FastExplorerBench
   src/core/name-arena.h
   src/core/path-utils.cpp
   src/core/path-utils.h
+  src/core/perf-tracker.cpp
+  src/core/perf-tracker.h
+  src/core/process-memory.cpp
+  src/core/process-memory.h
   src/core/ring-logger.cpp
   src/core/ring-logger.h
   src/core/win32-fs-backend.cpp
@@ -261,6 +268,7 @@ target_include_directories(FastExplorerBench PRIVATE src)
 target_link_libraries(FastExplorerBench PRIVATE
   shell32
   ole32
+  psapi
 )
 
 enable_testing()
