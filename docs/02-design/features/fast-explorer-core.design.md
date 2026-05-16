@@ -1483,7 +1483,7 @@ Open follow-ups (M7 prep, recorded by atom-6a–6e L1/L2 reviews):
 ### 14.7 Milestone 7: Benchmark And Stabilization — Pending
 
 Deliverables:
-- full dataset generator presets (small/medium/large-flat/mixed-names/mixed-types/many-dirs/deep-tree)
+- full dataset generator presets (small/medium/large-flat/mixed-names/mixed-types/many-dirs/deep-tree) — **already met from M2 (commit 3e3f010 onwards)**. All 7 PresetKind enumerators ship in `src/bench/dataset-generator.cpp`, are wired through `bench-cli`'s `presetFromName`/`presetName`, and survive the existing dataset-generator + bench-cli tests on the Small and DeepTree paths. Test-coverage expansion for the remaining 5 presets (Medium, LargeFlat, MixedNames, MixedTypes, ManyDirs) tracked as a small follow-up under §14.7 measurement infrastructure rather than blocking M7 entry — the implementations have been exercised end-to-end through M2/M3/M4 head-to-head bench runs.
 - memory snapshot (`GetProcessMemoryInfo`)
 - UI stall probe full integration
 - scroll frame p95 / LVN_GETDISPINFO p99 측정
