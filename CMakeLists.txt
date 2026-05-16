@@ -153,6 +153,7 @@ add_executable(core-tests
   tests/shell-worker-tests.cpp
   tests/result-channel-tests.cpp
   tests/perf-tracker-tests.cpp
+  tests/bench-json-tests.cpp
   tests/bench-fs-helper.h
   src/ui/messages.h
   src/ui/column-formatter.cpp
@@ -184,6 +185,8 @@ add_executable(core-tests
   src/ui/stall-probe.h
   src/bench/bench-cli.cpp
   src/bench/bench-cli.h
+  src/bench/bench-json.cpp
+  src/bench/bench-json.h
   src/bench/dataset-generator.cpp
   src/bench/dataset-generator.h
   src/bench/enumeration-bench.cpp
@@ -233,6 +236,8 @@ add_executable(FastExplorerBench
   src/bench/main.cpp
   src/bench/bench-cli.cpp
   src/bench/bench-cli.h
+  src/bench/bench-json.cpp
+  src/bench/bench-json.h
   src/bench/dataset-generator.cpp
   src/bench/dataset-generator.h
   src/bench/enumeration-bench.cpp

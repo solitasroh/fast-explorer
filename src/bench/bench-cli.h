@@ -33,9 +33,15 @@ struct GenerateArgs {
   uint64_t seed = 1;
 };
 
+enum class OutputFormat : uint8_t {
+  Text = 0,
+  Json = 1,
+};
+
 struct EnumerateArgs {
   std::wstring path;
   int runs = 5;
+  OutputFormat format = OutputFormat::Text;
 };
 
 struct HeadToHeadArgs {

@@ -1487,7 +1487,7 @@ Deliverables:
 - memory snapshot (`GetProcessMemoryInfo`)
 - UI stall probe full integration
 - scroll frame p95 / LVN_GETDISPINFO p99 측정
-- benchmark result JSON with machine info
+- benchmark result JSON with machine info — `FastExplorerBench enumerate --format json` (added 2026-05-17) emits a UTF-8 JSON document carrying `{machine{architecture, processor_count, page_size, os{major, minor, build}}, args, timing{median_us, p95_us, total_entries, runs[]}, memory{last_run_entries_bytes, last_run_arena_committed_bytes, working_set{baseline_bytes, peak_bytes, final_bytes, max_cycle_drift_bytes, post_cycle_bytes[]}}}`. Machine info via `GetNativeSystemInfo` + `RtlGetVersion`. Output is the input format for the baseline-compare CI script.
 - baseline 비교 CI script (§11.5)
 - 1-hour soak test checklist
 - Optional: ETW custom provider, UI automation smoke (Plan §12.1 N2/N3/N4 해소)

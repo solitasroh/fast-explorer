@@ -1,9 +1,13 @@
 #include "bench/bench-cli.h"
 
+#include <windows.h>
+
 #include <cstdint>
 #include <cwchar>
+#include <string>
 #include <string_view>
 
+#include "bench/bench-json.h"
 #include "bench/dataset-generator.h"
 #include "bench/enumeration-bench.h"
 #include "bench/head-to-head-bench.h"
@@ -214,8 +218,46 @@ bool parsePathAndRunsArgs(int argc, const wchar_t* const* argv,
 
 bool parseEnumerateArgs(int argc, const wchar_t* const* argv,
                         ParsedCommand& result) {
-  return parsePathAndRunsArgs(argc, argv, result, L"enumerate",
-                              result.enumerate.path, result.enumerate.runs);
+  bool gotPath = false;
+  for (int i = 2; i < argc; ++i) {
+    const OptionToken tok = readOption(argc, argv, &i, result);
+    if (!tok.ok) {
+      return false;
+    }
+    if (tok.name == L"path") {
+      if (tok.value.empty()) {
+        setUsageError(result, L"--path cannot be empty");
+        return false;
+      }
+      result.enumerate.path.assign(tok.value);
+      gotPath = true;
+    } else if (tok.name == L"runs") {
+      int runs = 0;
+      if (!parseRangedInt(tok.value, 1, 10000, runs)) {
+        setUsageError(result, L"invalid --runs value (1..10000): ", tok.value);
+        return false;
+      }
+      result.enumerate.runs = runs;
+    } else if (tok.name == L"format") {
+      if (tok.value == L"text") {
+        result.enumerate.format = OutputFormat::Text;
+      } else if (tok.value == L"json") {
+        result.enumerate.format = OutputFormat::Json;
+      } else {
+        setUsageError(result, L"invalid --format value (text|json): ",
+                      tok.value);
+        return false;
+      }
+    } else {
+      setUsageError(result, L"unknown option for enumerate: --", tok.name);
+      return false;
+    }
+  }
+  if (!gotPath) {
+    setUsageError(result, L"enumerate requires --path");
+    return false;
+  }
+  return true;
 }
 
 bool parseHeadToHeadArgs(int argc, const wchar_t* const* argv,
@@ -281,8 +323,6 @@ int runHeadToHead(const HeadToHeadArgs& args, std::FILE* out, std::FILE* err) {
 }
 
 int runEnumerate(const EnumerateArgs& args, std::FILE* out, std::FILE* err) {
-  std::fwprintf(out, L"enumerate path=%ls runs=%d\n", args.path.c_str(),
-                args.runs);
   const EnumerationBenchResult r = runEnumerationBench(args.path, args.runs);
   if (r.error != EnumerationBenchError::None) {
     std::fwprintf(err, L"enumerate failed: %ls (%ls)\n",
@@ -290,6 +330,28 @@ int runEnumerate(const EnumerateArgs& args, std::FILE* out, std::FILE* err) {
                   r.errorDetail.empty() ? L"" : r.errorDetail.c_str());
     return kExitFailure;
   }
+  if (args.format == OutputFormat::Json) {
+    const MachineInfo machine = captureMachineInfo();
+    const std::string json = formatEnumerateBenchJson(args, r, machine);
+    // The main entry point puts stdout in _O_U8TEXT (wide) mode for
+    // path output; calling narrow fwrite on a wide-mode stream is
+    // undefined behavior on MSVC. Round-trip the UTF-8 narrow JSON
+    // back through UTF-16 wide and write via fputws — the U8TEXT
+    // translation layer re-emits it as UTF-8 on the way out.
+    const int needed = MultiByteToWideChar(CP_UTF8, 0, json.data(),
+                                           static_cast<int>(json.size()),
+                                           nullptr, 0);
+    if (needed > 0) {
+      std::wstring wide(static_cast<std::size_t>(needed), L'\0');
+      MultiByteToWideChar(CP_UTF8, 0, json.data(),
+                          static_cast<int>(json.size()), wide.data(), needed);
+      std::fputws(wide.c_str(), out);
+      std::fputwc(L'\n', out);
+    }
+    return kExitOk;
+  }
+  std::fwprintf(out, L"enumerate path=%ls runs=%d\n", args.path.c_str(),
+                args.runs);
   for (size_t i = 0; i < r.runs.size(); ++i) {
     std::fwprintf(out, L"  run[%zu] %llu us  entries=%llu\n", i,
                   static_cast<unsigned long long>(r.runs[i].microseconds),
