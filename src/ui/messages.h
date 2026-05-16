@@ -17,6 +17,7 @@ inline constexpr UINT kWmFeOperationResult = kWmFeBase + 0x06;
 inline constexpr UINT kWmFeFsChange        = kWmFeBase + 0x07;
 inline constexpr UINT kWmFePerfEvent       = kWmFeBase + 0x08;
 inline constexpr UINT kWmFeAddressCommit   = kWmFeBase + 0x09;
+inline constexpr UINT kWmFeLowMemory       = kWmFeBase + 0x0A;
 
 inline constexpr WORD kAccelFocusAddress = 100;
 inline constexpr WORD kAccelNavBack       = 101;
@@ -29,7 +30,7 @@ inline constexpr WORD kAccelCreateFolder  = 107;
 
 static_assert(kWmFeBase >= WM_APP,
               "WM_FE_* must live in the WM_APP user range");
-static_assert(kWmFeAddressCommit <= 0xBFFFu,
+static_assert(kWmFeLowMemory <= 0xBFFFu,
               "WM_FE_* must not spill past the WM_APP user range");
 
 }  // namespace fast_explorer::ui

@@ -54,7 +54,17 @@ class MainWindow {
   LRESULT onSortComplete(WPARAM wParam);
   LRESULT onIconBatch();
   LRESULT onOperationResult();
+  LRESULT onLowMemory();
   LRESULT onFsChange(HWND hwnd);
+
+  // Replaces the per-window ImageList with a fresh placeholder-only
+  // list and clears the extension cache so subsequent rows
+  // re-request their icons. Bound to kWmFeLowMemory.
+  void shrinkIconCache();
+  // Forces a repaint of every published row through LVN_GETDISPINFO.
+  // Shared by onIconBatch (new HICONs landed) and shrinkIconCache
+  // (slot indices were reset).
+  void redrawVisibleRows();
 
   LRESULT handleListViewNotify(NMHDR* hdr);
   bool isStaleGeneration(WPARAM wParam) const;

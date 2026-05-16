@@ -3,6 +3,8 @@
 #include <windows.h>
 #include <commctrl.h>
 
+#include <cstddef>
+
 #include "core/file-entry.h"
 
 namespace fast_explorer::ui {
@@ -41,8 +43,25 @@ class IconCache {
   [[nodiscard]] bool ok() const noexcept { return imageList_ != nullptr; }
   [[nodiscard]] HIMAGELIST handle() const noexcept { return imageList_; }
 
+  // Current number of slots in the ImageList.
+  [[nodiscard]] int iconCount() const noexcept;
+  // Estimated bytes used by the current ImageList: count × per-slot
+  // (color + mask) bytes at the cached metric. Diagnostic only.
+  [[nodiscard]] std::size_t byteSize() const noexcept;
+
+  // Replaces the owned ImageList with `newList`, returning the old
+  // handle. Caller updates any consumer (e.g. ListView_SetImageList)
+  // before destroying the returned handle. Takes ownership of
+  // `newList`. After the call handle() returns newList.
+  HIMAGELIST swap(HIMAGELIST newList) noexcept;
+
  private:
   HIMAGELIST imageList_ = nullptr;
 };
+
+// Builds a fresh ImageList sized for `dpi` with the two placeholder
+// icons (folder + file) at kPlaceholderFolderIndex /
+// kPlaceholderFileIndex. Returns nullptr on failure.
+[[nodiscard]] HIMAGELIST createPlaceholderImageList(unsigned int dpi) noexcept;
 
 }  // namespace fast_explorer::ui

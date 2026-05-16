@@ -24,35 +24,26 @@ HICON loadPlaceholderIcon(DWORD fileAttributes) noexcept {
   return sfi.hIcon;
 }
 
-// Slot count we will populate at construction (kPlaceholderFolderIndex
-// + kPlaceholderFileIndex). Growth headroom covers system icons that
-// later atoms will add through SHGFI_ICON without SHGFI_USEFILEATTRIBUTES.
 constexpr int kInitialImageListSlots = 2;
 constexpr int kImageListGrowSlots    = 8;
 
 }  // namespace
 
-IconCache::IconCache(unsigned int dpi) noexcept {
+HIMAGELIST createPlaceholderImageList(unsigned int dpi) noexcept {
   const int cx = scaleForDpi(GetSystemMetrics(SM_CXSMICON), dpi);
   const int cy = scaleForDpi(GetSystemMetrics(SM_CYSMICON), dpi);
-  imageList_ = ImageList_Create(cx, cy, ILC_COLOR32 | ILC_MASK,
-                                kInitialImageListSlots,
-                                kImageListGrowSlots);
-  if (imageList_ == nullptr) {
-    return;
+  HIMAGELIST list = ImageList_Create(cx, cy, ILC_COLOR32 | ILC_MASK,
+                                     kInitialImageListSlots,
+                                     kImageListGrowSlots);
+  if (list == nullptr) {
+    return nullptr;
   }
-
   HICON folder = loadPlaceholderIcon(FILE_ATTRIBUTE_DIRECTORY);
   HICON file = loadPlaceholderIcon(FILE_ATTRIBUTE_NORMAL);
-  // ImageList_AddIcon returns the slot index it occupied (or -1). The
-  // kPlaceholderFolder/FileIndex constants assume the two placeholders
-  // land at slot 0 and slot 1 in that order; if either insert fails
-  // the invariant is silently broken, so tear the cache down and let
-  // the caller observe ok() == false.
   const int folderIdx =
-      (folder != nullptr) ? ImageList_AddIcon(imageList_, folder) : -1;
+      (folder != nullptr) ? ImageList_AddIcon(list, folder) : -1;
   const int fileIdx =
-      (file != nullptr) ? ImageList_AddIcon(imageList_, file) : -1;
+      (file != nullptr) ? ImageList_AddIcon(list, file) : -1;
   if (folder != nullptr) {
     DestroyIcon(folder);
   }
@@ -61,16 +52,54 @@ IconCache::IconCache(unsigned int dpi) noexcept {
   }
   if (folderIdx != kPlaceholderFolderIndex ||
       fileIdx != kPlaceholderFileIndex) {
-    ImageList_Destroy(imageList_);
-    imageList_ = nullptr;
+    ImageList_Destroy(list);
+    return nullptr;
   }
+  return list;
 }
+
+IconCache::IconCache(unsigned int dpi) noexcept
+    : imageList_(createPlaceholderImageList(dpi)) {}
 
 IconCache::~IconCache() {
   if (imageList_ != nullptr) {
     ImageList_Destroy(imageList_);
     imageList_ = nullptr;
   }
+}
+
+int IconCache::iconCount() const noexcept {
+  if (imageList_ == nullptr) {
+    return 0;
+  }
+  return ImageList_GetImageCount(imageList_);
+}
+
+std::size_t IconCache::byteSize() const noexcept {
+  if (imageList_ == nullptr) {
+    return 0;
+  }
+  int cx = 0;
+  int cy = 0;
+  if (!ImageList_GetIconSize(imageList_, &cx, &cy) || cx <= 0 || cy <= 0) {
+    return 0;
+  }
+  const int count = ImageList_GetImageCount(imageList_);
+  if (count <= 0) {
+    return 0;
+  }
+  // ILC_COLOR32 = 4 bytes per pixel; ILC_MASK adds 1 bit/pixel.
+  const std::size_t colorBytes = static_cast<std::size_t>(cx) *
+                                 static_cast<std::size_t>(cy) * 4;
+  const std::size_t maskBytes = (static_cast<std::size_t>(cx) *
+                                 static_cast<std::size_t>(cy) + 7) / 8;
+  return static_cast<std::size_t>(count) * (colorBytes + maskBytes);
+}
+
+HIMAGELIST IconCache::swap(HIMAGELIST newList) noexcept {
+  HIMAGELIST old = imageList_;
+  imageList_ = newList;
+  return old;
 }
 
 }  // namespace fast_explorer::ui

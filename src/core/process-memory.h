@@ -47,7 +47,12 @@ class ProcessMemoryService {
   void notifyMinimized() noexcept;
   void notifyRestored() noexcept;
 
-  // Cache hook. Replaces any previous callback. Pass nullptr to clear.
+  // Cache hook. Replaces any previous callback. Pass nullptr to
+  // clear. This is a fire-and-forget release-store: the notifier
+  // thread may already be inside the previous callback when this
+  // returns. To quiesce, call stop() (which joins the notifier).
+  // Callbacks therefore must only touch objects with lifetime that
+  // outlives the service, not per-window state captured by address.
   void setLowMemoryCallback(LowMemoryCallback cb) noexcept;
 
   // Snapshot helpers for diagnostics / bench gates.
