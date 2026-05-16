@@ -70,6 +70,10 @@ class MainWindow {
   void finalizeSortApply();
   LRESULT handleCustomDraw(NMHDR* hdr);
   void handleAddressCommit();
+  // Queues a recycle-bin delete on the focused list-view row, if any.
+  // Bound to the Delete accelerator. No-op when the list has no
+  // focused item.
+  void deleteFocusedItem();
   static LRESULT CALLBACK addressBarSubclassProc(HWND, UINT, WPARAM, LPARAM,
                                                  UINT_PTR, DWORD_PTR);
 

@@ -17,7 +17,8 @@ namespace fast_explorer::ui {
 PaneController::PaneController(HWND hostWindow)
     : hostWindow_(hostWindow),
       store_(L""),
-      sortCoord_(store_, hostWindow) {}
+      sortCoord_(store_, hostWindow),
+      shellWorker_(hostWindow) {}
 
 PaneController::~PaneController() = default;
 
@@ -155,6 +156,19 @@ bool PaneController::openItem(std::uint32_t row) {
     return openFolder(fullPath);
   }
   return shellOpenPath(fullPath, hostWindow_);
+}
+
+bool PaneController::deleteItem(std::uint32_t row) {
+  if (row >= store_.publishedCount()) {
+    return false;
+  }
+  const auto& entry = store_.visibleAt(row);
+  ShellCommand cmd;
+  cmd.kind = ShellCommandKind::Delete;
+  cmd.sourcePath = fast_explorer::core::joinPath(
+      currentPath_, fast_explorer::core::nameView(entry));
+  shellWorker_.request(std::move(cmd));
+  return true;
 }
 
 void PaneController::selectRaw(std::uint32_t rawIndex) {

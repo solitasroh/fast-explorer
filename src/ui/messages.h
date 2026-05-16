@@ -23,6 +23,7 @@ inline constexpr WORD kAccelNavBack       = 101;
 inline constexpr WORD kAccelNavForward    = 102;
 inline constexpr WORD kAccelNavUp         = 103;
 inline constexpr WORD kAccelRefresh       = 104;
+inline constexpr WORD kAccelDelete        = 105;
 
 static_assert(kWmFeBase >= WM_APP,
               "WM_FE_* must live in the WM_APP user range");

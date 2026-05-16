@@ -236,6 +236,25 @@ LRESULT CALLBACK MainWindow::addressBarSubclassProc(
   return DefSubclassProc(hwnd, msg, wParam, lParam);
 }
 
+void MainWindow::deleteFocusedItem() {
+  if (!pane_ || listView_ == nullptr) {
+    return;
+  }
+  // Without this guard, the VK_DELETE accelerator would also fire while
+  // the address bar (or any non-list-view child) has focus, hijacking
+  // the user's "erase character" key. Accelerator translation runs in
+  // the message loop before the focused control sees the key, so the
+  // gate has to be here.
+  if (GetFocus() != listView_) {
+    return;
+  }
+  const int focused = ListView_GetNextItem(listView_, -1, LVNI_FOCUSED);
+  if (focused < 0) {
+    return;
+  }
+  pane_->deleteItem(static_cast<std::uint32_t>(focused));
+}
+
 void MainWindow::handleAddressCommit() {
   if (!addressBar_) {
     return;
@@ -446,6 +465,9 @@ LRESULT MainWindow::onCommand(HWND hwnd, UINT msg, WPARAM wParam,
         if (pane_) {
           pane_->refresh();
         }
+        return 0;
+      case kAccelDelete:
+        deleteFocusedItem();
         return 0;
     }
     // Unknown accelerator id: swallow without calling DefWindowProc so

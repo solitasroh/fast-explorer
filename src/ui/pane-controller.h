@@ -14,6 +14,7 @@
 #include "core/fs-watcher.h"
 #include "core/win32-fs-backend.h"
 #include "ui/pane-sort-coordinator.h"
+#include "ui/shell-worker.h"
 
 namespace fast_explorer::ui {
 
@@ -58,6 +59,13 @@ class PaneController {
   // false on out-of-range row or when the shell call fails; folder
   // activation propagates openFolder's return value.
   bool openItem(std::uint32_t row);
+
+  // Queue a recycle-bin delete for the file/folder at the given
+  // visible row. Returns false on out-of-range row (no command
+  // enqueued); true means the command is on the ShellWorker queue
+  // and PerformOperations will run on the STA worker. The watcher
+  // refresh path observes the resulting file-system change.
+  bool deleteItem(std::uint32_t row);
 
   // Sort delegation. requestSort returns Rejected while the
   // enumeration worker is still running because sorting the store
@@ -112,6 +120,14 @@ class PaneController {
     sortCoord_.setSortThresholdRowsForTest(rows);
   }
 
+  // Exposes the ShellWorker so tests can synchronize on
+  // waitForProcessedForTest after a deleteItem/renameItem/createSubfolder
+  // call. Returned by const reference so tests cannot enqueue
+  // arbitrary commands behind the controller's back.
+  const ShellWorker& shellWorkerForTest() const noexcept {
+    return shellWorker_;
+  }
+
   uint32_t generation() const noexcept;
   const std::wstring& currentPath() const noexcept { return currentPath_; }
   const fast_explorer::core::FileModelStore& store() const noexcept {
@@ -139,6 +155,7 @@ class PaneController {
   std::atomic<bool> workerActive_{false};
   std::unordered_set<std::uint32_t> selectedRaws_;
   PaneSortCoordinator sortCoord_;
+  ShellWorker shellWorker_;
   std::jthread worker_;
 };
 

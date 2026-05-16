@@ -462,3 +462,72 @@ FE_TEST_CASE(PaneController_RequestSort_ActuallyReordersVisible) {
   FE_ASSERT_TRUE(firstAsc == lastDesc);
   FE_ASSERT_TRUE(lastAsc == firstDesc);
 }
+
+namespace {
+
+bool diskFileExists(const std::wstring& path) {
+  const DWORD attr = GetFileAttributesW(path.c_str());
+  if (attr != INVALID_FILE_ATTRIBUTES) {
+    return true;
+  }
+  const DWORD err = GetLastError();
+  return err != ERROR_FILE_NOT_FOUND && err != ERROR_PATH_NOT_FOUND;
+}
+
+void writeEmptyDiskFile(const std::wstring& path) {
+  HANDLE h = CreateFileW(path.c_str(), GENERIC_WRITE, 0, nullptr,
+                         CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+  if (h != INVALID_HANDLE_VALUE) {
+    CloseHandle(h);
+  }
+}
+
+}  // namespace
+
+FE_TEST_CASE(PaneController_DeleteItem_EmptyStore_ReturnsFalse) {
+  PaneController pane(nullptr);
+  FE_ASSERT_FALSE(pane.deleteItem(0));
+  FE_ASSERT_FALSE(pane.deleteItem(100));
+}
+
+FE_TEST_CASE(PaneController_DeleteItem_OutOfRangeRow_ReturnsFalse) {
+  TempDir tmp(L"pane-delete-oob");
+  FE_ASSERT_EQ(generateDataset(PresetKind::Small, tmp.path(), 1).error,
+               GenerateError::None);
+  PaneController pane(nullptr);
+  FE_ASSERT_TRUE(pane.openFolder(tmp.path()));
+  pane.joinForTest();
+  const std::uint32_t count =
+      static_cast<std::uint32_t>(pane.store().publishedCount());
+  FE_ASSERT_FALSE(pane.deleteItem(count));
+  FE_ASSERT_FALSE(pane.deleteItem(count + 100));
+}
+
+FE_TEST_CASE(PaneController_DeleteItem_ValidRow_RemovesFileFromDisk) {
+  TempDir tmp(L"pane-delete-real");
+  FE_ASSERT_TRUE(CreateDirectoryW(tmp.path().c_str(), nullptr) != 0);
+  const std::wstring victim =
+      fast_explorer::core::joinPath(tmp.path(), L"victim.txt");
+  writeEmptyDiskFile(victim);
+  FE_ASSERT_TRUE(diskFileExists(victim));
+
+  PaneController pane(nullptr);
+  FE_ASSERT_TRUE(pane.openFolder(tmp.path()));
+  pane.joinForTest();
+
+  std::uint32_t victimRow = UINT32_MAX;
+  const auto& store = pane.store();
+  for (std::uint32_t i = 0;
+       i < static_cast<std::uint32_t>(store.publishedCount()); ++i) {
+    const auto& entry = store.visibleAt(i);
+    if (std::wstring_view(entry.namePtr, entry.nameLength) == L"victim.txt") {
+      victimRow = i;
+      break;
+    }
+  }
+  FE_ASSERT_TRUE(victimRow != UINT32_MAX);
+
+  FE_ASSERT_TRUE(pane.deleteItem(victimRow));
+  pane.shellWorkerForTest().waitForProcessedForTest(1);
+  FE_ASSERT_FALSE(diskFileExists(victim));
+}
