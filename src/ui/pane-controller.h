@@ -74,6 +74,13 @@ class PaneController {
   // resulting directory change.
   bool renameItem(std::uint32_t row, const std::wstring& newName);
 
+  // Queue creation of a new folder under currentPath_ with the
+  // given leaf name. Returns false on empty name or when no
+  // folder is currently open. Collision policy (suffixing the
+  // name to avoid overwrites) is the caller's responsibility —
+  // this method takes the leaf as given.
+  bool createSubfolder(const std::wstring& name);
+
   // Sort delegation. requestSort returns Rejected while the
   // enumeration worker is still running because sorting the store
   // mid-append would race; the coordinator handles the toggle vs

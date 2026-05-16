@@ -37,6 +37,8 @@ set(FE_APP_SOURCES
   src/ui/dpi-scale.h
   src/ui/extension-icon-cache.cpp
   src/ui/extension-icon-cache.h
+  src/ui/folder-name.cpp
+  src/ui/folder-name.h
   src/ui/format-cache.cpp
   src/ui/format-cache.h
   src/ui/icon-cache.cpp
@@ -141,6 +143,7 @@ add_executable(core-tests
   tests/stall-probe-tests.cpp
   tests/file-sort-tests.cpp
   tests/extension-icon-cache-tests.cpp
+  tests/folder-name-tests.cpp
   tests/icon-cache-tests.cpp
   tests/icon-provider-tests.cpp
   tests/pane-sort-coordinator-tests.cpp
@@ -152,6 +155,8 @@ add_executable(core-tests
   src/ui/dpi-scale.h
   src/ui/extension-icon-cache.cpp
   src/ui/extension-icon-cache.h
+  src/ui/folder-name.cpp
+  src/ui/folder-name.h
   src/ui/format-cache.cpp
   src/ui/format-cache.h
   src/ui/icon-cache.cpp

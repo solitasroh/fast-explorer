@@ -194,6 +194,18 @@ bool PaneController::renameItem(std::uint32_t row,
   return true;
 }
 
+bool PaneController::createSubfolder(const std::wstring& name) {
+  if (name.empty() || currentPath_.empty()) {
+    return false;
+  }
+  ShellCommand cmd;
+  cmd.kind = ShellCommandKind::CreateFolder;
+  cmd.sourcePath = currentPath_;
+  cmd.newName = name;
+  shellWorker_.request(std::move(cmd));
+  return true;
+}
+
 void PaneController::selectRaw(std::uint32_t rawIndex) {
   selectedRaws_.insert(rawIndex);
 }

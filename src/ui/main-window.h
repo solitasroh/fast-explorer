@@ -80,6 +80,11 @@ class MainWindow {
   void beginRenameFocusedItem();
   LRESULT handleBeginLabelEdit();
   LRESULT handleEndLabelEdit(NMHDR* hdr);
+  // Bound to Ctrl+Shift+N. Queues the create, then sets
+  // pendingEditFolderName_ so the next onEnumComplete can start
+  // an in-place edit on the new row.
+  void beginCreateSubfolder();
+  void maybeStartPendingFolderEdit();
   static LRESULT CALLBACK addressBarSubclassProc(HWND, UINT, WPARAM, LPARAM,
                                                  UINT_PTR, DWORD_PTR);
 
@@ -97,6 +102,10 @@ class MainWindow {
   HWND statusBar_ = nullptr;
   HWND addressBar_ = nullptr;
   bool firstBatchSeen_ = false;
+  // Empty when no create is in flight. Cleared by the next
+  // onEnumComplete so a later unrelated refresh cannot trigger
+  // the auto-edit.
+  std::wstring pendingEditFolderName_;
   // Reentrancy guard for our own SetItemState calls inside
   // reapplySelectionFromPane(): the list-view fires LVN_ITEMCHANGED
   // for every state change including the ones we drive, and routing

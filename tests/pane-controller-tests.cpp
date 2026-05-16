@@ -561,6 +561,36 @@ FE_TEST_CASE(PaneController_RenameItem_OutOfRangeRow_ReturnsFalse) {
   FE_ASSERT_FALSE(pane.renameItem(count + 100, L"target.txt"));
 }
 
+FE_TEST_CASE(PaneController_CreateSubfolder_EmptyName_ReturnsFalse) {
+  PaneController pane(nullptr);
+  FE_ASSERT_TRUE(pane.openFolder(L"C:\\"));
+  pane.joinForTest();
+  FE_ASSERT_FALSE(pane.createSubfolder(L""));
+}
+
+FE_TEST_CASE(PaneController_CreateSubfolder_NoCurrentPath_ReturnsFalse) {
+  PaneController pane(nullptr);
+  FE_ASSERT_FALSE(pane.createSubfolder(L"any"));
+}
+
+FE_TEST_CASE(PaneController_CreateSubfolder_ValidName_CreatesOnDisk) {
+  TempDir tmp(L"pane-create-real");
+  FE_ASSERT_TRUE(CreateDirectoryW(tmp.path().c_str(), nullptr) != 0);
+
+  PaneController pane(nullptr);
+  FE_ASSERT_TRUE(pane.openFolder(tmp.path()));
+  pane.joinForTest();
+
+  FE_ASSERT_TRUE(pane.createSubfolder(L"NewSub"));
+  pane.shellWorkerForTest().waitForProcessedForTest(1);
+
+  const std::wstring childPath =
+      fast_explorer::core::joinPath(tmp.path(), L"NewSub");
+  FE_ASSERT_TRUE(diskFileExists(childPath));
+  const DWORD attr = GetFileAttributesW(childPath.c_str());
+  FE_ASSERT_TRUE((attr & FILE_ATTRIBUTE_DIRECTORY) != 0);
+}
+
 FE_TEST_CASE(PaneController_RenameItem_ValidRow_RenamesOnDisk) {
   TempDir tmp(L"pane-rename-real");
   FE_ASSERT_TRUE(CreateDirectoryW(tmp.path().c_str(), nullptr) != 0);

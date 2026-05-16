@@ -16,6 +16,7 @@
 #include "ui/column-formatter.h"
 #include "ui/dpi-scale.h"
 #include "ui/extension-icon-cache.h"
+#include "ui/folder-name.h"
 #include "ui/format-cache.h"
 #include "ui/icon-cache.h"
 #include "ui/icon-provider.h"
@@ -281,6 +282,49 @@ LRESULT MainWindow::handleBeginLabelEdit() {
   return FALSE;
 }
 
+void MainWindow::beginCreateSubfolder() {
+  if (!pane_ || pane_->currentPath().empty()) {
+    return;
+  }
+  const auto& store = pane_->store();
+  const std::uint32_t count = store.publishedCount();
+  std::vector<std::wstring_view> existing;
+  existing.reserve(count);
+  for (std::uint32_t i = 0; i < count; ++i) {
+    const auto& entry = store.visibleAt(i);
+    existing.emplace_back(entry.namePtr, entry.nameLength);
+  }
+  std::wstring leaf = uniqueFolderLeaf(existing, L"New folder");
+  if (!pane_->createSubfolder(leaf)) {
+    return;
+  }
+  pendingEditFolderName_ = std::move(leaf);
+}
+
+void MainWindow::maybeStartPendingFolderEdit() {
+  if (pendingEditFolderName_.empty() || !pane_ || listView_ == nullptr) {
+    return;
+  }
+  // Swap-then-clear so a delayed second onEnumComplete cannot
+  // retrigger the auto-edit even if any step below throws.
+  std::wstring target;
+  target.swap(pendingEditFolderName_);
+  const auto& store = pane_->store();
+  const std::uint32_t count = store.publishedCount();
+  for (std::uint32_t i = 0; i < count; ++i) {
+    const auto& entry = store.visibleAt(i);
+    if (std::wstring_view(entry.namePtr, entry.nameLength) == target) {
+      ListView_SetItemState(listView_, static_cast<int>(i),
+                            LVIS_FOCUSED | LVIS_SELECTED,
+                            LVIS_FOCUSED | LVIS_SELECTED);
+      // ListView_EditLabel requires the list-view to have focus.
+      SetFocus(listView_);
+      ListView_EditLabel(listView_, static_cast<int>(i));
+      return;
+    }
+  }
+}
+
 LRESULT MainWindow::handleEndLabelEdit(NMHDR* hdr) {
   if (hdr == nullptr || !pane_) {
     return FALSE;
@@ -518,6 +562,9 @@ LRESULT MainWindow::onCommand(HWND hwnd, UINT msg, WPARAM wParam,
       case kAccelRename:
         beginRenameFocusedItem();
         return 0;
+      case kAccelCreateFolder:
+        beginCreateSubfolder();
+        return 0;
     }
     // Unknown accelerator id: swallow without calling DefWindowProc so
     // an unbound key does not produce a system beep.
@@ -564,6 +611,7 @@ LRESULT MainWindow::onEnumComplete(WPARAM wParam) {
   const size_t finalCount = pane_->store().itemCount();
   const std::wstring text = readyStatusText(finalCount);
   setStatusText(text.c_str());
+  maybeStartPendingFolderEdit();
   return 0;
 }
 
