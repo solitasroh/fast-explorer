@@ -5,7 +5,7 @@
 > **Author**: Codex
 > **Created**: 2026-05-14
 > **Status**: Review
-> **Version**: 1.0.9
+> **Version**: 1.0.10
 > **Level**: Starter
 
 ---
@@ -24,6 +24,7 @@
 | 1.0.7 | 2026-05-15 | M4 완료 마크. §14.4에 navigation (Ctrl+L / Alt+←/→/↑ / F5) + 양층 generation token + FsWatcher (ReadDirectoryChangesW+IOCP) + 100 ms coalesce 기재. 100k rapid-switch soak + cancellation latency 정량 측정은 M7으로 defer (UI automation harness 필요). 244/244 unit tests pass. | Claude |
 | 1.0.8 | 2026-05-15 | M5 완료 마크. §14.5에 4-key sort (CompareStringOrdinal IgnoreCase, name tiebreak), visibleOrder permutation, kMaxEntries reserve + publishedCount atomic (GETDISPINFO race 차단), 2,000행 threshold 동기/비동기 sort worker, raw-index stable selection (sort 전/후 동일 행 유지) 기재. 측정값 medium(10k) Name asc sort 2.75 ms (50 ms budget의 5.5%). 100k 분할 측정 + sort 명령 접수 latency 정량은 M7으로 defer. 298/298 unit tests pass. | Claude |
 | 1.0.9 | 2026-05-16 | M6 완료 마크 (icons + open file + IFileOperation 3개 verb). §14.6에 IconCache + ExtensionIconCache LRU + IconProvider STA worker + PostMessage coalescing + ShellExecuteExW open + ShellWorker STA + ComScope<T> RAII + IFileOperation rename/createFolder/recycleBinDelete 기재. Exit-criteria 표: icon delay와 OneDrive hydration은 SHGFI_USEFILEATTRIBUTES 사용으로 by-construction 만족, ImageList cap은 LRU bounded(258 KB ≪ 3 MB), OperationResult 구조화/IFileOperationProgressSink/low-memory shrink/crash dump portable mode는 M7으로 defer. 345/345 unit tests pass. | Claude |
+| 1.0.10 | 2026-05-16 | M6 UI 통합 잔여 5 atom (6a–6e) 완료 마크 → §14.6 Partial 제거. VK_DELETE/F2/Ctrl+Shift+N + LVS_EDITLABELS in-place rename + uniqueFolderLeaf("New folder (N)") + Windows Explorer 방식 create-then-edit 자동 진입. OperationResult 채널 (worker→PostMessage(kWmFeOperationResult)→drainShellResults→opResultStatusText) + 상태바 피드백. ImageList byte-count probe (`IconCache::byteSize`) + low-memory shrink (kWmFeLowMemory→`IconCache::swap`→`ListView_SetImageList`→destroy old→extensionCache clear→redraw). 부수 결과: atom 6d의 L2 review가 IconProvider/ShellWorker drainResults의 lost-result race window (worker push between swap and postPending clear) 적발 → 양쪽 `postPending_.store(false)`를 mutex 안으로 이동. §14.7에 carried-over deferred items 명시 (M2–M6 누적). 379/379 unit tests pass. | Claude |
 
 ## Related Documents
 
@@ -1443,7 +1444,7 @@ Implementation notes:
 - `applySortedOrder` uses `assign()` rather than move so the visibleOrder_ kMaxEntries reserve survives.
 - `selectRaw`/`deselectRaw` enter from `LVN_ITEMCHANGED`; a `ScopedFlag` RAII + `bad_alloc` catch keeps the wndProc callstack exception-free.
 
-### 14.6 Milestone 6: Icons And Basic Operations — **Completed (icons + file ops) / Partial (operation reporting deferred)** (2026-05-16)
+### 14.6 Milestone 6: Icons And Basic Operations — **Completed** (2026-05-16)
 
 Deliverables:
 - placeholder icons + extension-level icon cache (LRU bounded) — `ui/icon-cache.{h,cpp}`, `ui/extension-icon-cache.{h,cpp}`, ImageList shared with the list-view via LVS_SHAREIMAGELISTS.
@@ -1452,7 +1453,9 @@ Deliverables:
 - ShellWorker STA — `ui/shell-worker.{h,cpp}` runs a single STA jthread with `CoInitializeEx(COINIT_APARTMENTTHREADED)`. ComScope<T> RAII wraps every COM interface so failure paths cannot leak.
 - open file (`ShellExecuteExW`) — `PaneController::openItem(row)` routes the visible row's path through `ShellExecuteExW("open", path, SEE_MASK_FLAG_NO_UI)`. LVN_ITEMACTIVATE catches both Enter and double-click.
 - rename / create folder / recycle-bin delete — `IFileOperation::RenameItem` / `NewItem` / `DeleteItem` with `FOF_ALLOWUNDO | FOFX_RECYCLEONDELETE | FOF_NOCONFIRMATION | FOF_NOERRORUI | FOF_SILENT`. The FsWatcher refresh path picks up the file-system change.
-- `IFileOperationProgressSink` — **Deferred to M7**; the helpers pass `nullptr` as the sink today and rely on the watcher refresh.
+- UI integration (atoms 6a–6e, 2026-05-16): VK_DELETE / F2 / Ctrl+Shift+N accelerators route through `PaneController::deleteItem(row)` / `renameItem(row, newName)` / `createSubfolder(name)`. Rename uses `LVS_EDITLABELS` in-place editing (LVN_BEGINLABELEDITW returns FALSE to allow, LVN_ENDLABELEDITW always returns FALSE under LVS_OWNERDATA and dispatches through the controller). Create-folder picks a unique default name through `uniqueFolderLeaf` (CompareStringOrdinal IgnoreCase, matches NTFS case-folding) then auto-starts an in-place edit on the new row at the next `onEnumComplete` so the user sees the Windows Explorer "create + immediate rename" UX. Each verb is focus-guarded (`GetFocus() == listView_`) so the accelerator does not hijack the address bar.
+- `OperationResult` channel (atom 6d) — ShellWorker publishes per-command outcomes through `kWmFeOperationResult` with the same coalesced-PostMessage idiom as IconProvider; MainWindow drains via `PaneController::drainShellResults()` and surfaces the latest result through `opResultStatusText` ("Moved 'x' to Recycle Bin" / "Renamed 'a' to 'b'" / "Created folder 'c'" / paired failure messages) on the status bar.
+- `IFileOperationProgressSink` — **Deferred to M7**; the helpers pass `nullptr` as the sink today. The status-bar channel covers the common-path feedback need.
 
 Exit criteria — measurements:
 
@@ -1460,22 +1463,24 @@ Exit criteria — measurements:
 |---|---|---|---|
 | Icon loading never delays file names | ≤ 20 % delta on first_visible | **Met by construction** | LVN_GETDISPINFO returns the placeholder index synchronously on miss; the actual SHGetFileInfoW runs on the icon worker, so first_visible never blocks on shell IO. |
 | OneDrive folder enumeration: 0 hydration triggers | 0 events | **Met by construction** | Both placeholder load and per-extension lookup use `SHGFI_USEFILEATTRIBUTES`; the shell uses the attribute-based fallback and does not touch the on-disk file. No `CFAPI` hydrate call path exists. |
-| ImageList cap ≤ 3 MB | ≤ 3 MB | **Bounded by ExtensionIconCache (kDefaultCapacity = 256)** | Each entry is one HIMAGELIST slot at the small-icon metric (16×16 × 4 bytes = ~1 KB on standard DPI), so 256 + 2 placeholders ≈ 258 KB. Well below 3 MB. Explicit `ImageList_GetIconSize` instrumentation deferred to M7. |
-| `OperationResult` structured return | Structured type | **Deferred** | Current helpers return `bool`; the watcher-driven refresh covers user-visible feedback in the common path. Surfacing structured failure to a status bar belongs with the UI integration atom. |
-| Low-memory shrink on cache | Observed shrink | **Deferred to M7** | Tied to the `ProcessMemoryService` low-memory hook + M7's soak harness. |
+| ImageList cap ≤ 3 MB | ≤ 3 MB | **Bounded by ExtensionIconCache (kDefaultCapacity = 256)** + diagnostic probe | Each entry is one HIMAGELIST slot at the small-icon metric (16×16 × 4 bytes color + 1 bpp mask ≈ ~1056 B on standard DPI), so 256 + 2 placeholders ≈ 272 KB. `IconCache::byteSize()` queries `ImageList_GetIconSize` + `ImageList_GetImageCount` at runtime so the cap can be observed in M7's soak harness. |
+| `OperationResult` structured return | Structured type | **Implemented (atom 6d)** | Worker publishes `OperationResult{kind, sourcePath, newName, success}` per command; UI drains via `kWmFeOperationResult` and renders the latest outcome on the status bar through `opResultStatusText`. |
+| Low-memory shrink on cache | Observed shrink | **Implemented (atom 6e)** | `ProcessMemoryService::setLowMemoryCallback` wired to `postLowMemoryToMainWindow`; the kWmFeLowMemory handler swaps in a fresh placeholder-only ImageList through `IconCache::swap`, re-points the list-view, destroys the old handle, clears the extension cache, and redraws visible rows. Cross-atomic teardown is documented and verified (release-store HWND before callback on bring-up, reverse on tear-down). Quantitative measurement of the working-set delta under sustained low-memory remains an M7 soak deliverable. |
 | Crash dump path portable-mode override | Per Plan §portable | **Deferred to M7** | Plan §portable mode itself is a separate deliverable that crosses milestone boundaries. |
 
 Implementation notes:
-- IconProvider's PostMessage gate (`postPending_` atomic) coalesces icon-batch notifications so a directory entry with hundreds of unique extensions does not flood the message queue.
-- ShellWorker's destructor stops + joins the worker explicitly before any other member tears down — guarantees the `pendingCommands_` queue and `resultsReady_` (icon) / refresh-watcher hand-off are quiet before COM scopes go away.
-- 345/345 unit tests pass; ImageList / shell coverage exercises the real Win32 path inside TempDir-backed scratch directories.
+- IconProvider's PostMessage gate (`postPending_` atomic) coalesces icon-batch notifications so a directory entry with hundreds of unique extensions does not flood the message queue. ShellWorker uses the identical pattern for `kWmFeOperationResult`. The drainResults clear-inside-the-lock fix (atom 6d) closes a worker-publish-after-drain-before-clear window that was previously latent in both providers.
+- ShellWorker's destructor stops + joins the worker explicitly before any other member tears down — guarantees the `pendingCommands_` queue and `resultsReady_` hand-off are quiet before COM scopes go away.
+- `PaneController::resolveRowSourcePath(row, out)` is the single row → absolute-path lookup used by openItem / deleteItem / renameItem (atom 6b DRY extraction). `createSubfolder` builds its source from `currentPath_` directly because its shape is `parent + new leaf`, not `row + existing leaf`.
+- 379/379 unit tests pass; ImageList / shell / status-text / folder-name coverage exercises the real Win32 path inside TempDir-backed scratch directories where applicable, and gracefully skips ImageList tests on headless builds.
 
-Open follow-ups (M7 / next session):
-- PaneController surface for `delete(row)` / `rename(row, name)` / `createFolder(name)` + UI shortcut bindings (Delete, F2, Ctrl+Shift+N).
-- `OperationResult` structured return surfaced through a status-bar channel.
-- ImageList byte-count probe + low-memory-driven shrink integration.
+Open follow-ups (M7 prep, recorded by atom-6a–6e L1/L2 reviews):
+- Extract an `IconCacheCoordinator` (owns `iconCache_` + `extensionCache_` + `iconProvider_`, exposes `onIconBatch` / `shrink` / `redrawVisibleRows`) so `MainWindow` drops below the 1000-line / 17-switch-case threshold.
+- Promote IconProvider + ShellWorker's publish/drain/coalesce pattern into a `ResultChannel<T>` template; the in-this-commit fix to `drainResults` is currently mirrored manually in both files.
+- Change `ProcessMemoryService::LowMemoryCallback` from `void(*)()` to either `std::function<void()>` or `void(*)(void*)` + userdata, removing the static `g_lowMemoryTargetHwnd` global from main-window.cpp.
+- IFileOperationProgressSink for long operations (progress dialog suppression vs reporting policy is the open question).
 
-### 14.7 Milestone 7: Benchmark And Stabilization
+### 14.7 Milestone 7: Benchmark And Stabilization — Pending
 
 Deliverables:
 - full dataset generator presets (small/medium/large-flat/mixed-names/mixed-types/many-dirs/deep-tree)
@@ -1487,6 +1492,15 @@ Deliverables:
 - 1-hour soak test checklist
 - Optional: ETW custom provider, UI automation smoke (Plan §12.1 N2/N3/N4 해소)
 
+Carried over from M2–M6 reviews:
+- M3-deferred LVN_GETDISPINFO p99 ≤ 50 µs histogram (path-allocation neutrality requirement; M7 introduces the histogram together with the 100k scroll soak on a RAM disk).
+- M4-deferred 100k rapid-switch soak + cancellation latency quantification (needs the UI automation harness).
+- M5-deferred sort accept-latency jitter measurement under the 2k threshold and 100k cases.
+- M5-tagged shortcuts that did not belong in M6's scope: **Ctrl+1 / Ctrl+2 (pane focus), Ctrl+H (toggle hidden), Tab (pane cycle)**. These were originally listed in §14.5 v1.0.8 as "deferred to M6 (file-operation milestone)", but pane focus and hidden-attribute filtering depend on the dual-pane + hidden-filter infrastructure that M7+ introduces, so they were correctly skipped during the M6 verb-only atom decomposition. Implement alongside the dual-pane work. (Enter is already covered by LVN_ITEMACTIVATE in M6; not a follow-up.)
+- M6-deferred IFileOperationProgressSink integration policy (suppress vs progress dialog) and quantitative low-memory shrink working-set delta.
+- M6-deferred tech-debt: extract IconCacheCoordinator from MainWindow (removes ~60 LOC + collapses the redraw tail), promote IconProvider + ShellWorker's publish/drain/coalesce into a ResultChannel<T> template, change ProcessMemoryService::LowMemoryCallback signature to remove the static HWND global. These keep M7's behavior unchanged but are prerequisite for the SOLID-SRP carry-forward to close.
+- Portable mode crash dump path override (Plan-level deliverable that crosses milestones).
+
 Exit criteria:
 - **large folder first row ≤ 200 ms** 종합 측정
 - **UI stall single ≤ 50 ms** 100k 시나리오 검증
@@ -1495,7 +1509,7 @@ Exit criteria:
 - **Memory soak: 100k→0→100k cycle 10회 누적 working set Δ ≤ 5 MB**
 - **Multi-pane soak: dual nav 50회 누적 working set Δ ≤ 10 MB**
 - `EmptyWorkingSet` 호출 후 working set 회복 ≤ 200 ms 검증
-- Low-memory notification 시 caches drop 검증
+- Low-memory notification 시 caches drop 검증 (quantitative; the path is implemented in M6)
 - 1-hour soak: crash 0, memory leak 0
 - design performance gates can be measured
 - Check phase gap analysis can compare implementation to this document

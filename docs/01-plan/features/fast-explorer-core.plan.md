@@ -5,7 +5,7 @@
 > **Author**: Codex
 > **Created**: 2026-05-14
 > **Status**: Review
-> **Version**: 1.0.2
+> **Version**: 1.0.3
 > **Level**: Starter
 
 ---
@@ -17,6 +17,7 @@
 | 1.0.0 | 2026-05-14 | 초기 상세 계획 문서 작성 | Codex |
 | 1.0.1 | 2026-05-14 | Design 결정 역반영 (Conditional Scope 확정), Schedule milestone별 성능 게이트 분산, Open Questions 해소 표 추가, §16 Locked Decisions 추가 (Teammate review 결과 반영) | Claude |
 | 1.0.2 | 2026-05-14 | §16.8 Memory Lock 추가 (FileEntry 40 B, per-pane ≤ 10 MB, process working set target ≤ 50 MB, name arena VirtualAlloc, ImageList ≤ 3 MB, OS working set 핸들러, STL exclusions, memory soak gate). Design v1.0.2와 페어. | Claude |
+| 1.0.3 | 2026-05-16 | §7 Schedule M6 Partial 제거 → Completed로 일화. M6 UI 통합 잔여 5 atom (6a–6e) 완료 반영: VK_DELETE/F2/Ctrl+Shift+N + LVS_EDITLABELS in-place rename + Windows Explorer 방식 create+auto-edit + OperationResult 상태바 채널 + ImageList byte-probe + low-memory shrink. 정량 working-set delta 측정과 IFileOperationProgressSink/portable crash dump만 M7로 잔여. Design v1.0.10과 페어. 379/379 unit tests. | Claude |
 
 ## Related Documents
 
@@ -517,7 +518,7 @@ No implementation phase should be considered done unless these gates exist.
 | Virtual File List (M3) | 2026-05-15 | **Completed** | responsive list UI + format LRU + DPI scale + stall probe | small 4.05 ms / medium 3.62 ms / 100k 29.83 ms first-batch. UI stall 0. Design §14.3 측정값. LVN_GETDISPINFO p99 → M7. |
 | Navigation + Cancellation (M4) | 2026-05-15 | **Completed** | address bar + history + L1/L2 generation + FsWatcher + coalesce | generation token 양층 검증 (244/244 tests). 100k rapid-switch soak + cancellation latency 정량은 M7로 defer (UI automation 필요). Design §14.4 측정값. |
 | Sorting + Selection (M5) | 2026-05-15 (compressed) | **Completed** | 4-key sort + tiebreak + visibleOrder + publishedCount race fix + 2k threshold worker + raw-index stable selection + LVN_ITEMCHANGED routing | medium(10k) Name asc sort **2.75 ms** (50 ms budget의 5.5%). 298/298 tests. 100k UI-stall histogram + sort accept latency 정량은 M7로 defer. Design §14.5 측정값. |
-| Icons + Basic Operations (M6) | 2026-05-16 (compressed) | **Completed (icons + file ops) / Partial** | IconCache + ExtensionIconCache LRU + IconProvider STA worker + ShellExecuteExW open + ShellWorker STA + IFileOperation rename/createFolder/delete + ComScope RAII | icon delay 및 OneDrive hydration은 SHGFI_USEFILEATTRIBUTES로 by-construction 만족 (≤ 20% / 0건). ImageList cap 258 KB ≪ 3 MB budget. OperationResult 구조화 / IFileOperationProgressSink / low-memory shrink / portable crash dump 는 M7로 defer. 345/345 unit tests. Design §14.6 측정값. |
+| Icons + Basic Operations (M6) | 2026-05-16 (compressed) | **Completed** | IconCache + ExtensionIconCache LRU + IconProvider STA worker + ShellExecuteExW open + ShellWorker STA + IFileOperation rename/createFolder/delete + ComScope RAII + VK_DELETE/F2/Ctrl+Shift+N UI 통합 + OperationResult 상태바 + ImageList byte-probe + low-memory shrink (atoms 6a–6e) | icon delay 및 OneDrive hydration은 SHGFI_USEFILEATTRIBUTES로 by-construction 만족 (≤ 20% / 0건). ImageList cap 258 KB ≪ 3 MB budget + 런타임 byte-count probe (`IconCache::byteSize`). OperationResult 채널 implemented (kWmFeOperationResult → opResultStatusText). Low-memory shrink path implemented (atom 6e); 정량 working-set delta 측정은 M7 soak로 defer. IFileOperationProgressSink / portable crash dump는 M7로 defer. 379/379 unit tests. Design §14.6 측정값. |
 | Benchmark + Stabilization (M7) | 2026-05-22 ~ 2026-05-24 | Pending | full bench, soak test | **large folder first row ≤ 200 ms, UI stall ≤ 50 ms, scroll p95 ≤ 16.7 ms, 100k ≤ 100 MB** 종합 검증 |
 | PDCA Check/Report | 2026-05-24 ~ 2026-05-25 | Pending | gap analysis and report | — |
 
