@@ -34,6 +34,8 @@ set(FE_APP_SOURCES
   src/ui/messages.h
   src/ui/column-formatter.cpp
   src/ui/column-formatter.h
+  src/ui/dispinfo-histogram.cpp
+  src/ui/dispinfo-histogram.h
   src/ui/dpi-scale.h
   src/ui/extension-icon-cache.cpp
   src/ui/extension-icon-cache.h
@@ -154,10 +156,13 @@ add_executable(core-tests
   tests/result-channel-tests.cpp
   tests/perf-tracker-tests.cpp
   tests/bench-json-tests.cpp
+  tests/dispinfo-histogram-tests.cpp
   tests/bench-fs-helper.h
   src/ui/messages.h
   src/ui/column-formatter.cpp
   src/ui/column-formatter.h
+  src/ui/dispinfo-histogram.cpp
+  src/ui/dispinfo-histogram.h
   src/ui/dpi-scale.h
   src/ui/extension-icon-cache.cpp
   src/ui/extension-icon-cache.h

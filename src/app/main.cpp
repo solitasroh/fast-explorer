@@ -12,6 +12,7 @@
 #include "core/perf-tracker.h"
 #include "core/process-memory.h"
 #include "core/ring-logger.h"
+#include "ui/dispinfo-histogram.h"
 #include "ui/main-window.h"
 #include "ui/messages.h"
 #include "ui/stall-probe.h"
@@ -212,14 +213,17 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance,
         fast_explorer::ui::StallHistogram stallHistogram;
         exitCode = runMessageLoop(services.perf(), logger, stallHistogram,
                                   window.handle(), hAccel);
-        fast_explorer::ui::dumpStallHistogram(
-            stallHistogram,
+        auto loggerSink =
             [](const wchar_t* line, void* userData) {
               auto* lg =
                   static_cast<fast_explorer::core::RingLogger*>(userData);
               lg->info(L"%ls", line);
-            },
-            &logger);
+            };
+        fast_explorer::ui::dumpStallHistogram(stallHistogram, loggerSink,
+                                              &logger);
+        if (const auto* dh = window.dispInfoHistogram()) {
+          fast_explorer::ui::dumpDispInfoHistogram(*dh, loggerSink, &logger);
+        }
         if (hAccel) {
           DestroyAcceleratorTable(hAccel);
         }

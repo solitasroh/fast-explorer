@@ -13,6 +13,7 @@ struct FileEntry;
 
 namespace fast_explorer::ui {
 
+class DispInfoHistogram;
 class PaneController;
 
 class MainWindow {
@@ -27,6 +28,13 @@ class MainWindow {
 
   bool create(HINSTANCE instance, int showCommand);
   HWND handle() const noexcept { return hwnd_; }
+
+  // Exposes the per-window LVN_GETDISPINFO latency histogram so
+  // the shutdown path can dump it to the logger. Returns nullptr
+  // when create() has not yet run.
+  const DispInfoHistogram* dispInfoHistogram() const noexcept {
+    return dispInfoHist_.get();
+  }
 
   // Forwards to the owned PaneController. Returns false if the window
   // is not yet created or the path is invalid.
@@ -65,6 +73,7 @@ class MainWindow {
   LRESULT handleListViewNotify(NMHDR* hdr);
   bool isStaleGeneration(WPARAM wParam) const;
   void handleGetDispInfo(NMHDR* hdr);
+  void handleGetDispInfoBody(NMHDR* hdr);
   void handleColumnClick(NMHDR* hdr);
   void handleItemActivate(NMHDR* hdr);
   void handleItemChanged(NMHDR* hdr);
@@ -121,6 +130,8 @@ class MainWindow {
   std::unique_ptr<PaneController> pane_;
   std::unique_ptr<class FormatCache> formatCache_;
   std::unique_ptr<class IconCacheCoordinator> iconCoord_;
+  std::unique_ptr<class DispInfoHistogram> dispInfoHist_;
+  std::uint64_t qpcFrequencyHz_ = 0;
 };
 
 }  // namespace fast_explorer::ui

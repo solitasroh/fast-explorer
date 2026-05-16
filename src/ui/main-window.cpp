@@ -14,6 +14,7 @@
 #include "core/perf-tracker.h"
 #include "core/process-memory.h"
 #include "ui/column-formatter.h"
+#include "ui/dispinfo-histogram.h"
 #include "ui/dpi-scale.h"
 #include "ui/folder-name.h"
 #include "ui/format-cache.h"
@@ -486,6 +487,11 @@ LRESULT MainWindow::onCreate(HWND hwnd) {
   formatCache_ = std::make_unique<FormatCache>();
   iconCoord_ = std::make_unique<IconCacheCoordinator>(
       hwnd, listView_, GetDpiForWindow(hwnd));
+  dispInfoHist_ = std::make_unique<DispInfoHistogram>();
+  LARGE_INTEGER qpcFreq{};
+  if (QueryPerformanceFrequency(&qpcFreq)) {
+    qpcFrequencyHz_ = static_cast<std::uint64_t>(qpcFreq.QuadPart);
+  }
   if (iconCoord_->ok()) {
     // LVS_SHAREIMAGELISTS keeps ownership with the coordinator,
     // not the list-view.
@@ -762,6 +768,23 @@ LRESULT MainWindow::handleCustomDraw(NMHDR* hdr) {
 }
 
 void MainWindow::handleGetDispInfo(NMHDR* hdr) {
+  // QPC bracket around the body so every early return inside
+  // handleGetDispInfoBody still produces one sample.
+  if (dispInfoHist_ == nullptr) {
+    handleGetDispInfoBody(hdr);
+    return;
+  }
+  LARGE_INTEGER t0{};
+  QueryPerformanceCounter(&t0);
+  handleGetDispInfoBody(hdr);
+  LARGE_INTEGER t1{};
+  QueryPerformanceCounter(&t1);
+  const auto deltaTicks =
+      static_cast<std::uint64_t>(t1.QuadPart - t0.QuadPart);
+  dispInfoHist_->recordTicks(deltaTicks, qpcFrequencyHz_);
+}
+
+void MainWindow::handleGetDispInfoBody(NMHDR* hdr) {
   if (hdr == nullptr || !pane_) {
     return;
   }
