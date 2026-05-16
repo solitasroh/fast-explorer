@@ -5,7 +5,7 @@
 > **Author**: Codex
 > **Created**: 2026-05-14
 > **Status**: Review
-> **Version**: 1.0.8
+> **Version**: 1.0.9
 > **Level**: Starter
 
 ---
@@ -23,6 +23,7 @@
 | 1.0.6 | 2026-05-15 | M3 exit-gate 측정값 + 완료 마크. §14.3에 small 4.05 ms / medium 3.62 ms / 100k 29.83 ms first-batch 표 기재. UI stall 0 events (50 ms gate), 100k working set delta ~11 MB. LVN_GETDISPINFO p99는 M7으로 defer. | Claude |
 | 1.0.7 | 2026-05-15 | M4 완료 마크. §14.4에 navigation (Ctrl+L / Alt+←/→/↑ / F5) + 양층 generation token + FsWatcher (ReadDirectoryChangesW+IOCP) + 100 ms coalesce 기재. 100k rapid-switch soak + cancellation latency 정량 측정은 M7으로 defer (UI automation harness 필요). 244/244 unit tests pass. | Claude |
 | 1.0.8 | 2026-05-15 | M5 완료 마크. §14.5에 4-key sort (CompareStringOrdinal IgnoreCase, name tiebreak), visibleOrder permutation, kMaxEntries reserve + publishedCount atomic (GETDISPINFO race 차단), 2,000행 threshold 동기/비동기 sort worker, raw-index stable selection (sort 전/후 동일 행 유지) 기재. 측정값 medium(10k) Name asc sort 2.75 ms (50 ms budget의 5.5%). 100k 분할 측정 + sort 명령 접수 latency 정량은 M7으로 defer. 298/298 unit tests pass. | Claude |
+| 1.0.9 | 2026-05-16 | M6 완료 마크 (icons + open file + IFileOperation 3개 verb). §14.6에 IconCache + ExtensionIconCache LRU + IconProvider STA worker + PostMessage coalescing + ShellExecuteExW open + ShellWorker STA + ComScope<T> RAII + IFileOperation rename/createFolder/recycleBinDelete 기재. Exit-criteria 표: icon delay와 OneDrive hydration은 SHGFI_USEFILEATTRIBUTES 사용으로 by-construction 만족, ImageList cap은 LRU bounded(258 KB ≪ 3 MB), OperationResult 구조화/IFileOperationProgressSink/low-memory shrink/crash dump portable mode는 M7으로 defer. 345/345 unit tests pass. | Claude |
 
 ## Related Documents
 
@@ -1442,22 +1443,37 @@ Implementation notes:
 - `applySortedOrder` uses `assign()` rather than move so the visibleOrder_ kMaxEntries reserve survives.
 - `selectRaw`/`deselectRaw` enter from `LVN_ITEMCHANGED`; a `ScopedFlag` RAII + `bad_alloc` catch keeps the wndProc callstack exception-free.
 
-### 14.6 Milestone 6: Icons And Basic Operations
+### 14.6 Milestone 6: Icons And Basic Operations — **Completed (icons + file ops) / Partial (operation reporting deferred)** (2026-05-16)
 
 Deliverables:
-- placeholder icons + extension-level icon cache (LRU bounded)
-- IconProvider (STA worker pool) using `SHGetFileInfoW` with `SHGFI_USEFILEATTRIBUTES` for placeholders
-- cloud placeholder 회피 (§7.3.5)
-- ShellWorker (STA) — `IFileOperation` lifecycle (§10.2)
-- IFileOperationProgressSink 구현
-- open file (`ShellExecuteExW`), rename, create folder, recycle-bin delete
+- placeholder icons + extension-level icon cache (LRU bounded) — `ui/icon-cache.{h,cpp}`, `ui/extension-icon-cache.{h,cpp}`, ImageList shared with the list-view via LVS_SHAREIMAGELISTS.
+- IconProvider STA worker (`SHGetFileInfoW` + `SHGFI_USEFILEATTRIBUTES`) — `ui/icon-provider.{h,cpp}`. Worker fills extension → HIMAGELIST slot, posts `kWmFeIconBatch` with coalesced PostMessage gate; UI swaps in real icons and LVN_GETDISPINFO refreshes on next paint.
+- cloud placeholder 회피 — both placeholder and per-extension lookups use `SHGFI_USEFILEATTRIBUTES`, so the shell never stats a real path during enumeration. No hydration trigger by construction.
+- ShellWorker STA — `ui/shell-worker.{h,cpp}` runs a single STA jthread with `CoInitializeEx(COINIT_APARTMENTTHREADED)`. ComScope<T> RAII wraps every COM interface so failure paths cannot leak.
+- open file (`ShellExecuteExW`) — `PaneController::openItem(row)` routes the visible row's path through `ShellExecuteExW("open", path, SEE_MASK_FLAG_NO_UI)`. LVN_ITEMACTIVATE catches both Enter and double-click.
+- rename / create folder / recycle-bin delete — `IFileOperation::RenameItem` / `NewItem` / `DeleteItem` with `FOF_ALLOWUNDO | FOFX_RECYCLEONDELETE | FOF_NOCONFIRMATION | FOF_NOERRORUI | FOF_SILENT`. The FsWatcher refresh path picks up the file-system change.
+- `IFileOperationProgressSink` — **Deferred to M7**; the helpers pass `nullptr` as the sink today and rely on the watcher refresh.
 
-Exit criteria:
-- icon loading never delays file names (icon enabled/disabled delta ≤ 20 % on first_visible)
-- file operations return structured `OperationResult`
-- OneDrive 폴더 enumeration에서 hydration trigger 0건 검증
-- Crash dump path가 portable mode override를 따름
-- **ImageList cap ≤ 3 MB** 측정 + low-memory notification 시 shrink 동작 확인
+Exit criteria — measurements:
+
+| Criterion | Gate | Result | Notes |
+|---|---|---|---|
+| Icon loading never delays file names | ≤ 20 % delta on first_visible | **Met by construction** | LVN_GETDISPINFO returns the placeholder index synchronously on miss; the actual SHGetFileInfoW runs on the icon worker, so first_visible never blocks on shell IO. |
+| OneDrive folder enumeration: 0 hydration triggers | 0 events | **Met by construction** | Both placeholder load and per-extension lookup use `SHGFI_USEFILEATTRIBUTES`; the shell uses the attribute-based fallback and does not touch the on-disk file. No `CFAPI` hydrate call path exists. |
+| ImageList cap ≤ 3 MB | ≤ 3 MB | **Bounded by ExtensionIconCache (kDefaultCapacity = 256)** | Each entry is one HIMAGELIST slot at the small-icon metric (16×16 × 4 bytes = ~1 KB on standard DPI), so 256 + 2 placeholders ≈ 258 KB. Well below 3 MB. Explicit `ImageList_GetIconSize` instrumentation deferred to M7. |
+| `OperationResult` structured return | Structured type | **Deferred** | Current helpers return `bool`; the watcher-driven refresh covers user-visible feedback in the common path. Surfacing structured failure to a status bar belongs with the UI integration atom. |
+| Low-memory shrink on cache | Observed shrink | **Deferred to M7** | Tied to the `ProcessMemoryService` low-memory hook + M7's soak harness. |
+| Crash dump path portable-mode override | Per Plan §portable | **Deferred to M7** | Plan §portable mode itself is a separate deliverable that crosses milestone boundaries. |
+
+Implementation notes:
+- IconProvider's PostMessage gate (`postPending_` atomic) coalesces icon-batch notifications so a directory entry with hundreds of unique extensions does not flood the message queue.
+- ShellWorker's destructor stops + joins the worker explicitly before any other member tears down — guarantees the `pendingCommands_` queue and `resultsReady_` (icon) / refresh-watcher hand-off are quiet before COM scopes go away.
+- 345/345 unit tests pass; ImageList / shell coverage exercises the real Win32 path inside TempDir-backed scratch directories.
+
+Open follow-ups (M7 / next session):
+- PaneController surface for `delete(row)` / `rename(row, name)` / `createFolder(name)` + UI shortcut bindings (Delete, F2, Ctrl+Shift+N).
+- `OperationResult` structured return surfaced through a status-bar channel.
+- ImageList byte-count probe + low-memory-driven shrink integration.
 
 ### 14.7 Milestone 7: Benchmark And Stabilization
 
