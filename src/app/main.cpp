@@ -65,6 +65,7 @@ void logStall(fast_explorer::core::RingLogger& logger,
 
 int runMessageLoop(fast_explorer::core::PerfTracker& perf,
                    fast_explorer::core::RingLogger& logger,
+                   fast_explorer::ui::StallHistogram& histogram,
                    HWND hwnd, HACCEL accel) {
   using fast_explorer::core::PerfTracker;
   using fast_explorer::ui::classifyStall;
@@ -95,6 +96,7 @@ int runMessageLoop(fast_explorer::core::PerfTracker& perf,
         static_cast<uint64_t>(t1.QuadPart - t0.QuadPart);
     const uint64_t dispatchMicros =
         hz == 0 ? 0 : (dispatchTicks * 1'000'000ULL) / hz;
+    histogram.record(dispatchMicros);
     logStall(logger, perf, classifyStall(dispatchMicros), dispatchMicros,
              msg.message);
   }
@@ -207,8 +209,17 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance,
             logger.info(L"--open: enumerating %ls", openPath.c_str());
           }
         }
-        exitCode = runMessageLoop(services.perf(), logger, window.handle(),
-                                  hAccel);
+        fast_explorer::ui::StallHistogram stallHistogram;
+        exitCode = runMessageLoop(services.perf(), logger, stallHistogram,
+                                  window.handle(), hAccel);
+        fast_explorer::ui::dumpStallHistogram(
+            stallHistogram,
+            [](const wchar_t* line, void* userData) {
+              auto* lg =
+                  static_cast<fast_explorer::core::RingLogger*>(userData);
+              lg->info(L"%ls", line);
+            },
+            &logger);
         if (hAccel) {
           DestroyAcceleratorTable(hAccel);
         }
