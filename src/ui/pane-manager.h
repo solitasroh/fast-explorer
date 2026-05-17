@@ -38,7 +38,7 @@ class PaneManager {
 
   // Tears down the second pane and resets activeIndex_ to 0. No-op
   // when only the initial pane is open.
-  void closeSecond();
+  void closeSecond() noexcept;
 
   // Sets activeIndex_ to `idx`, clamped to the currently open pane
   // range. Returns false when the index is out of range (no change).

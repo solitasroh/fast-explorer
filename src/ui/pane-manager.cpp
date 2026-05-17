@@ -21,7 +21,7 @@ std::size_t PaneManager::openSecond(HWND host) {
   return 1;
 }
 
-void PaneManager::closeSecond() {
+void PaneManager::closeSecond() noexcept {
   if (panes_.size() <= 1) {
     return;
   }

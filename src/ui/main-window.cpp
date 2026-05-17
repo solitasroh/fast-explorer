@@ -190,6 +190,45 @@ MainWindow::~MainWindow() {
   }
 }
 
+bool MainWindow::installPaneCoordinators(std::size_t idx, HWND listView) {
+  if (idx >= iconCoords_.size() || listView == nullptr ||
+      !paneManager_ || idx >= paneManager_->count()) {
+    return false;
+  }
+  PaneController& pane = paneManager_->at(idx);
+  try {
+    iconCoords_[idx] = std::make_unique<IconCacheCoordinator>(
+        hwnd_, listView, GetDpiForWindow(hwnd_), idx);
+    if (iconCoords_[idx] && iconCoords_[idx]->ok()) {
+      ListView_SetImageList(listView, iconCoords_[idx]->imageListHandle(),
+                            LVSIL_SMALL);
+    }
+    selectionSyncs_[idx] =
+        std::make_unique<SelectionSync>(listView, pane);
+    labelEdits_[idx] =
+        std::make_unique<LabelEditController>(listView, pane);
+  } catch (const std::bad_alloc&) {
+    labelEdits_[idx].reset();
+    selectionSyncs_[idx].reset();
+    iconCoords_[idx].reset();
+    return false;
+  }
+  return true;
+}
+
+void MainWindow::relayout() {
+  if (hwnd_ == nullptr) {
+    return;
+  }
+  // Build the same arg shape a real WM_SIZE delivers so onSize sees
+  // an honest message rather than a fabricated lParam=0 PostMessage.
+  RECT client{};
+  GetClientRect(hwnd_, &client);
+  const LPARAM lp = MAKELPARAM(client.right - client.left,
+                               client.bottom - client.top);
+  onSize(hwnd_, WM_SIZE, SIZE_RESTORED, lp);
+}
+
 void MainWindow::enterDualMode() {
   if (hwnd_ == nullptr || !paneManager_) {
     return;
@@ -208,18 +247,16 @@ void MainWindow::enterDualMode() {
   ListView_SetItemCountEx(second, 0, 0);
   listViews_[1] = second;
   paneManager_->openSecond(hwnd_);
-  PaneController& secondPane = paneManager_->at(1);
-  iconCoords_[1] = std::make_unique<IconCacheCoordinator>(
-      hwnd_, second, GetDpiForWindow(hwnd_), 1);
-  if (iconCoords_[1] && iconCoords_[1]->ok()) {
-    ListView_SetImageList(second, iconCoords_[1]->imageListHandle(),
-                          LVSIL_SMALL);
+  if (!installPaneCoordinators(1, second)) {
+    // Coordinator construction failed mid-flight. Roll back so we do
+    // not leave a visible second list-view backed by a partially-
+    // constructed coordinator chain.
+    paneManager_->closeSecond();
+    DestroyWindow(second);
+    listViews_[1] = nullptr;
+    return;
   }
-  selectionSyncs_[1] = std::make_unique<SelectionSync>(second, secondPane);
-  labelEdits_[1] = std::make_unique<LabelEditController>(second, secondPane);
-  // Force the layout to recompute so the existing list-view shrinks
-  // to the left half and the new one fills the right half.
-  PostMessageW(hwnd_, WM_SIZE, SIZE_RESTORED, 0);
+  relayout();
 }
 
 void MainWindow::enterSingleMode() {
@@ -238,7 +275,7 @@ void MainWindow::enterSingleMode() {
     DestroyWindow(listViews_[1]);
     listViews_[1] = nullptr;
   }
-  PostMessageW(hwnd_, WM_SIZE, SIZE_RESTORED, 0);
+  relayout();
 }
 
 void MainWindow::setActivePane(std::size_t idx) {
@@ -533,10 +570,9 @@ LRESULT MainWindow::onCreate(HWND hwnd) {
   paneManager_->openInitial(hwnd);
   pane_ = &paneManager_->active();
   formatCache_ = std::make_unique<FormatCache>();
-  iconCoords_[0] = std::make_unique<IconCacheCoordinator>(
-      hwnd, listView_, GetDpiForWindow(hwnd), 0);
-  selectionSyncs_[0] = std::make_unique<SelectionSync>(listView_, *pane_);
-  labelEdits_[0] = std::make_unique<LabelEditController>(listView_, *pane_);
+  if (!installPaneCoordinators(0, listView_)) {
+    return -1;
+  }
   dispInfoHist_ = std::make_unique<DispInfoHistogram>();
   LARGE_INTEGER qpcFreq{};
   if (QueryPerformanceFrequency(&qpcFreq)) {

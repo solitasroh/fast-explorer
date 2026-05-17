@@ -109,6 +109,18 @@ class MainWindow {
   // coordinator updates the ImageList / extension cache state.
   void redrawVisibleRows();
 
+  // Wires per-pane coordinators (icon / selection / label-edit) for
+  // pane `idx` against the given list-view. Returns false if any
+  // coordinator construction failed, leaving partial state for the
+  // caller to roll back. Used by both onCreate (idx=0) and
+  // enterDualMode (idx=1) so the construction sequence stays in one
+  // place.
+  bool installPaneCoordinators(std::size_t idx, HWND listView);
+  // Synchronous layout recompute. Equivalent to firing WM_SIZE but
+  // avoids the asynchronous message-pump round-trip and the
+  // misleading WM_SIZE lParam=0 that the prior implementation
+  // posted.
+  void relayout();
   LRESULT handleListViewNotify(NMHDR* hdr);
   bool isStaleGeneration(WPARAM wParam) const;
   // Decodes the pane index from `wParam` (packed via makePaneWParam)
