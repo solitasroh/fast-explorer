@@ -26,6 +26,7 @@ constexpr uint8_t kIsHidden           = 1u << 1;
 constexpr uint8_t kIsSystem           = 1u << 2;
 constexpr uint8_t kIsReparse          = 1u << 3;
 constexpr uint8_t kIsCloudPlaceholder = 1u << 4;
+constexpr uint8_t kIsSymlink          = 1u << 5;
 
 }  // namespace file_entry_flags
 
@@ -109,6 +110,19 @@ constexpr bool isReparse(const FileEntry& e) noexcept {
 }
 constexpr bool isCloudPlaceholder(const FileEntry& e) noexcept {
   return (e.flags & file_entry_flags::kIsCloudPlaceholder) != 0;
+}
+// True only for reparse points whose tag is IO_REPARSE_TAG_SYMLINK.
+// Junctions (IO_REPARSE_TAG_MOUNT_POINT) and any other reparse tag
+// leave kIsReparse set but kIsSymlink clear.
+constexpr bool isSymlink(const FileEntry& e) noexcept {
+  return (e.flags & file_entry_flags::kIsSymlink) != 0;
+}
+// FILE_ATTRIBUTE_READONLY = 0x1 in the raw Win32 mask. Reading
+// from the raw `attributes` field keeps the flags byte free for
+// behavioural bits (directory / hidden / system / reparse / cloud /
+// symlink) and avoids duplicating the same bit in two fields.
+constexpr bool isReadOnly(const FileEntry& e) noexcept {
+  return (e.attributes & 0x1u) != 0;
 }
 
 // Nibble accessors for the `states` byte. Return the 0..15 enum value

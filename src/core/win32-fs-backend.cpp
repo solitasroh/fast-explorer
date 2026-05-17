@@ -112,6 +112,12 @@ FileEntry buildEntry(NameArena& arena, const WIN32_FIND_DATAW& d) {
       static_cast<uint64_t>(d.ftLastWriteTime.dwLowDateTime);
   entry.attributes = d.dwFileAttributes;
   entry.flags = mapAttributesToFlags(d.dwFileAttributes);
+  // dwReserved0 carries the reparse tag only when REPARSE_POINT is set;
+  // its value is undefined otherwise, hence the gate.
+  if ((d.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT) &&
+      d.dwReserved0 == IO_REPARSE_TAG_SYMLINK) {
+    entry.flags |= file_entry_flags::kIsSymlink;
+  }
   return entry;
 }
 

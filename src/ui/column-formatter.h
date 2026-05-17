@@ -25,4 +25,17 @@ std::wstring formatTypeForEntry(const fast_explorer::core::FileEntry& e);
 // the Win32 conversion fails.
 std::wstring formatModified(uint64_t ft100ns);
 
+// Concatenates the active attribute markers for `e` in the fixed order
+// H (hidden), S (system), R (readonly), J (reparse not symlink),
+// L (reparse symlink), C (cloud placeholder / offline). Returns L"" when
+// no marker applies. R is read from the raw `attributes` mask;
+// J vs L is decided by isSymlink() (set only for IO_REPARSE_TAG_SYMLINK).
+std::wstring formatAttributesForEntry(const fast_explorer::core::FileEntry& e);
+
+// True when `e` should be rendered dimmed (NM_CUSTOMDRAW
+// COLOR_GRAYTEXT). Currently driven by hidden / system semantics,
+// matching Windows Explorer's "Hide protected operating system files"
+// disabled-view rendering.
+bool shouldRenderDimmed(const fast_explorer::core::FileEntry& e) noexcept;
+
 }  // namespace fast_explorer::ui

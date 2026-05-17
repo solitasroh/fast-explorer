@@ -8,11 +8,15 @@ struct FileEntry;
 
 // Sort key selects which field on FileEntry is the primary ordering.
 // Values are stable for serialization (logs, perf events) — append only.
+// `None` is the explicit "no sort" sentinel for columns that have no
+// natural ordering (e.g. the Attributes column); compareEntries treats
+// it as "always equal" so the deterministic name tiebreak still applies.
 enum class SortKey : uint8_t {
   Name = 0,
   Size = 1,
   Modified = 2,
   Type = 3,
+  None = 4,
 };
 
 enum class SortDirection : uint8_t {

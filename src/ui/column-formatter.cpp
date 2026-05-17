@@ -87,6 +87,36 @@ std::wstring formatTypeForEntry(const fast_explorer::core::FileEntry& e) {
                     fast_explorer::core::isDirectory(e));
 }
 
+std::wstring formatAttributesForEntry(
+    const fast_explorer::core::FileEntry& e) {
+  std::wstring out;
+  out.reserve(6);
+  if (fast_explorer::core::isHidden(e)) {
+    out.push_back(L'H');
+  }
+  if (fast_explorer::core::isSystem(e)) {
+    out.push_back(L'S');
+  }
+  if (fast_explorer::core::isReadOnly(e)) {
+    out.push_back(L'R');
+  }
+  if (fast_explorer::core::isReparse(e) &&
+      !fast_explorer::core::isSymlink(e)) {
+    out.push_back(L'J');
+  }
+  if (fast_explorer::core::isSymlink(e)) {
+    out.push_back(L'L');
+  }
+  if (fast_explorer::core::isCloudPlaceholder(e)) {
+    out.push_back(L'C');
+  }
+  return out;
+}
+
+bool shouldRenderDimmed(const fast_explorer::core::FileEntry& e) noexcept {
+  return fast_explorer::core::isHidden(e) || fast_explorer::core::isSystem(e);
+}
+
 std::wstring formatModified(uint64_t ft100ns) {
   if (ft100ns == 0) {
     return std::wstring();

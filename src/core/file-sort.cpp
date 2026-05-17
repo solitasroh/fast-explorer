@@ -53,6 +53,8 @@ int comparePrimary(const FileEntry& a,
       return 0;
     case SortKey::Type:
       return compareExtensionAsc(a, b);
+    case SortKey::None:
+      return 0;
   }
   return 0;
 }

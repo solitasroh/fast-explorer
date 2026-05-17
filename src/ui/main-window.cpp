@@ -35,13 +35,15 @@ struct ColumnSpec {
   int widthPx;
   int alignment;
   fast_explorer::core::SortKey sortKey;
+  bool sortable;  // false suppresses the sort dispatch on header click
 };
 
 constexpr ColumnSpec kColumns[] = {
-    {L"Name", 300, LVCFMT_LEFT, fast_explorer::core::SortKey::Name},
-    {L"Size", 100, LVCFMT_RIGHT, fast_explorer::core::SortKey::Size},
-    {L"Type", 100, LVCFMT_LEFT, fast_explorer::core::SortKey::Type},
-    {L"Modified", 160, LVCFMT_LEFT, fast_explorer::core::SortKey::Modified},
+    {L"Name", 300, LVCFMT_LEFT, fast_explorer::core::SortKey::Name, true},
+    {L"Size", 100, LVCFMT_RIGHT, fast_explorer::core::SortKey::Size, true},
+    {L"Type", 100, LVCFMT_LEFT, fast_explorer::core::SortKey::Type, true},
+    {L"Modified", 160, LVCFMT_LEFT, fast_explorer::core::SortKey::Modified, true},
+    {L"Attributes", 80, LVCFMT_LEFT, fast_explorer::core::SortKey::None, false},
 };
 
 HWND createStatusBar(HWND parent, HINSTANCE instance) {
@@ -97,6 +99,9 @@ bool columnIndexToSortKey(int col, fast_explorer::core::SortKey& out) {
   if (col < 0 || col >= static_cast<int>(std::size(kColumns))) {
     return false;
   }
+  if (!kColumns[col].sortable) {
+    return false;
+  }
   out = kColumns[col].sortKey;
   return true;
 }
@@ -130,7 +135,7 @@ void updateSortIndicator(HWND lv, int activeCol,
 
 int sortKeyToColumnIndex(fast_explorer::core::SortKey key) {
   for (int i = 0; i < static_cast<int>(std::size(kColumns)); ++i) {
-    if (kColumns[i].sortKey == key) {
+    if (kColumns[i].sortable && kColumns[i].sortKey == key) {
       return i;
     }
   }
@@ -664,8 +669,23 @@ LRESULT MainWindow::handleCustomDraw(NMHDR* hdr) {
   switch (cd->nmcd.dwDrawStage) {
     case CDDS_PREPAINT:
       return CDRF_NOTIFYITEMDRAW;
-    case CDDS_ITEMPREPAINT:
-      return CDRF_DODEFAULT;
+    case CDDS_ITEMPREPAINT: {
+      if (!pane_) {
+        return CDRF_DODEFAULT;
+      }
+      const auto row = static_cast<std::size_t>(cd->nmcd.dwItemSpec);
+      const auto& store = pane_->store();
+      if (row >= store.publishedCount()) {
+        return CDRF_DODEFAULT;
+      }
+      if (!shouldRenderDimmed(store.visibleAt(row))) {
+        return CDRF_DODEFAULT;
+      }
+      // CDRF_NEWFONT is the documented Win32 return value for honouring
+      // a clrText change even when no font swap is requested.
+      cd->clrText = GetSysColor(COLOR_GRAYTEXT);
+      return CDRF_NEWFONT;
+    }
     default:
       return CDRF_DODEFAULT;
   }
@@ -733,6 +753,9 @@ void MainWindow::handleGetDispInfoBody(NMHDR* hdr) {
       break;
     case 3:
       writeCellText(*disp, formatCache_->modifiedAt(entry.modifiedTime100ns));
+      break;
+    case 4:
+      writeCellText(*disp, formatAttributesForEntry(entry));
       break;
     default:
       break;
