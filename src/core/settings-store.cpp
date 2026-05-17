@@ -20,12 +20,23 @@ namespace {
 // memory on read.
 constexpr DWORD kMaxSettingsBytes = 64u * 1024u;
 
+// Pre-allocation hint for the writer. Tracks the v2 footprint
+// (~250 bytes) with headroom; any growth in the schema or a long
+// path triggers std::string's own growth strategy.
+constexpr std::size_t kSerializedReserveHint = 384;
+
 constexpr const wchar_t* kFileName = L"settings.json";
-constexpr const char* kKeyLastPath = "last_path";
-constexpr const char* kKeyWindowX  = "window_x";
-constexpr const char* kKeyWindowY  = "window_y";
-constexpr const char* kKeyWindowW  = "window_w";
-constexpr const char* kKeyWindowH  = "window_h";
+// std::string_view (rather than const char*) eliminates the implicit
+// strlen on every key comparison in JsonReader::parseValueInto.
+constexpr std::string_view kKeyLastPath   {"last_path"};
+constexpr std::string_view kKeyWindowX    {"window_x"};
+constexpr std::string_view kKeyWindowY    {"window_y"};
+constexpr std::string_view kKeyWindowW    {"window_w"};
+constexpr std::string_view kKeyWindowH    {"window_h"};
+constexpr std::string_view kKeyLayoutMode {"layout_mode"};
+constexpr std::string_view kKeySecondPath {"second_path"};
+constexpr std::string_view kLayoutSingle  {"single"};
+constexpr std::string_view kLayoutDual    {"dual"};
 
 bool readWholeFileBytes(const std::wstring& path, std::vector<char>& out) {
   HANDLE h = CreateFileW(path.c_str(), GENERIC_READ,
@@ -83,6 +94,37 @@ void appendJsonInt(std::string& out, int value) {
   if (n > 0) {
     out.append(buf, static_cast<std::size_t>(n));
   }
+}
+
+// Writer-side helpers that own the JSON separator + quoting shape so
+// the saveSessionState body stays a flat sequence of one call per
+// key. `first=true` emits the opening "{\n  ", subsequent calls emit
+// the ",\n  " continuation. The caller is responsible for appending
+// the trailing "\n}\n".
+void appendKeyHeader(std::string& out, std::string_view key, bool first) {
+  out.append(first ? "{\n  \"" : ",\n  \"");
+  out.append(key);
+  out.append("\": ");
+}
+
+void appendKeyInt(std::string& out, std::string_view key, int value,
+                  bool first) {
+  appendKeyHeader(out, key, first);
+  appendJsonInt(out, value);
+}
+
+void appendKeyString(std::string& out, std::string_view key,
+                     std::wstring_view value, bool first) {
+  appendKeyHeader(out, key, first);
+  appendJsonEscapedString(out, value);
+}
+
+void appendKeyRawString(std::string& out, std::string_view key,
+                        std::string_view rawAscii, bool first) {
+  appendKeyHeader(out, key, first);
+  out.push_back('"');
+  out.append(rawAscii);
+  out.push_back('"');
 }
 
 class JsonReader {
@@ -191,6 +233,22 @@ class JsonReader {
       state.lastPath = widenUtf8(raw);
       return true;
     }
+    if (key == kKeySecondPath) {
+      std::string raw;
+      if (!parseStringInto(raw)) return false;
+      state.secondPath = widenUtf8(raw);
+      return true;
+    }
+    if (key == kKeyLayoutMode) {
+      std::string raw;
+      if (!parseStringInto(raw)) return false;
+      // Lenient: an unrecognized value (corrupt file, future-mode
+      // string this build does not know) falls back to Single so the
+      // user still gets a window restore instead of a thrown-away load.
+      state.layoutMode = (raw == kLayoutDual) ? LayoutMode::Dual
+                                              : LayoutMode::Single;
+      return true;
+    }
     int* slot = nullptr;
     if      (key == kKeyWindowX) slot = &state.windowX;
     else if (key == kKeyWindowY) slot = &state.windowY;
@@ -279,27 +337,16 @@ bool saveSessionState(const std::wstring& path, const SessionState& state) {
     return false;
   }
   std::string out;
-  out.reserve(256);
-  out.append("{\n  \"");
-  out.append(kKeyLastPath);
-  out.append("\": ");
-  appendJsonEscapedString(out, state.lastPath);
-  out.append(",\n  \"");
-  out.append(kKeyWindowX);
-  out.append("\": ");
-  appendJsonInt(out, state.windowX);
-  out.append(",\n  \"");
-  out.append(kKeyWindowY);
-  out.append("\": ");
-  appendJsonInt(out, state.windowY);
-  out.append(",\n  \"");
-  out.append(kKeyWindowW);
-  out.append("\": ");
-  appendJsonInt(out, state.windowWidth);
-  out.append(",\n  \"");
-  out.append(kKeyWindowH);
-  out.append("\": ");
-  appendJsonInt(out, state.windowHeight);
+  out.reserve(kSerializedReserveHint);
+  const std::string_view layoutLabel =
+      state.layoutMode == LayoutMode::Dual ? kLayoutDual : kLayoutSingle;
+  appendKeyString   (out, kKeyLastPath,   state.lastPath,    /*first*/ true);
+  appendKeyInt      (out, kKeyWindowX,    state.windowX,     /*first*/ false);
+  appendKeyInt      (out, kKeyWindowY,    state.windowY,     /*first*/ false);
+  appendKeyInt      (out, kKeyWindowW,    state.windowWidth, /*first*/ false);
+  appendKeyInt      (out, kKeyWindowH,    state.windowHeight,/*first*/ false);
+  appendKeyRawString(out, kKeyLayoutMode, layoutLabel,       /*first*/ false);
+  appendKeyString   (out, kKeySecondPath, state.secondPath,  /*first*/ false);
   out.append("\n}\n");
 
   const std::wstring temp = path + L".tmp";

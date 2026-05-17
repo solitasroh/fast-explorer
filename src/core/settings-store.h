@@ -1,6 +1,7 @@
 #pragma once
 
 #include <climits>
+#include <cstdint>
 #include <string>
 
 namespace fast_explorer::core {
@@ -10,12 +11,16 @@ namespace fast_explorer::core {
 // creation to opt out of a saved value.
 constexpr int kSettingsUseDefault = INT_MIN;
 
+enum class LayoutMode : std::uint8_t { Single = 0, Dual = 1 };
+
 struct SessionState {
   std::wstring lastPath;
   int windowX = kSettingsUseDefault;
   int windowY = kSettingsUseDefault;
   int windowWidth = kSettingsUseDefault;
   int windowHeight = kSettingsUseDefault;
+  LayoutMode layoutMode = LayoutMode::Single;
+  std::wstring secondPath;
 };
 
 // Resolves the canonical settings file path:
@@ -26,8 +31,13 @@ struct SessionState {
 
 // Reads JSON from `path` into `state`. Returns false on missing file,
 // I/O error, or malformed content; `state` is left at construction
-// defaults. The format is a flat object with five keys: last_path
-// (string), window_x / window_y / window_w / window_h (integers).
+// defaults. The format is a flat object with these keys: last_path
+// (string), window_x / window_y / window_w / window_h (integers),
+// layout_mode (string "single"|"dual"), second_path (string). A
+// settings file produced by an older build (missing layout_mode /
+// second_path) loads cleanly with those fields at their defaults
+// (Single, empty). An unrecognized layout_mode string is treated as
+// Single rather than failing the whole load.
 [[nodiscard]] bool loadSessionState(const std::wstring& path,
                                     SessionState& state);
 

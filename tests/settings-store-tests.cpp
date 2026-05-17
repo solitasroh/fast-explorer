@@ -9,6 +9,7 @@
 
 using fast_explorer::core::defaultSettingsPath;
 using fast_explorer::core::kSettingsUseDefault;
+using fast_explorer::core::LayoutMode;
 using fast_explorer::core::loadSessionState;
 using fast_explorer::core::saveSessionState;
 using fast_explorer::core::SessionState;
@@ -47,6 +48,8 @@ FE_TEST_CASE(SettingsStore_DefaultState_HasSentinels) {
   FE_ASSERT_EQ(s.windowY, kSettingsUseDefault);
   FE_ASSERT_EQ(s.windowWidth, kSettingsUseDefault);
   FE_ASSERT_EQ(s.windowHeight, kSettingsUseDefault);
+  FE_ASSERT_EQ(s.layoutMode, LayoutMode::Single);
+  FE_ASSERT_TRUE(s.secondPath.empty());
 }
 
 FE_TEST_CASE(SettingsStore_Load_NonexistentFile_ReturnsFalseAndKeepsDefaults) {
@@ -172,6 +175,131 @@ FE_TEST_CASE(SettingsStore_Save_OverwriteExistingFile) {
   SessionState read;
   FE_ASSERT_TRUE(loadSessionState(path, read));
   FE_ASSERT_WSTREQ(read.lastPath, L"C:\\second");
+}
+
+FE_TEST_CASE(SettingsStore_RoundTrip_DualLayoutWithSecondPath) {
+  TempDir tmp(L"settings-dual-layout");
+  const std::wstring path = makeSettingsPath(tmp);
+  SessionState written;
+  written.lastPath = L"C:\\Users\\test\\Documents";
+  written.windowX = 100;
+  written.windowY = 100;
+  written.windowWidth = 1280;
+  written.windowHeight = 800;
+  written.layoutMode = LayoutMode::Dual;
+  written.secondPath = L"C:\\Users\\test\\Pictures";
+  FE_ASSERT_TRUE(saveSessionState(path, written));
+
+  SessionState read;
+  FE_ASSERT_TRUE(loadSessionState(path, read));
+  FE_ASSERT_EQ(read.layoutMode, LayoutMode::Dual);
+  FE_ASSERT_WSTREQ(read.secondPath, written.secondPath);
+}
+
+FE_TEST_CASE(SettingsStore_RoundTrip_SingleLayoutEmptySecondPath) {
+  TempDir tmp(L"settings-single-empty-second");
+  const std::wstring path = makeSettingsPath(tmp);
+  SessionState written;
+  written.lastPath = L"C:\\";
+  written.windowX = 0;
+  written.windowY = 0;
+  written.windowWidth = 320;
+  written.windowHeight = 240;
+  // layoutMode and secondPath at defaults.
+  FE_ASSERT_TRUE(saveSessionState(path, written));
+
+  SessionState read;
+  FE_ASSERT_TRUE(loadSessionState(path, read));
+  FE_ASSERT_EQ(read.layoutMode, LayoutMode::Single);
+  FE_ASSERT_TRUE(read.secondPath.empty());
+}
+
+FE_TEST_CASE(SettingsStore_Load_V1FileMissingNewKeys_DefaultsApplied) {
+  // A settings file written by a pre-v2 build does not carry
+  // layout_mode or second_path. The reader must accept it and fall
+  // back to Single + empty so existing users get session restore.
+  TempDir tmp(L"settings-v1-compat");
+  const std::wstring path = makeSettingsPath(tmp);
+  SessionState seed;
+  FE_ASSERT_TRUE(saveSessionState(path, seed));
+  FE_ASSERT_TRUE(writeRawUtf8(
+      path,
+      "{\"last_path\":\"C:\\\\v1\",\"window_x\":10,\"window_y\":20,"
+      "\"window_w\":640,\"window_h\":480}"));
+
+  SessionState s;
+  FE_ASSERT_TRUE(loadSessionState(path, s));
+  FE_ASSERT_WSTREQ(s.lastPath, L"C:\\v1");
+  FE_ASSERT_EQ(s.windowX, 10);
+  FE_ASSERT_EQ(s.layoutMode, LayoutMode::Single);
+  FE_ASSERT_TRUE(s.secondPath.empty());
+}
+
+FE_TEST_CASE(SettingsStore_Load_UnknownLayoutModeString_FallsBackToSingle) {
+  // Forward compatibility: a future "tri" mode written by a newer
+  // build should load lossily rather than discard the entire file.
+  TempDir tmp(L"settings-unknown-layout");
+  const std::wstring path = makeSettingsPath(tmp);
+  SessionState seed;
+  FE_ASSERT_TRUE(saveSessionState(path, seed));
+  FE_ASSERT_TRUE(writeRawUtf8(
+      path,
+      "{\"last_path\":\"\",\"window_x\":0,\"window_y\":0,"
+      "\"window_w\":0,\"window_h\":0,\"layout_mode\":\"tri\","
+      "\"second_path\":\"C:\\\\b\"}"));
+
+  SessionState s;
+  FE_ASSERT_TRUE(loadSessionState(path, s));
+  FE_ASSERT_EQ(s.layoutMode, LayoutMode::Single);
+  FE_ASSERT_WSTREQ(s.secondPath, L"C:\\b");
+}
+
+FE_TEST_CASE(SettingsStore_Load_WindowFieldWrongType_ReturnsFalse) {
+  // Symmetric to the layout_mode wrong-type case below: an integer
+  // key receiving a string should fail the whole load (strict typing
+  // distinguishes schema corruption from forward-compat unknowns).
+  TempDir tmp(L"settings-window-wrong-type");
+  const std::wstring path = makeSettingsPath(tmp);
+  SessionState seed;
+  FE_ASSERT_TRUE(saveSessionState(path, seed));
+  FE_ASSERT_TRUE(writeRawUtf8(
+      path,
+      "{\"last_path\":\"\",\"window_x\":\"oops\"}"));
+
+  SessionState s;
+  FE_ASSERT_FALSE(loadSessionState(path, s));
+}
+
+FE_TEST_CASE(SettingsStore_Load_LayoutModeWrongType_ReturnsFalse) {
+  // Strict on type errors (integer where string is expected) — same
+  // policy as last_path. Distinguishes "future field we tolerate" from
+  // "schema corruption we refuse".
+  TempDir tmp(L"settings-layout-wrong-type");
+  const std::wstring path = makeSettingsPath(tmp);
+  SessionState seed;
+  FE_ASSERT_TRUE(saveSessionState(path, seed));
+  FE_ASSERT_TRUE(writeRawUtf8(
+      path,
+      "{\"last_path\":\"\",\"layout_mode\":1}"));
+
+  SessionState s;
+  FE_ASSERT_FALSE(loadSessionState(path, s));
+}
+
+FE_TEST_CASE(SettingsStore_RoundTrip_SecondPathBackslashEscape) {
+  TempDir tmp(L"settings-second-path-escape");
+  const std::wstring path = makeSettingsPath(tmp);
+  SessionState written;
+  written.lastPath = L"C:\\a";
+  written.windowX = 1; written.windowY = 2;
+  written.windowWidth = 3; written.windowHeight = 4;
+  written.layoutMode = LayoutMode::Dual;
+  written.secondPath = L"D:\\path with\\back\\slashes";
+  FE_ASSERT_TRUE(saveSessionState(path, written));
+
+  SessionState read;
+  FE_ASSERT_TRUE(loadSessionState(path, read));
+  FE_ASSERT_WSTREQ(read.secondPath, written.secondPath);
 }
 
 FE_TEST_CASE(SettingsStore_DefaultSettingsPath_NonEmptyOnTypicalEnv) {
