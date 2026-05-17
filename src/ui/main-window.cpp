@@ -30,7 +30,9 @@ namespace fast_explorer::ui {
 
 namespace {
 
-constexpr UINT_PTR kTimerFsCoalesce = 1;
+// One timer id per pane so dual-mode debounce windows do not collide.
+// The actual id used is (kTimerFsCoalesceBase + paneIndex).
+constexpr UINT_PTR kTimerFsCoalesceBase = 1;
 constexpr UINT kFsCoalesceMs = 100;
 
 struct ColumnSpec {
@@ -511,10 +513,10 @@ LRESULT MainWindow::handleMessage(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPa
     case kWmFeEnumComplete:   return onEnumComplete(wParam);
     case kWmFeSortComplete:   return onSortComplete(wParam);
     case kWmFeIconBatch:      return onIconBatch(wParam);
-    case kWmFeOperationResult: return onOperationResult();
+    case kWmFeOperationResult: return onOperationResult(wParam);
     case kWmFeLowMemory:      return onLowMemory();
     case kWmFeEnumError:      return onEnumError(wParam, lParam);
-    case kWmFeFsChange:       return onFsChange(hwnd);
+    case kWmFeFsChange:       return onFsChange(hwnd, wParam);
     case WM_TIMER:            return onTimer(hwnd, msg, wParam, lParam);
     case WM_DESTROY: {
       // GetWindowPlacement reports the restored rect even when the
@@ -716,10 +718,12 @@ LRESULT MainWindow::onCommand(HWND hwnd, UINT msg, WPARAM wParam,
 
 LRESULT MainWindow::onTimer(HWND hwnd, UINT msg, WPARAM wParam,
                             LPARAM lParam) {
-  if (wParam == kTimerFsCoalesce) {
-    KillTimer(hwnd, kTimerFsCoalesce);
-    if (pane_) {
-      pane_->refresh();
+  if (wParam >= kTimerFsCoalesceBase &&
+      wParam < kTimerFsCoalesceBase + 2) {
+    const std::size_t idx = wParam - kTimerFsCoalesceBase;
+    KillTimer(hwnd, wParam);
+    if (paneManager_ && idx < paneManager_->count()) {
+      paneManager_->at(idx).refresh();
     }
     return 0;
   }
@@ -730,6 +734,10 @@ LRESULT MainWindow::onEnumBatch(WPARAM wParam, LPARAM lParam) {
   if (isStaleGeneration(wParam)) {
     return 0;
   }
+  const std::size_t idx = paneIndexFromWParam(wParam);
+  if (idx >= listViews_.size() || listViews_[idx] == nullptr) {
+    return 0;
+  }
   const auto count = static_cast<uint64_t>(lParam);
   if (!firstBatchSeen_) {
     perf_.record(fast_explorer::core::PerfTracker::EventId::PaneFirstBatch,
@@ -737,10 +745,8 @@ LRESULT MainWindow::onEnumBatch(WPARAM wParam, LPARAM lParam) {
     fast_explorer::core::recordMemoryProbe(perf_);
     firstBatchSeen_ = true;
   }
-  if (listView_) {
-    ListView_SetItemCountEx(listView_, static_cast<int>(count),
-                            LVSICF_NOSCROLL);
-  }
+  ListView_SetItemCountEx(listViews_[idx], static_cast<int>(count),
+                          LVSICF_NOSCROLL);
   const std::wstring text = loadingProgressStatusText(count);
   setStatusText(text.c_str());
   return 0;
@@ -750,12 +756,20 @@ LRESULT MainWindow::onEnumComplete(WPARAM wParam) {
   if (isStaleGeneration(wParam)) {
     return 0;
   }
-  const size_t finalCount = pane_->store().itemCount();
+  PaneController* target = paneForWParam(wParam);
+  if (target == nullptr) {
+    return 0;
+  }
+  const size_t finalCount = target->store().itemCount();
   fast_explorer::core::recordMemoryProbe(perf_);
   const std::wstring text = readyStatusText(finalCount);
   setStatusText(text.c_str());
-  if (auto* le = activeLabelEdit()) {
-    le->maybeStartPendingEdit();
+  // Label-edit pending consumption belongs to whichever pane just
+  // finished enumerating, not necessarily the currently active one
+  // (createSubfolder may complete on a background pane).
+  const std::size_t idx = paneIndexFromWParam(wParam);
+  if (idx < labelEdits_.size() && labelEdits_[idx]) {
+    labelEdits_[idx]->maybeStartPendingEdit();
   }
   return 0;
 }
@@ -771,9 +785,6 @@ LRESULT MainWindow::onEnumError(WPARAM wParam, LPARAM lParam) {
 }
 
 LRESULT MainWindow::onSortComplete(WPARAM wParam) {
-  if (listView_ == nullptr) {
-    return 0;
-  }
   if (isStaleGeneration(wParam)) {
     return 0;
   }
@@ -792,42 +803,41 @@ LRESULT MainWindow::onIconBatch(WPARAM wParam) {
     return 0;
   }
   if (iconCoords_[idx]->onIconBatch()) {
-    redrawVisibleRows();
+    redrawVisibleRows(idx);
   }
   return 0;
 }
 
-void MainWindow::redrawVisibleRows() {
-  if (listView_ == nullptr || !pane_) {
+void MainWindow::redrawVisibleRows(std::size_t idx) {
+  if (idx >= listViews_.size() || listViews_[idx] == nullptr ||
+      !paneManager_ || idx >= paneManager_->count()) {
     return;
   }
-  const int count = static_cast<int>(pane_->store().publishedCount());
+  const int count =
+      static_cast<int>(paneManager_->at(idx).store().publishedCount());
   if (count > 0) {
-    ListView_RedrawItems(listView_, 0, count - 1);
+    ListView_RedrawItems(listViews_[idx], 0, count - 1);
   }
 }
 
 LRESULT MainWindow::onLowMemory() {
   // Low-memory is a process-wide signal — broadcast the shrink to
-  // every populated pane's coordinator. Redraw once at the end if
-  // any pane actually shrank.
-  bool anyShrunk = false;
-  for (auto& coord : iconCoords_) {
-    if (coord && coord->shrinkIconCache()) {
-      anyShrunk = true;
+  // every populated pane's coordinator. Redraw the panes that
+  // actually shrank.
+  for (std::size_t i = 0; i < iconCoords_.size(); ++i) {
+    if (iconCoords_[i] && iconCoords_[i]->shrinkIconCache()) {
+      redrawVisibleRows(i);
     }
-  }
-  if (anyShrunk) {
-    redrawVisibleRows();
   }
   return 0;
 }
 
-LRESULT MainWindow::onOperationResult() {
-  if (!pane_) {
+LRESULT MainWindow::onOperationResult(WPARAM wParam) {
+  PaneController* target = paneForWParam(wParam);
+  if (target == nullptr) {
     return 0;
   }
-  auto results = pane_->drainShellResults();
+  auto results = target->drainShellResults();
   if (results.empty()) {
     return 0;
   }
@@ -838,10 +848,15 @@ LRESULT MainWindow::onOperationResult() {
   return 0;
 }
 
-LRESULT MainWindow::onFsChange(HWND hwnd) {
-  // Debounce: every event restarts the timer; the actual refresh fires
-  // once after kFsCoalesceMs of quiet.
-  SetTimer(hwnd, kTimerFsCoalesce, kFsCoalesceMs, nullptr);
+LRESULT MainWindow::onFsChange(HWND hwnd, WPARAM wParam) {
+  // Debounce: every event restarts the per-pane timer; the actual
+  // refresh fires once after kFsCoalesceMs of quiet. We pack the
+  // pane index into the timer id so two panes' debounce windows do
+  // not collide.
+  const std::size_t idx = paneIndexFromWParam(wParam);
+  if (idx >= 2) return 0;
+  const UINT_PTR timerId = kTimerFsCoalesceBase + idx;
+  SetTimer(hwnd, timerId, kFsCoalesceMs, nullptr);
   return 0;
 }
 

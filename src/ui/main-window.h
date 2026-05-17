@@ -100,14 +100,16 @@ class MainWindow {
   // the slot — same defensive contract as pane_.
   SelectionSync* activeSelectionSync();
   LabelEditController* activeLabelEdit();
-  LRESULT onOperationResult();
+  LRESULT onOperationResult(WPARAM wParam);
   LRESULT onLowMemory();
-  LRESULT onFsChange(HWND hwnd);
+  LRESULT onFsChange(HWND hwnd, WPARAM wParam);
 
-  // Forces a repaint of every published row through LVN_GETDISPINFO.
-  // Called by the icon-batch and low-memory paths after the
-  // coordinator updates the ImageList / extension cache state.
-  void redrawVisibleRows();
+  // Forces a repaint of every published row of pane `idx` through
+  // LVN_GETDISPINFO. Called by the icon-batch and low-memory paths
+  // after the coordinator updates the ImageList / extension cache
+  // state. No-op when the pane index is out of range or the slot is
+  // empty.
+  void redrawVisibleRows(std::size_t idx);
 
   // Wires per-pane coordinators (icon / selection / label-edit) for
   // pane `idx` against the given list-view. Returns false if any
