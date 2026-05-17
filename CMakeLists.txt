@@ -289,6 +289,8 @@ add_executable(FastExplorerBench
   src/core/process-memory.h
   src/core/ring-logger.cpp
   src/core/ring-logger.h
+  src/core/text-utf.cpp
+  src/core/text-utf.h
   src/core/win32-fs-backend.cpp
   src/core/win32-fs-backend.h
 )

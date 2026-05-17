@@ -7,6 +7,8 @@
 #include <string>
 #include <string_view>
 
+#include "core/text-utf.h"
+
 namespace fast_explorer::bench {
 
 namespace {
@@ -82,24 +84,6 @@ void appendEscapedJsonString(std::string& out, std::string_view utf8) {
   out.push_back('"');
 }
 
-std::string wideToUtf8(const std::wstring& wide) {
-  if (wide.empty()) {
-    return std::string();
-  }
-  const int needed =
-      WideCharToMultiByte(CP_UTF8, 0, wide.data(),
-                          static_cast<int>(wide.size()), nullptr, 0,
-                          nullptr, nullptr);
-  if (needed <= 0) {
-    return std::string();
-  }
-  std::string out(static_cast<std::size_t>(needed), '\0');
-  WideCharToMultiByte(CP_UTF8, 0, wide.data(),
-                      static_cast<int>(wide.size()), out.data(), needed,
-                      nullptr, nullptr);
-  return out;
-}
-
 void appendU64(std::string& out, std::uint64_t value) {
   char buf[32];
   std::snprintf(buf, sizeof(buf), "%llu",
@@ -155,7 +139,7 @@ std::string formatEnumerateBenchJson(const EnumerateArgs& args,
 
   // args
   out.append(",\"args\":{\"path\":");
-  appendEscapedJsonString(out, wideToUtf8(args.path));
+  appendEscapedJsonString(out, fast_explorer::core::narrowUtf8(args.path));
   out.append(",\"runs\":");
   appendU32(out, static_cast<std::uint32_t>(args.runs));
   out.append("}");
@@ -244,7 +228,7 @@ std::string formatHeadToHeadBenchJson(const HeadToHeadArgs& args,
 
   // args
   out.append(",\"args\":{\"path\":");
-  appendEscapedJsonString(out, wideToUtf8(args.path));
+  appendEscapedJsonString(out, fast_explorer::core::narrowUtf8(args.path));
   out.append(",\"runs\":");
   appendU32(out, static_cast<std::uint32_t>(args.runs));
   out.append("}");

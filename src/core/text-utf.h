@@ -10,10 +10,9 @@ namespace fast_explorer::core {
 // result on conversion failure rather than throwing — the caller is
 // responsible for validating non-emptiness when that matters.
 //
-// Existing inline copies in bench/bench-json.cpp, bench/bench-cli.cpp,
-// and core/ring-logger.cpp predate this header and are scheduled to
-// migrate on their next touch; the centralized version exists so new
-// call sites do not become a fifth copy.
+// Note on core/ring-logger.cpp: that TU intentionally uses a stack
+// buffer (no heap allocation) for the publish hot path and the crash
+// handler re-entry case, so it does NOT call these helpers.
 
 [[nodiscard]] std::wstring widenUtf8(std::string_view bytes);
 [[nodiscard]] std::string narrowUtf8(std::wstring_view text);

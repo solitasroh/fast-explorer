@@ -11,6 +11,7 @@
 #include "bench/dataset-generator.h"
 #include "bench/enumeration-bench.h"
 #include "bench/head-to-head-bench.h"
+#include "core/text-utf.h"
 
 namespace fast_explorer::bench {
 
@@ -346,13 +347,8 @@ int runHeadToHead(const HeadToHeadArgs& args, std::FILE* out, std::FILE* err) {
   if (args.format == OutputFormat::Json) {
     const MachineInfo machine = captureMachineInfo();
     const std::string json = formatHeadToHeadBenchJson(args, r, machine);
-    const int needed = MultiByteToWideChar(CP_UTF8, 0, json.data(),
-                                           static_cast<int>(json.size()),
-                                           nullptr, 0);
-    if (needed > 0) {
-      std::wstring wide(static_cast<std::size_t>(needed), L'\0');
-      MultiByteToWideChar(CP_UTF8, 0, json.data(),
-                          static_cast<int>(json.size()), wide.data(), needed);
+    const std::wstring wide = fast_explorer::core::widenUtf8(json);
+    if (!wide.empty()) {
       std::fputws(wide.c_str(), out);
       std::fputwc(L'\n', out);
     }
@@ -390,13 +386,8 @@ int runEnumerate(const EnumerateArgs& args, std::FILE* out, std::FILE* err) {
     // undefined behavior on MSVC. Round-trip the UTF-8 narrow JSON
     // back through UTF-16 wide and write via fputws — the U8TEXT
     // translation layer re-emits it as UTF-8 on the way out.
-    const int needed = MultiByteToWideChar(CP_UTF8, 0, json.data(),
-                                           static_cast<int>(json.size()),
-                                           nullptr, 0);
-    if (needed > 0) {
-      std::wstring wide(static_cast<std::size_t>(needed), L'\0');
-      MultiByteToWideChar(CP_UTF8, 0, json.data(),
-                          static_cast<int>(json.size()), wide.data(), needed);
+    const std::wstring wide = fast_explorer::core::widenUtf8(json);
+    if (!wide.empty()) {
       std::fputws(wide.c_str(), out);
       std::fputwc(L'\n', out);
     }
