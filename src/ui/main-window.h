@@ -9,6 +9,7 @@ namespace fast_explorer::core {
 class ProcessMemoryService;
 class PerfTracker;
 struct FileEntry;
+struct SessionState;
 }
 
 namespace fast_explorer::ui {
@@ -41,6 +42,18 @@ class MainWindow {
   // Forwards to the owned PaneController. Returns false if the window
   // is not yet created or the path is invalid.
   bool openFolder(const std::wstring& path);
+
+  // Applies the persisted window position/size from a prior session.
+  // Members equal to kSettingsUseDefault are skipped, so the OS picks
+  // the slot for a first run or a corrupted settings file. No-op when
+  // the window has not been created yet.
+  void applyInitialState(const fast_explorer::core::SessionState& state);
+
+  // The session state observed at WM_DESTROY: pane's current path +
+  // restored window rect (via GetWindowPlacement so a minimized
+  // shutdown still records the visible position). Returns default
+  // sentinels until WM_DESTROY has fired.
+  const fast_explorer::core::SessionState& capturedSessionState() const noexcept;
 
  private:
   static LRESULT CALLBACK wndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam);
@@ -113,6 +126,7 @@ class MainWindow {
   std::unique_ptr<LabelEditController> labelEdit_;
   std::unique_ptr<class DispInfoHistogram> dispInfoHist_;
   std::uint64_t qpcFrequencyHz_ = 0;
+  std::unique_ptr<fast_explorer::core::SessionState> capturedState_;
 };
 
 }  // namespace fast_explorer::ui

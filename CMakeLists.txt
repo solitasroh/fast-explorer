@@ -89,6 +89,10 @@ set(FE_APP_SOURCES
   src/core/crash-handler.h
   src/core/process-memory.cpp
   src/core/process-memory.h
+  src/core/settings-store.cpp
+  src/core/settings-store.h
+  src/core/text-utf.cpp
+  src/core/text-utf.h
   src/core/win32-fs-backend.cpp
   src/core/win32-fs-backend.h
 )
@@ -164,6 +168,7 @@ add_executable(core-tests
   tests/process-memory-tests.cpp
   tests/selection-sync-tests.cpp
   tests/label-edit-controller-tests.cpp
+  tests/settings-store-tests.cpp
   tests/bench-fs-helper.h
   src/ui/messages.h
   src/ui/column-formatter.cpp
@@ -230,6 +235,10 @@ add_executable(core-tests
   src/core/process-memory.h
   src/core/ring-logger.cpp
   src/core/ring-logger.h
+  src/core/settings-store.cpp
+  src/core/settings-store.h
+  src/core/text-utf.cpp
+  src/core/text-utf.h
   src/core/win32-fs-backend.cpp
   src/core/win32-fs-backend.h
 )

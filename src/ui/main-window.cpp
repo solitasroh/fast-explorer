@@ -11,6 +11,7 @@
 #include "core/fs-backend.h"
 #include "core/perf-tracker.h"
 #include "core/process-memory.h"
+#include "core/settings-store.h"
 #include "ui/column-formatter.h"
 #include "ui/dispinfo-histogram.h"
 #include "ui/dpi-scale.h"
@@ -176,13 +177,44 @@ bool registerClassOnce(HINSTANCE instance, const wchar_t* className, WNDPROC pro
 
 MainWindow::MainWindow(fast_explorer::core::ProcessMemoryService& memory,
                        fast_explorer::core::PerfTracker& perf) noexcept
-    : memory_(memory), perf_(perf) {}
+    : memory_(memory),
+      perf_(perf),
+      capturedState_(std::make_unique<fast_explorer::core::SessionState>()) {}
 
 MainWindow::~MainWindow() {
   if (hwnd_) {
     DestroyWindow(hwnd_);
     // hwnd_ is cleared in WM_NCDESTROY.
   }
+}
+
+void MainWindow::applyInitialState(
+    const fast_explorer::core::SessionState& state) {
+  if (hwnd_ == nullptr) {
+    return;
+  }
+  // All-or-nothing contract: any sentinel in the four placement
+  // fields falls back to the system default. The writer always emits
+  // all four together, so a partial-sentinel state can only arise
+  // from a hand-edited or forward-compat settings file.
+  if (state.windowX == fast_explorer::core::kSettingsUseDefault ||
+      state.windowY == fast_explorer::core::kSettingsUseDefault ||
+      state.windowWidth == fast_explorer::core::kSettingsUseDefault ||
+      state.windowHeight == fast_explorer::core::kSettingsUseDefault) {
+    return;
+  }
+  // Clamp to a sane minimum so a corrupted file cannot make the
+  // window invisible. The values themselves are then validated by
+  // SetWindowPos against the monitor work area.
+  const int w = std::max(state.windowWidth, 320);
+  const int h = std::max(state.windowHeight, 240);
+  SetWindowPos(hwnd_, nullptr, state.windowX, state.windowY, w, h,
+               SWP_NOZORDER | SWP_NOACTIVATE);
+}
+
+const fast_explorer::core::SessionState&
+MainWindow::capturedSessionState() const noexcept {
+  return *capturedState_;
 }
 
 bool MainWindow::openFolder(const std::wstring& path) {
@@ -353,9 +385,25 @@ LRESULT MainWindow::handleMessage(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPa
     case kWmFeEnumError:      return onEnumError(wParam, lParam);
     case kWmFeFsChange:       return onFsChange(hwnd);
     case WM_TIMER:            return onTimer(hwnd, msg, wParam, lParam);
-    case WM_DESTROY:
+    case WM_DESTROY: {
+      // GetWindowPlacement reports the restored rect even when the
+      // window is currently minimized, so a Ctrl+Z-as-minimize-and-
+      // close still records the visible position.
+      WINDOWPLACEMENT wp{};
+      wp.length = sizeof(wp);
+      if (GetWindowPlacement(hwnd, &wp)) {
+        const RECT& r = wp.rcNormalPosition;
+        capturedState_->windowX = r.left;
+        capturedState_->windowY = r.top;
+        capturedState_->windowWidth = r.right - r.left;
+        capturedState_->windowHeight = r.bottom - r.top;
+      }
+      if (pane_) {
+        capturedState_->lastPath = pane_->currentPath();
+      }
       PostQuitMessage(0);
       return 0;
+    }
     case WM_NCDESTROY:
       // Clear the registration so future low-memory events do not
       // PostMessage to a destroyed window. A notifier already

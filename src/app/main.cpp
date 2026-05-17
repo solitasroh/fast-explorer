@@ -12,6 +12,7 @@
 #include "core/perf-tracker.h"
 #include "core/process-memory.h"
 #include "core/ring-logger.h"
+#include "core/settings-store.h"
 #include "ui/dispinfo-histogram.h"
 #include "ui/main-window.h"
 #include "ui/messages.h"
@@ -181,8 +182,18 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance,
       icc.dwICC = ICC_LISTVIEW_CLASSES | ICC_BAR_CLASSES;
       InitCommonControlsEx(&icc);
 
+      const std::wstring settingsPath =
+          fast_explorer::core::defaultSettingsPath();
+      fast_explorer::core::SessionState initialState;
+      const bool settingsLoaded =
+          !settingsPath.empty() &&
+          fast_explorer::core::loadSessionState(settingsPath, initialState);
+      if (settingsLoaded) {
+        logger.info(L"settings loaded from %ls", settingsPath.c_str());
+      }
       fast_explorer::ui::MainWindow window(services.memory(), services.perf());
       if (window.create(instance, showCommand)) {
+        window.applyInitialState(initialState);
         ACCEL accels[] = {
             {static_cast<BYTE>(FCONTROL | FVIRTKEY), L'L',
              fast_explorer::ui::kAccelFocusAddress},
@@ -203,11 +214,19 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance,
         };
         HACCEL hAccel =
             CreateAcceleratorTableW(accels, static_cast<int>(std::size(accels)));
+        // --open takes priority over a persisted last_path so a
+        // diagnostic invocation does not silently land on the
+        // user's previous folder.
         if (!openPath.empty()) {
           if (!window.openFolder(openPath)) {
             logger.error(L"--open path invalid: %ls", openPath.c_str());
           } else {
             logger.info(L"--open: enumerating %ls", openPath.c_str());
+          }
+        } else if (!initialState.lastPath.empty()) {
+          if (!window.openFolder(initialState.lastPath)) {
+            logger.warn(L"session restore: last_path invalid (%ls)",
+                        initialState.lastPath.c_str());
           }
         }
         fast_explorer::ui::StallHistogram stallHistogram;
@@ -226,6 +245,12 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance,
         }
         if (hAccel) {
           DestroyAcceleratorTable(hAccel);
+        }
+        if (!settingsPath.empty()) {
+          if (!fast_explorer::core::saveSessionState(
+                  settingsPath, window.capturedSessionState())) {
+            logger.warn(L"settings save failed: %ls", settingsPath.c_str());
+          }
         }
       } else {
         logger.error(L"MainWindow::create failed (lastError=%lu)", GetLastError());
