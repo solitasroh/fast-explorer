@@ -10,8 +10,9 @@
 namespace fast_explorer::ui {
 
 PaneSortCoordinator::PaneSortCoordinator(
-    fast_explorer::core::FileModelStore& store, HWND hostWindow)
-    : store_(store), host_(hostWindow) {}
+    fast_explorer::core::FileModelStore& store, HWND hostWindow,
+    std::size_t paneIndex)
+    : store_(store), host_(hostWindow), paneIndex_(paneIndex) {}
 
 PaneSortCoordinator::~PaneSortCoordinator() = default;
 
@@ -52,8 +53,9 @@ SortDispatch PaneSortCoordinator::requestSort(
   const auto spec = sortSpec_;
   const HWND host = host_;
   const auto gen = store_.generation();
+  const std::size_t paneIdx = paneIndex_;
   pendingSortGen_ = gen;
-  sortWorker_ = std::jthread([this, host, spec, count, gen](
+  sortWorker_ = std::jthread([this, host, spec, count, gen, paneIdx](
                                  std::stop_token tok) {
     std::vector<std::uint32_t> order;
     order.resize(count);
@@ -73,7 +75,8 @@ SortDispatch PaneSortCoordinator::requestSort(
     }
     pendingSortedOrder_ = std::move(order);
     if (host) {
-      PostMessageW(host, kWmFeSortComplete, static_cast<WPARAM>(gen), 0);
+      PostMessageW(host, kWmFeSortComplete,
+                   makePaneWParam(paneIdx, gen), 0);
     }
   });
   return SortDispatch::Dispatched;

@@ -10,7 +10,8 @@ FsWatcher::~FsWatcher() {
   stop();
 }
 
-bool FsWatcher::watch(const std::wstring& path, HWND target, UINT message) {
+bool FsWatcher::watch(const std::wstring& path, HWND target, UINT message,
+                      std::size_t paneIndex) {
   stop();
 
   std::wstring internal;
@@ -36,6 +37,7 @@ bool FsWatcher::watch(const std::wstring& path, HWND target, UINT message) {
 
   target_ = target;
   message_ = message;
+  paneIndex_ = paneIndex;
   worker_ = std::jthread([this](std::stop_token tok) { workerLoop(tok); });
   return true;
 }
@@ -62,6 +64,7 @@ void FsWatcher::stop() noexcept {
   }
   target_ = nullptr;
   message_ = 0;
+  paneIndex_ = 0;
 }
 
 void FsWatcher::workerLoop(std::stop_token tok) {
@@ -100,7 +103,12 @@ void FsWatcher::workerLoop(std::stop_token tok) {
       break;
     }
     if (bytes > 0 && target_ != nullptr) {
-      PostMessageW(target_, message_, 0, 0);
+      // WPARAM packing mirrors ui/messages.h::makePaneWParam (low 32
+      // bits = generation = 0 for fs-change, high 8 bits at offset 32
+      // = paneIndex). Inlined here so the core/ layer does not depend
+      // on ui/.
+      const WPARAM wp = (static_cast<UINT_PTR>(paneIndex_ & 0xFFu) << 32);
+      PostMessageW(target_, message_, wp, 0);
     }
   }
 }

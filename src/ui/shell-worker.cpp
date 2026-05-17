@@ -157,8 +157,8 @@ bool performShellCreateFolder(const std::wstring& parentPath,
 
 }  // namespace
 
-ShellWorker::ShellWorker(HWND host)
-    : results_(host, kWmFeOperationResult),
+ShellWorker::ShellWorker(HWND host, std::size_t paneIndex)
+    : results_(host, kWmFeOperationResult, paneIndex),
       worker_([this](std::stop_token tok) { workerMain(tok); }) {}
 
 ShellWorker::~ShellWorker() {

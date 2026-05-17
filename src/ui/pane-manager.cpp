@@ -8,7 +8,7 @@ PaneManager::PaneManager() = default;
 PaneManager::~PaneManager() = default;
 
 std::size_t PaneManager::openInitial(HWND host) {
-  panes_.push_back(std::make_unique<PaneController>(host));
+  panes_.push_back(std::make_unique<PaneController>(host, 0));
   activeIndex_ = 0;
   return 0;
 }

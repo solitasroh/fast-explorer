@@ -3,6 +3,7 @@
 #include <windows.h>
 #include <commctrl.h>
 
+#include <cstddef>
 #include <memory>
 
 #include "core/file-entry.h"
@@ -18,7 +19,8 @@ class IconProvider;
 // kWmFeLowMemory message handling that mutates them.
 class IconCacheCoordinator {
  public:
-  IconCacheCoordinator(HWND host, HWND listView, unsigned int dpi);
+  IconCacheCoordinator(HWND host, HWND listView, unsigned int dpi,
+                       std::size_t paneIndex = 0);
   ~IconCacheCoordinator();
 
   IconCacheCoordinator(const IconCacheCoordinator&) = delete;

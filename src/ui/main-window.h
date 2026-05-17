@@ -88,6 +88,10 @@ class MainWindow {
 
   LRESULT handleListViewNotify(NMHDR* hdr);
   bool isStaleGeneration(WPARAM wParam) const;
+  // Decodes the pane index from `wParam` (packed via makePaneWParam)
+  // and returns the corresponding pane, or nullptr if the manager is
+  // not yet initialized or the index is out of range.
+  PaneController* paneForWParam(WPARAM wParam) const;
   void handleGetDispInfo(NMHDR* hdr);
   void handleGetDispInfoBody(NMHDR* hdr);
   void handleColumnClick(NMHDR* hdr);

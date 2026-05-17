@@ -25,7 +25,7 @@ namespace fast_explorer::ui {
 // delegate to it.
 class PaneController {
  public:
-  explicit PaneController(HWND hostWindow);
+  PaneController(HWND hostWindow, std::size_t paneIndex = 0);
   ~PaneController();
 
   PaneController(const PaneController&) = delete;
@@ -154,6 +154,7 @@ class PaneController {
     return store_;
   }
   HWND hostWindow() const noexcept { return hostWindow_; }
+  std::size_t paneIndex() const noexcept { return paneIndex_; }
 
  private:
   bool navigateInternal(const std::wstring& path);
@@ -170,6 +171,7 @@ class PaneController {
   // go away. sortCoord_ in turn joins its own sort worker before
   // releasing its reference to store_.
   HWND hostWindow_;
+  std::size_t paneIndex_;
   std::wstring currentPath_;
   std::vector<std::wstring> backStack_;
   std::vector<std::wstring> forwardStack_;

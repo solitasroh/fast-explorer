@@ -9,12 +9,13 @@
 namespace fast_explorer::ui {
 
 IconCacheCoordinator::IconCacheCoordinator(HWND host, HWND listView,
-                                           unsigned int dpi)
+                                           unsigned int dpi,
+                                           std::size_t paneIndex)
     : listView_(listView),
       dpi_(dpi),
       iconCache_(std::make_unique<IconCache>(dpi)),
       extensionCache_(std::make_unique<ExtensionIconCache>()),
-      iconProvider_(std::make_unique<IconProvider>(host)) {}
+      iconProvider_(std::make_unique<IconProvider>(host, paneIndex)) {}
 
 IconCacheCoordinator::~IconCacheCoordinator() = default;
 

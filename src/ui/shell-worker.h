@@ -59,7 +59,7 @@ struct OperationResult {
 // the host window via a coalesced kWmFeOperationResult.
 class ShellWorker {
  public:
-  explicit ShellWorker(HWND host);
+  ShellWorker(HWND host, std::size_t paneIndex = 0);
   ~ShellWorker();
 
   ShellWorker(const ShellWorker&) = delete;

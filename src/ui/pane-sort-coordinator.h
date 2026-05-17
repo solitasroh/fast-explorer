@@ -2,6 +2,7 @@
 
 #include <windows.h>
 
+#include <cstddef>
 #include <cstdint>
 #include <thread>
 #include <vector>
@@ -31,7 +32,8 @@ class PaneSortCoordinator {
   static constexpr std::uint32_t kDefaultSortThresholdRows = 2000;
 
   PaneSortCoordinator(fast_explorer::core::FileModelStore& store,
-                      HWND hostWindow);
+                      HWND hostWindow,
+                      std::size_t paneIndex = 0);
   ~PaneSortCoordinator();
 
   PaneSortCoordinator(const PaneSortCoordinator&) = delete;
@@ -76,6 +78,7 @@ class PaneSortCoordinator {
  private:
   fast_explorer::core::FileModelStore& store_;
   HWND host_;
+  std::size_t paneIndex_;
   fast_explorer::core::SortSpec sortSpec_{
       fast_explorer::core::SortKey::Name,
       fast_explorer::core::SortDirection::Ascending};

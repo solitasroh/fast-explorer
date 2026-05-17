@@ -2,6 +2,9 @@
 
 #include <windows.h>
 
+#include <cstddef>
+#include <cstdint>
+
 namespace fast_explorer::ui {
 
 // Window-message IDs marshalled from background workers to the UI
@@ -32,5 +35,26 @@ static_assert(kWmFeBase >= WM_APP,
               "WM_FE_* must live in the WM_APP user range");
 static_assert(kWmFeLowMemory <= 0xBFFFu,
               "WM_FE_* must not spill past the WM_APP user range");
+
+// WPARAM packing for multi-pane message routing. The low 32 bits hold
+// the pane's generation (existing contract, unchanged); the next 8
+// bits hold the pane index (0..255, more than enough for the M9
+// dual-horizontal layout that caps at 2). A WPARAM constructed
+// without these helpers (paneIndex 0 implicit) decodes safely as
+// pane 0, so legacy and pre-M9 senders interoperate.
+inline UINT_PTR makePaneWParam(std::size_t paneIndex,
+                               std::uint32_t generation) noexcept {
+  return (static_cast<UINT_PTR>(paneIndex & 0xFFu) << 32) |
+         static_cast<UINT_PTR>(generation);
+}
+
+inline std::size_t paneIndexFromWParam(WPARAM wp) noexcept {
+  return static_cast<std::size_t>(
+      (static_cast<UINT_PTR>(wp) >> 32) & 0xFFu);
+}
+
+inline std::uint32_t generationFromWParam(WPARAM wp) noexcept {
+  return static_cast<std::uint32_t>(static_cast<UINT_PTR>(wp));
+}
 
 }  // namespace fast_explorer::ui

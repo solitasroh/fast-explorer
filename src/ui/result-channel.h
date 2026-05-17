@@ -3,9 +3,12 @@
 #include <windows.h>
 
 #include <atomic>
+#include <cstddef>
 #include <mutex>
 #include <utility>
 #include <vector>
+
+#include "ui/messages.h"
 
 namespace fast_explorer::ui {
 
@@ -24,8 +27,8 @@ namespace fast_explorer::ui {
 template <class T>
 class ResultChannel {
  public:
-  ResultChannel(HWND host, UINT message) noexcept
-      : host_(host), message_(message) {}
+  ResultChannel(HWND host, UINT message, std::size_t paneIndex = 0) noexcept
+      : host_(host), message_(message), paneIndex_(paneIndex) {}
 
   ResultChannel(const ResultChannel&) = delete;
   ResultChannel& operator=(const ResultChannel&) = delete;
@@ -44,7 +47,7 @@ class ResultChannel {
     if (postPending_.compare_exchange_strong(expected, true,
                                              std::memory_order_acq_rel)) {
       if (host_ != nullptr) {
-        PostMessageW(host_, message_, 0, 0);
+        PostMessageW(host_, message_, makePaneWParam(paneIndex_, 0), 0);
       } else {
         postPending_.store(false, std::memory_order_release);
       }
@@ -68,6 +71,7 @@ class ResultChannel {
  private:
   HWND host_;
   UINT message_;
+  std::size_t paneIndex_;
   std::vector<T> ready_;
   mutable std::mutex mutex_;
   std::atomic<bool> postPending_{false};

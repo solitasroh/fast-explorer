@@ -33,7 +33,7 @@ namespace fast_explorer::ui {
 //   on completion without a private synchronization channel.
 class IconProvider {
  public:
-  explicit IconProvider(HWND host);
+  IconProvider(HWND host, std::size_t paneIndex = 0);
   ~IconProvider();
 
   IconProvider(const IconProvider&) = delete;

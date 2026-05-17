@@ -14,11 +14,12 @@
 
 namespace fast_explorer::ui {
 
-PaneController::PaneController(HWND hostWindow)
+PaneController::PaneController(HWND hostWindow, std::size_t paneIndex)
     : hostWindow_(hostWindow),
+      paneIndex_(paneIndex),
       store_(L""),
-      sortCoord_(store_, hostWindow),
-      shellWorker_(hostWindow) {}
+      sortCoord_(store_, hostWindow, paneIndex),
+      shellWorker_(hostWindow, paneIndex) {}
 
 PaneController::~PaneController() = default;
 
@@ -253,24 +254,26 @@ bool PaneController::navigateInternal(const std::wstring& path) {
   store_.reset(path);
   const uint32_t gen = store_.generation();
   const HWND host = hostWindow_;
+  const std::size_t paneIdx = paneIndex_;
   std::wstring localPath = path;
 
   // Order matters: workerActive_ must be true before the thread starts
   // appending, and the thread must clear it on exit (success, error,
   // or cancellation) so requestSort() can re-arm.
   workerActive_.store(true, std::memory_order_release);
-  worker_ = std::jthread([this, host, gen,
+  worker_ = std::jthread([this, host, gen, paneIdx,
                           localPath = std::move(localPath)](std::stop_token tok) {
     DirectoryEnumerator enumerator;
-    auto onBatch = [this, host, gen](std::size_t /*start*/,
-                                     std::size_t /*count*/) {
+    auto onBatch = [this, host, gen, paneIdx](std::size_t /*start*/,
+                                              std::size_t /*count*/) {
       // publish() before PostMessage so the UI thread that processes
       // kWmFeEnumBatch observes the matching entries on its acquire-
       // load of publishedCount().
       const auto count = static_cast<std::uint32_t>(store_.itemCount());
       store_.publish(count);
       if (host) {
-        PostMessageW(host, kWmFeEnumBatch, static_cast<WPARAM>(gen),
+        PostMessageW(host, kWmFeEnumBatch,
+                     makePaneWParam(paneIdx, gen),
                      static_cast<LPARAM>(count));
       }
     };
@@ -285,7 +288,7 @@ bool PaneController::navigateInternal(const std::wstring& path) {
                         err == EnumerationError::Canceled)
                            ? kWmFeEnumComplete
                            : kWmFeEnumError;
-      PostMessageW(host, msg, static_cast<WPARAM>(gen),
+      PostMessageW(host, msg, makePaneWParam(paneIdx, gen),
                    static_cast<LPARAM>(static_cast<int>(err)));
     }
     // Release-store after PostMessageW so any future worker-side
@@ -296,7 +299,7 @@ bool PaneController::navigateInternal(const std::wstring& path) {
   });
 
   if (host != nullptr) {
-    fsWatcher_.watch(path, host, kWmFeFsChange);
+    fsWatcher_.watch(path, host, kWmFeFsChange, paneIndex_);
   }
   return true;
 }

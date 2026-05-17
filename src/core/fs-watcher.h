@@ -2,6 +2,7 @@
 
 #include <windows.h>
 
+#include <cstddef>
 #include <string>
 #include <thread>
 
@@ -29,8 +30,11 @@ class FsWatcher {
   // ReadDirectoryChangesW failed); the watcher returns to the stopped
   // state on failure.  `path` must already be in the display form
   // accepted by core::toInternal (drive-letter root, no relative or
-  // UNC).
-  bool watch(const std::wstring& path, HWND target, UINT message);
+  // UNC). `paneIndex` is packed into the WPARAM of each emitted
+  // change notification so the host window can route it to the
+  // correct pane in multi-pane mode (default 0 = single-pane).
+  bool watch(const std::wstring& path, HWND target, UINT message,
+             std::size_t paneIndex = 0);
 
   // Cancels pending I/O, unblocks GetQueuedCompletionStatus, joins the
   // worker, closes the directory + IOCP handles.  Idempotent.
@@ -41,6 +45,7 @@ class FsWatcher {
 
   HWND target_ = nullptr;
   UINT message_ = 0;
+  std::size_t paneIndex_ = 0;
   HANDLE dirHandle_ = INVALID_HANDLE_VALUE;
   HANDLE iocp_ = nullptr;
   std::jthread worker_;

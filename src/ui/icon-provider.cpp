@@ -9,8 +9,8 @@
 
 namespace fast_explorer::ui {
 
-IconProvider::IconProvider(HWND host)
-    : results_(host, kWmFeIconBatch),
+IconProvider::IconProvider(HWND host, std::size_t paneIndex)
+    : results_(host, kWmFeIconBatch, paneIndex),
       worker_([this](std::stop_token tok) { workerMain(tok); }) {}
 
 IconProvider::~IconProvider() {

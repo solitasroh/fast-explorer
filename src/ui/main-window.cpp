@@ -238,7 +238,20 @@ bool MainWindow::openFolder(const std::wstring& path) {
 }
 
 bool MainWindow::isStaleGeneration(WPARAM wParam) const {
-  return !pane_ || static_cast<uint32_t>(wParam) != pane_->generation();
+  PaneController* target = paneForWParam(wParam);
+  return target == nullptr ||
+         generationFromWParam(wParam) != target->generation();
+}
+
+PaneController* MainWindow::paneForWParam(WPARAM wParam) const {
+  if (!paneManager_) {
+    return nullptr;
+  }
+  const std::size_t idx = paneIndexFromWParam(wParam);
+  if (idx >= paneManager_->count()) {
+    return nullptr;
+  }
+  return &paneManager_->at(idx);
 }
 
 LRESULT CALLBACK MainWindow::addressBarSubclassProc(
@@ -441,7 +454,7 @@ LRESULT MainWindow::onCreate(HWND hwnd) {
   pane_ = &paneManager_->active();
   formatCache_ = std::make_unique<FormatCache>();
   iconCoord_ = std::make_unique<IconCacheCoordinator>(
-      hwnd, listView_, GetDpiForWindow(hwnd));
+      hwnd, listView_, GetDpiForWindow(hwnd), 0);
   selectionSync_ = std::make_unique<SelectionSync>(listView_, *pane_);
   labelEdit_ = std::make_unique<LabelEditController>(listView_, *pane_);
   dispInfoHist_ = std::make_unique<DispInfoHistogram>();
@@ -613,13 +626,17 @@ LRESULT MainWindow::onEnumError(WPARAM wParam, LPARAM lParam) {
 }
 
 LRESULT MainWindow::onSortComplete(WPARAM wParam) {
-  if (!pane_ || listView_ == nullptr) {
+  if (listView_ == nullptr) {
     return 0;
   }
   if (isStaleGeneration(wParam)) {
     return 0;
   }
-  pane_->applyPendingSort(static_cast<std::uint32_t>(wParam));
+  PaneController* target = paneForWParam(wParam);
+  if (target == nullptr) {
+    return 0;
+  }
+  target->applyPendingSort(generationFromWParam(wParam));
   finalizeSortApply();
   return 0;
 }
