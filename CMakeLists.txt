@@ -157,6 +157,7 @@ add_executable(core-tests
   tests/perf-tracker-tests.cpp
   tests/bench-json-tests.cpp
   tests/dispinfo-histogram-tests.cpp
+  tests/process-memory-tests.cpp
   tests/bench-fs-helper.h
   src/ui/messages.h
   src/ui/column-formatter.cpp

@@ -117,9 +117,33 @@ void ProcessMemoryService::notifyMinimized() noexcept {
   }
 
   SetPriorityClass(GetCurrentProcess(), PROCESS_MODE_BACKGROUND_BEGIN);
-  if (EmptyWorkingSet(GetCurrentProcess())) {
-    logger_.info(L"working set emptied on minimize");
+  const std::uint64_t bytesBefore = workingSetBytes();
+  const LARGE_INTEGER t0 = qpcNow();
+  const BOOL emptied = EmptyWorkingSet(GetCurrentProcess());
+  const LARGE_INTEGER t1 = qpcNow();
+  const std::uint64_t bytesAfter = workingSetBytes();
+  if (emptied) {
+    const double micros = qpcMs(t0, t1) * 1000.0;  // ms→µs
+    EmptyWorkingSetProbe probe;
+    probe.callMicros = static_cast<std::uint64_t>(micros);
+    probe.bytesBefore = bytesBefore;
+    probe.bytesAfter = bytesAfter;
+    {
+      std::lock_guard lk(probeMutex_);
+      lastProbe_ = probe;
+    }
+    logger_.info(
+        L"EmptyWorkingSet: call=%llu us  before=%llu KB  after=%llu KB",
+        static_cast<unsigned long long>(probe.callMicros),
+        static_cast<unsigned long long>(probe.bytesBefore / 1024),
+        static_cast<unsigned long long>(probe.bytesAfter / 1024));
   }
+}
+
+ProcessMemoryService::EmptyWorkingSetProbe
+ProcessMemoryService::lastEmptyWorkingSetProbe() const noexcept {
+  std::lock_guard lk(probeMutex_);
+  return lastProbe_;
 }
 
 void ProcessMemoryService::notifyRestored() noexcept {

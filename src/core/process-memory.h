@@ -70,6 +70,18 @@ class ProcessMemoryService {
   static SIZE_T workingSetBytes() noexcept;
   static SIZE_T privateBytes() noexcept;
 
+  // Most recent EmptyWorkingSet probe data (zero if notifyMinimized
+  // has never run, or its throttle short-circuited the call).
+  // bytesTrimmed = pre-call workingSetBytes() minus post-call
+  // workingSetBytes(); call latency is measured around the actual
+  // EmptyWorkingSet syscall via QueryPerformanceCounter.
+  struct EmptyWorkingSetProbe {
+    std::uint64_t callMicros = 0;
+    std::uint64_t bytesBefore = 0;
+    std::uint64_t bytesAfter = 0;
+  };
+  EmptyWorkingSetProbe lastEmptyWorkingSetProbe() const noexcept;
+
  private:
   void notifierLoop();
 
@@ -81,6 +93,8 @@ class ProcessMemoryService {
   std::mutex callbackMutex_;
   LowMemoryCallback callback_;
   std::atomic<int64_t> lastEmptyTicks_{0};  // QPC ticks; throttles EmptyWorkingSet
+  mutable std::mutex probeMutex_;
+  EmptyWorkingSetProbe lastProbe_{};
   HANDLE notification_ = nullptr;
   HANDLE stopEvent_ = nullptr;
   std::thread notifier_;
