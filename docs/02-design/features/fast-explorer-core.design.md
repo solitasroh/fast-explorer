@@ -5,7 +5,7 @@
 > **Author**: Codex
 > **Created**: 2026-05-14
 > **Status**: Review
-> **Version**: 1.0.10
+> **Version**: 1.0.11
 > **Level**: Starter
 
 ---
@@ -25,6 +25,7 @@
 | 1.0.8 | 2026-05-15 | M5 완료 마크. §14.5에 4-key sort (CompareStringOrdinal IgnoreCase, name tiebreak), visibleOrder permutation, kMaxEntries reserve + publishedCount atomic (GETDISPINFO race 차단), 2,000행 threshold 동기/비동기 sort worker, raw-index stable selection (sort 전/후 동일 행 유지) 기재. 측정값 medium(10k) Name asc sort 2.75 ms (50 ms budget의 5.5%). 100k 분할 측정 + sort 명령 접수 latency 정량은 M7으로 defer. 298/298 unit tests pass. | Claude |
 | 1.0.9 | 2026-05-16 | M6 완료 마크 (icons + open file + IFileOperation 3개 verb). §14.6에 IconCache + ExtensionIconCache LRU + IconProvider STA worker + PostMessage coalescing + ShellExecuteExW open + ShellWorker STA + ComScope<T> RAII + IFileOperation rename/createFolder/recycleBinDelete 기재. Exit-criteria 표: icon delay와 OneDrive hydration은 SHGFI_USEFILEATTRIBUTES 사용으로 by-construction 만족, ImageList cap은 LRU bounded(258 KB ≪ 3 MB), OperationResult 구조화/IFileOperationProgressSink/low-memory shrink/crash dump portable mode는 M7으로 defer. 345/345 unit tests pass. | Claude |
 | 1.0.10 | 2026-05-16 | M6 UI 통합 잔여 5 atom (6a–6e) 완료 마크 → §14.6 Partial 제거. VK_DELETE/F2/Ctrl+Shift+N + LVS_EDITLABELS in-place rename + uniqueFolderLeaf("New folder (N)") + Windows Explorer 방식 create-then-edit 자동 진입. OperationResult 채널 (worker→PostMessage(kWmFeOperationResult)→drainShellResults→opResultStatusText) + 상태바 피드백. ImageList byte-count probe (`IconCache::byteSize`) + low-memory shrink (kWmFeLowMemory→`IconCache::swap`→`ListView_SetImageList`→destroy old→extensionCache clear→redraw). 부수 결과: atom 6d의 L2 review가 IconProvider/ShellWorker drainResults의 lost-result race window (worker push between swap and postPending clear) 적발 → 양쪽 `postPending_.store(false)`를 mutex 안으로 이동. §14.7에 carried-over deferred items 명시 (M2–M6 누적). 379/379 unit tests pass. | Claude |
+| 1.0.11 | 2026-05-17 | M8 R3-R5 doc reconciliation. §11.1 PerfTracker event 표를 shipped enum (6개)에 맞춰 재작성하고, M7 측정 인프라(StallHistogram + DispInfoHistogram + EmptyWorkingSetProbe + MemoryProbe + Bench JSON)가 sort/op/icon/stall/scroll/fs.watch point-event 약속을 histogram-based surface로 대체했음을 명시. PerfTracker point-event는 "phase boundary" 추적 (app/pane lifecycle 5개 + memory snapshot)에 집중하고, 분포·percentile·count 측정은 전용 histogram 컴포넌트로 분리하는 책임 분할을 §11.1.2로 추가. 코드 변경 없음 — design intent를 ship된 측정 surface에 정렬. | Claude |
 
 ## Related Documents
 
@@ -1028,36 +1029,47 @@ Design rules:
 
 ### 11.1 PerfTracker Events
 
-```text
-app.launch.start
-app.interactive
-pane.open.start
-pane.first_batch.visible
-pane.enumeration.complete
-pane.cancel.requested
-pane.cancel.observed
-sort.requested
-sort.complete
-icon.batch.requested
-icon.batch.applied
-ui.stall.detected
-ui.scroll.frame          # individual frame sample for p95
-op.start
-op.complete
-fs.watch.event
-```
+PerfTracker는 **phase boundary 시점 (app / pane / memory lifecycle)** 만 point-event로 기록합니다. 분포·percentile·count 측정 (UI stall, GETDISPINFO latency, working set 회복 시간 등)은 §11.1.2의 전용 histogram 컴포넌트가 담당합니다.
 
-Events include timestamp (QPC tick), pane id, generation id, path hash or sanitized path policy, item count, and duration when applicable.
+| EventId | 의미 | 발생 위치 |
+|---------|------|----------|
+| `AppLaunchStart` | 프로세스 진입 시각 | `WinMain` 진입 직후 |
+| `AppInteractive` | message loop 첫 idle | `MainWindow::onCreate` 완료 직후 |
+| `AppShutdownStart` | 종료 시퀀스 시작 | `WM_NCDESTROY` 핸들러 |
+| `PaneOpenStart` | 폴더 진입 시작 | `MainWindow::openFolder` 진입 |
+| `PaneFirstBatch` | 첫 visible batch 표시 | `kWmFeEnumBatch` 첫 도착 |
+| `MemoryProbe` | 메모리 스냅샷 sample site | 5개 site (launch / pane-open / first-batch / enum-complete / shutdown) |
 
-### 11.1.1 Measurement Backend
+Event payload는 timestamp (QPC tick) + 64-bit auxiliary (path hash / item count / memory bytes 등 EventId마다 정의된 의미)로 고정 24-byte 슬롯. 1만 슬롯 ring buffer (320 KB) + crash dump user-stream 첨부.
+
+### 11.1.2 Measurement Surface Split
+
+원래 §11.1 초안은 14개 point-event를 약속했으나, M7 구현 과정에서 **histogram + count surface**가 point-event보다 정확하고 cheap한 측정을 제공한다는 점이 확인되어 책임을 분할했습니다:
+
+| 측정 대상 | 원래 약속 (point-event) | 실제 ship된 surface | 위치 |
+|----------|------------------------|---------------------|------|
+| Pane enumeration 종료 | `pane.enumeration.complete` | `MemoryProbe` (enum-complete site) + `EnumerationBench` JSON | `bench/enumeration-bench.{h,cpp}` |
+| Pane cancellation | `pane.cancel.requested` / `pane.cancel.observed` | 3-layer cancellation 자체 (generation ID + stop_token + IFileOperation drop). 정량은 §14.4에서 N3로 carry-forward | `core/pane-controller.cpp` |
+| Sort 시작/종료 | `sort.requested` / `sort.complete` | `EnumerationBench` sort timing + `PaneSortCoordinator::hasSortApplied()` | `bench/enumeration-bench.cpp` |
+| Icon batch | `icon.batch.requested` / `icon.batch.applied` | `IconProvider::drainResults` + 결과 count (histogram 불필요, 큰 batch는 매우 드묾) | `ui/icon-provider.{h,cpp}` |
+| UI stall | `ui.stall.detected` | **`StallHistogram`** (7 버킷 dispatch latency aggregator, shutdown dump) | `ui/stall-probe.{h,cpp}` |
+| Scroll frame p95 | `ui.scroll.frame` | **`DispInfoHistogram`** (LVN_GETDISPINFO 호출당 latency, 50 µs 게이트 버킷) | `ui/dispinfo-histogram.{h,cpp}` |
+| File op 시작/종료 | `op.start` / `op.complete` | `ShellWorker::processed_` atomic counter + `OperationResult` 채널 | `ui/shell-worker.{h,cpp}` |
+| FS watch event | `fs.watch.event` | `FsWatcher` 디바운스 후 refresh 시그널 (개별 event는 시그널 수준에서만 의미, count는 fs-watcher tests에서 정량 검증) | `core/fs-watcher.{h,cpp}` |
+| Working set 회복 시간 | (M7 신규) | **`EmptyWorkingSetProbe`** (call latency + before/after bytes) | `core/process-memory.{h,cpp}` |
+| 100k working set / soak drift | (M7 신규) | `EnumerationBench::WorkingSetSamples` + 10-cycle drift 시계열 | `bench/enumeration-bench.cpp` |
+
+**책임 분할 원칙**: PerfTracker는 phase boundary 시점만 기록 (sparse, slot당 24 B). 분포·tail·count는 전용 histogram 컴포넌트가 ring 형식이 아닌 bucket 누적 + shutdown dump 형식으로 기록 (dense, percentile 계산 가능). 이 분할은 §11.6 Memory Telemetry 표와도 일관됩니다.
+
+### 11.1.3 Measurement Backend
 
 | Backend | Use | Decision |
 |---------|-----|----------|
-| `QueryPerformanceCounter` | 모든 timestamp, duration 계산 | **MVP 1차 백엔드.** sub-microsecond 정밀도. |
-| ETW custom provider | Windows Performance Analyzer / Windows Performance Recorder 분석 | **Stretch goal (M7 이후).** `TraceLoggingRegister` + ETW manifest 생성. |
-| `RDTSC` | per-callback budget 측정 (LVN_GETDISPINFO 50 µs) | 보조. QPC overhead보다 가벼움. CPU migration 주의. |
+| `QueryPerformanceCounter` | 모든 timestamp, duration 계산 | **MVP 1차 백엔드.** sub-microsecond 정밀도. PerfTracker, StallHistogram, DispInfoHistogram, EmptyWorkingSetProbe 공통 사용. |
+| ETW custom provider | Windows Performance Analyzer / Windows Performance Recorder 분석 | **Deferred (§17.3).** `TraceLoggingRegister` + ETW manifest 생성. M7 측정 인프라가 in-process 분석을 충분히 커버하여 우선순위 하향. |
+| `RDTSC` | per-callback budget 측정 (LVN_GETDISPINFO 50 µs) | **DispInfoHistogram에서 사용 안 함.** QPC가 충분히 가벼움이 M7 측정에서 확인 (호출당 ~10 ns 오버헤드, 50 µs gate의 0.02%). |
 
-In-process ring buffer (last 10,000 events) + 비동기 file dump on app close. Crash 시 `MiniDumpWriteDump` 콜백에서 ring buffer 함께 dump.
+PerfTracker는 in-process ring buffer (10,000 슬롯 = 320 KB) + 비동기 file dump on app close. Crash 시 `MiniDumpWriteDump` 콜백에서 ring buffer 함께 dump. Histogram 컴포넌트는 별도 ring 없이 bucket counter만 유지하고 shutdown 시점에 stdout dump.
 
 ### 11.2 Logging Backend
 
