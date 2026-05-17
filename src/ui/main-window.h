@@ -17,6 +17,7 @@ namespace fast_explorer::ui {
 class DispInfoHistogram;
 class LabelEditController;
 class PaneController;
+class PaneManager;
 class SelectionSync;
 
 class MainWindow {
@@ -119,7 +120,12 @@ class MainWindow {
   HWND statusBar_ = nullptr;
   HWND addressBar_ = nullptr;
   bool firstBatchSeen_ = false;
-  std::unique_ptr<PaneController> pane_;
+  std::unique_ptr<PaneManager> paneManager_;
+  // Cached pointer to the manager's currently active pane. Refreshed
+  // by onCreate (and by the active-pane switch handler in a later M9
+  // atom). Never owns; the PaneController itself is owned by
+  // paneManager_.
+  PaneController* pane_ = nullptr;
   std::unique_ptr<class FormatCache> formatCache_;
   std::unique_ptr<class IconCacheCoordinator> iconCoord_;
   std::unique_ptr<SelectionSync> selectionSync_;

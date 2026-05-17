@@ -56,6 +56,8 @@ set(FE_APP_SOURCES
   src/ui/shell-worker.h
   src/ui/pane-controller.cpp
   src/ui/pane-controller.h
+  src/ui/pane-manager.cpp
+  src/ui/pane-manager.h
   src/ui/pane-sort-coordinator.cpp
   src/ui/pane-sort-coordinator.h
   src/ui/result-channel.h
@@ -169,6 +171,7 @@ add_executable(core-tests
   tests/selection-sync-tests.cpp
   tests/label-edit-controller-tests.cpp
   tests/settings-store-tests.cpp
+  tests/pane-manager-tests.cpp
   tests/bench-fs-helper.h
   src/ui/messages.h
   src/ui/column-formatter.cpp
@@ -195,6 +198,8 @@ add_executable(core-tests
   src/ui/shell-worker.h
   src/ui/pane-controller.cpp
   src/ui/pane-controller.h
+  src/ui/pane-manager.cpp
+  src/ui/pane-manager.h
   src/ui/pane-sort-coordinator.cpp
   src/ui/pane-sort-coordinator.h
   src/ui/result-channel.h

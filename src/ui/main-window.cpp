@@ -21,6 +21,7 @@
 #include "ui/label-edit-controller.h"
 #include "ui/messages.h"
 #include "ui/pane-controller.h"
+#include "ui/pane-manager.h"
 #include "ui/selection-sync.h"
 #include "ui/status-text.h"
 
@@ -434,7 +435,9 @@ LRESULT MainWindow::onCreate(HWND hwnd) {
   if (addressBar_) {
     SetWindowSubclass(addressBar_, &MainWindow::addressBarSubclassProc, 0, 0);
   }
-  pane_ = std::make_unique<PaneController>(hwnd);
+  paneManager_ = std::make_unique<PaneManager>();
+  paneManager_->openInitial(hwnd);
+  pane_ = &paneManager_->active();
   formatCache_ = std::make_unique<FormatCache>();
   iconCoord_ = std::make_unique<IconCacheCoordinator>(
       hwnd, listView_, GetDpiForWindow(hwnd));
