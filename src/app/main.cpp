@@ -211,6 +211,14 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance,
              fast_explorer::ui::kAccelRename},
             {static_cast<BYTE>(FCONTROL | FSHIFT | FVIRTKEY), L'N',
              fast_explorer::ui::kAccelCreateFolder},
+            {static_cast<BYTE>(FCONTROL | FVIRTKEY), L'1',
+             fast_explorer::ui::kAccelLayoutSingle},
+            {static_cast<BYTE>(FCONTROL | FVIRTKEY), L'2',
+             fast_explorer::ui::kAccelLayoutDual},
+            {static_cast<BYTE>(FCONTROL | FVIRTKEY), L'H',
+             fast_explorer::ui::kAccelLayoutToggle},
+            {static_cast<BYTE>(FVIRTKEY), VK_TAB,
+             fast_explorer::ui::kAccelPaneSwitch},
         };
         HACCEL hAccel =
             CreateAcceleratorTableW(accels, static_cast<int>(std::size(accels)));

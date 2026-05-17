@@ -650,6 +650,26 @@ LRESULT MainWindow::onCommand(HWND hwnd, UINT msg, WPARAM wParam,
       case kAccelCreateFolder:
         if (auto* le = activeLabelEdit()) le->beginCreateSubfolder();
         return 0;
+      case kAccelLayoutSingle:
+        enterSingleMode();
+        return 0;
+      case kAccelLayoutDual:
+        enterDualMode();
+        return 0;
+      case kAccelLayoutToggle:
+        if (paneManager_ && paneManager_->isDual()) {
+          enterSingleMode();
+        } else {
+          enterDualMode();
+        }
+        return 0;
+      case kAccelPaneSwitch:
+        if (paneManager_ && paneManager_->isDual()) {
+          const std::size_t next =
+              (paneManager_->activeIndex() + 1) % paneManager_->count();
+          setActivePane(next);
+        }
+        return 0;
     }
     // Unknown accelerator id: swallow without calling DefWindowProc so
     // an unbound key does not produce a system beep.

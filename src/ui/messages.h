@@ -30,6 +30,10 @@ inline constexpr WORD kAccelRefresh       = 104;
 inline constexpr WORD kAccelDelete        = 105;
 inline constexpr WORD kAccelRename        = 106;
 inline constexpr WORD kAccelCreateFolder  = 107;
+inline constexpr WORD kAccelLayoutSingle  = 108;  // Ctrl+1
+inline constexpr WORD kAccelLayoutDual    = 109;  // Ctrl+2
+inline constexpr WORD kAccelLayoutToggle  = 110;  // Ctrl+H
+inline constexpr WORD kAccelPaneSwitch    = 111;  // Tab
 
 static_assert(kWmFeBase >= WM_APP,
               "WM_FE_* must live in the WM_APP user range");
