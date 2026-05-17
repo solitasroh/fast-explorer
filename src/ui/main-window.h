@@ -14,7 +14,9 @@ struct FileEntry;
 namespace fast_explorer::ui {
 
 class DispInfoHistogram;
+class LabelEditController;
 class PaneController;
+class SelectionSync;
 
 class MainWindow {
  public:
@@ -76,8 +78,6 @@ class MainWindow {
   void handleGetDispInfoBody(NMHDR* hdr);
   void handleColumnClick(NMHDR* hdr);
   void handleItemActivate(NMHDR* hdr);
-  void handleItemChanged(NMHDR* hdr);
-  void reapplySelectionFromPane();
   // Shared tail of every sort-apply path: refresh the column-header
   // arrow, repaint the selection, and force LVN_GETDISPINFO to fetch
   // cells in the new order. Used by both the synchronous click path
@@ -89,17 +89,6 @@ class MainWindow {
   // Bound to the Delete accelerator. No-op when the list has no
   // focused item.
   void deleteFocusedItem();
-  // Starts an in-place edit on the focused list-view row. Bound to
-  // the F2 accelerator. The actual rename is dispatched from
-  // handleEndLabelEdit when the user commits.
-  void beginRenameFocusedItem();
-  LRESULT handleBeginLabelEdit();
-  LRESULT handleEndLabelEdit(NMHDR* hdr);
-  // Bound to Ctrl+Shift+N. Queues the create, then sets
-  // pendingEditFolderName_ so the next onEnumComplete can start
-  // an in-place edit on the new row.
-  void beginCreateSubfolder();
-  void maybeStartPendingFolderEdit();
   static LRESULT CALLBACK addressBarSubclassProc(HWND, UINT, WPARAM, LPARAM,
                                                  UINT_PTR, DWORD_PTR);
 
@@ -117,19 +106,11 @@ class MainWindow {
   HWND statusBar_ = nullptr;
   HWND addressBar_ = nullptr;
   bool firstBatchSeen_ = false;
-  // Empty when no create is in flight. Cleared by the next
-  // onEnumComplete so a later unrelated refresh cannot trigger
-  // the auto-edit.
-  std::wstring pendingEditFolderName_;
-  // Reentrancy guard for our own SetItemState calls inside
-  // reapplySelectionFromPane(): the list-view fires LVN_ITEMCHANGED
-  // for every state change including the ones we drive, and routing
-  // those back into PaneController would clobber the selection we
-  // just restored.
-  bool reapplyingSelection_ = false;
   std::unique_ptr<PaneController> pane_;
   std::unique_ptr<class FormatCache> formatCache_;
   std::unique_ptr<class IconCacheCoordinator> iconCoord_;
+  std::unique_ptr<SelectionSync> selectionSync_;
+  std::unique_ptr<LabelEditController> labelEdit_;
   std::unique_ptr<class DispInfoHistogram> dispInfoHist_;
   std::uint64_t qpcFrequencyHz_ = 0;
 };

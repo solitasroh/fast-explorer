@@ -50,6 +50,8 @@ set(FE_APP_SOURCES
   src/ui/icon-provider.cpp
   src/ui/icon-provider.h
   src/ui/jthread-utils.h
+  src/ui/label-edit-controller.cpp
+  src/ui/label-edit-controller.h
   src/ui/shell-worker.cpp
   src/ui/shell-worker.h
   src/ui/pane-controller.cpp
@@ -57,6 +59,8 @@ set(FE_APP_SOURCES
   src/ui/pane-sort-coordinator.cpp
   src/ui/pane-sort-coordinator.h
   src/ui/result-channel.h
+  src/ui/selection-sync.cpp
+  src/ui/selection-sync.h
   src/ui/status-text.cpp
   src/ui/status-text.h
   src/ui/stall-probe.cpp
@@ -178,6 +182,8 @@ add_executable(core-tests
   src/ui/icon-provider.cpp
   src/ui/icon-provider.h
   src/ui/jthread-utils.h
+  src/ui/label-edit-controller.cpp
+  src/ui/label-edit-controller.h
   src/ui/shell-worker.cpp
   src/ui/shell-worker.h
   src/ui/pane-controller.cpp
@@ -185,6 +191,8 @@ add_executable(core-tests
   src/ui/pane-sort-coordinator.cpp
   src/ui/pane-sort-coordinator.h
   src/ui/result-channel.h
+  src/ui/selection-sync.cpp
+  src/ui/selection-sync.h
   src/ui/status-text.cpp
   src/ui/status-text.h
   src/ui/stall-probe.cpp

@@ -5,8 +5,6 @@
 #include <algorithm>
 #include <cstring>
 #include <iterator>
-#include <new>
-#include <span>
 
 #include "core/file-entry.h"
 #include "core/file-model-store.h"
@@ -16,12 +14,13 @@
 #include "ui/column-formatter.h"
 #include "ui/dispinfo-histogram.h"
 #include "ui/dpi-scale.h"
-#include "ui/folder-name.h"
 #include "ui/format-cache.h"
 #include "ui/icon-cache.h"
 #include "ui/icon-cache-coordinator.h"
+#include "ui/label-edit-controller.h"
 #include "ui/messages.h"
 #include "ui/pane-controller.h"
+#include "ui/selection-sync.h"
 #include "ui/status-text.h"
 
 namespace fast_explorer::ui {
@@ -30,22 +29,6 @@ namespace {
 
 constexpr UINT_PTR kTimerFsCoalesce = 1;
 constexpr UINT kFsCoalesceMs = 100;
-
-// RAII scope guard for the selection-reapply reentrancy flag. Ensures
-// the flag is cleared even if the LVIS_SELECTED reapply throws — a
-// C++ exception escaping through wndProc is undefined behavior on
-// Win32, so the catch block in reapplySelectionFromPane needs the
-// guard's destructor to run before the catch handler.
-class ScopedFlag {
- public:
-  explicit ScopedFlag(bool& flag) noexcept : flag_(flag) { flag_ = true; }
-  ~ScopedFlag() { flag_ = false; }
-  ScopedFlag(const ScopedFlag&) = delete;
-  ScopedFlag& operator=(const ScopedFlag&) = delete;
-
- private:
-  bool& flag_;
-};
 
 struct ColumnSpec {
   const wchar_t* title;
@@ -261,91 +244,6 @@ void MainWindow::deleteFocusedItem() {
   pane_->deleteItem(static_cast<std::uint32_t>(focused));
 }
 
-void MainWindow::beginRenameFocusedItem() {
-  if (!pane_ || listView_ == nullptr) {
-    return;
-  }
-  // Same accelerator-vs-focused-control rationale as deleteFocusedItem.
-  if (GetFocus() != listView_) {
-    return;
-  }
-  const int focused = ListView_GetNextItem(listView_, -1, LVNI_FOCUSED);
-  if (focused < 0) {
-    return;
-  }
-  ListView_EditLabel(listView_, focused);
-}
-
-LRESULT MainWindow::handleBeginLabelEdit() {
-  // Returning FALSE permits the in-place edit to proceed. The
-  // edit control is owned by the list-view and pre-filled via
-  // LVN_GETDISPINFO with the current entry name.
-  return FALSE;
-}
-
-void MainWindow::beginCreateSubfolder() {
-  if (!pane_ || pane_->currentPath().empty()) {
-    return;
-  }
-  const auto& store = pane_->store();
-  const std::uint32_t count = store.publishedCount();
-  std::vector<std::wstring_view> existing;
-  existing.reserve(count);
-  for (std::uint32_t i = 0; i < count; ++i) {
-    const auto& entry = store.visibleAt(i);
-    existing.emplace_back(entry.namePtr, entry.nameLength);
-  }
-  std::wstring leaf = uniqueFolderLeaf(existing, L"New folder");
-  if (!pane_->createSubfolder(leaf)) {
-    return;
-  }
-  pendingEditFolderName_ = std::move(leaf);
-}
-
-void MainWindow::maybeStartPendingFolderEdit() {
-  if (pendingEditFolderName_.empty() || !pane_ || listView_ == nullptr) {
-    return;
-  }
-  // Swap-then-clear so a delayed second onEnumComplete cannot
-  // retrigger the auto-edit even if any step below throws.
-  std::wstring target;
-  target.swap(pendingEditFolderName_);
-  const auto& store = pane_->store();
-  const std::uint32_t count = store.publishedCount();
-  for (std::uint32_t i = 0; i < count; ++i) {
-    const auto& entry = store.visibleAt(i);
-    if (std::wstring_view(entry.namePtr, entry.nameLength) == target) {
-      ListView_SetItemState(listView_, static_cast<int>(i),
-                            LVIS_FOCUSED | LVIS_SELECTED,
-                            LVIS_FOCUSED | LVIS_SELECTED);
-      // ListView_EditLabel requires the list-view to have focus.
-      SetFocus(listView_);
-      ListView_EditLabel(listView_, static_cast<int>(i));
-      return;
-    }
-  }
-}
-
-LRESULT MainWindow::handleEndLabelEdit(NMHDR* hdr) {
-  if (hdr == nullptr || !pane_) {
-    return FALSE;
-  }
-  auto* disp = reinterpret_cast<NMLVDISPINFOW*>(hdr);
-  // pszText is null when the user cancels with Escape.
-  if (disp->item.pszText == nullptr || disp->item.iItem < 0) {
-    return FALSE;
-  }
-  const std::wstring newName(disp->item.pszText);
-  if (newName.empty()) {
-    return FALSE;
-  }
-  pane_->renameItem(static_cast<std::uint32_t>(disp->item.iItem), newName);
-  // Always return FALSE under LVS_OWNERDATA: the list-view holds no
-  // text of its own, and the visible row will refresh once the
-  // watcher observes the on-disk rename and re-enumerates.
-  return FALSE;
-}
-
 void MainWindow::handleAddressCommit() {
   if (!addressBar_) {
     return;
@@ -487,6 +385,8 @@ LRESULT MainWindow::onCreate(HWND hwnd) {
   formatCache_ = std::make_unique<FormatCache>();
   iconCoord_ = std::make_unique<IconCacheCoordinator>(
       hwnd, listView_, GetDpiForWindow(hwnd));
+  selectionSync_ = std::make_unique<SelectionSync>(listView_, *pane_);
+  labelEdit_ = std::make_unique<LabelEditController>(listView_, *pane_);
   dispInfoHist_ = std::make_unique<DispInfoHistogram>();
   LARGE_INTEGER qpcFreq{};
   if (QueryPerformanceFrequency(&qpcFreq)) {
@@ -582,10 +482,10 @@ LRESULT MainWindow::onCommand(HWND hwnd, UINT msg, WPARAM wParam,
         deleteFocusedItem();
         return 0;
       case kAccelRename:
-        beginRenameFocusedItem();
+        if (labelEdit_) labelEdit_->beginRenameFocused();
         return 0;
       case kAccelCreateFolder:
-        beginCreateSubfolder();
+        if (labelEdit_) labelEdit_->beginCreateSubfolder();
         return 0;
     }
     // Unknown accelerator id: swallow without calling DefWindowProc so
@@ -635,7 +535,9 @@ LRESULT MainWindow::onEnumComplete(WPARAM wParam) {
   fast_explorer::core::recordMemoryProbe(perf_);
   const std::wstring text = readyStatusText(finalCount);
   setStatusText(text.c_str());
-  maybeStartPendingFolderEdit();
+  if (labelEdit_) {
+    labelEdit_->maybeStartPendingEdit();
+  }
   return 0;
 }
 
@@ -714,7 +616,9 @@ void MainWindow::finalizeSortApply() {
   const auto spec = pane_->currentSortSpec();
   updateSortIndicator(listView_, sortKeyToColumnIndex(spec.key),
                       spec.direction);
-  reapplySelectionFromPane();
+  if (selectionSync_) {
+    selectionSync_->reapplyFromPane();
+  }
   const int count = static_cast<int>(pane_->store().publishedCount());
   if (count > 0) {
     ListView_RedrawItems(listView_, 0, count - 1);
@@ -736,12 +640,12 @@ LRESULT MainWindow::handleListViewNotify(NMHDR* hdr) {
       handleItemActivate(hdr);
       return 0;
     case LVN_ITEMCHANGED:
-      handleItemChanged(hdr);
+      if (selectionSync_) selectionSync_->handleItemChanged(hdr);
       return 0;
     case LVN_BEGINLABELEDITW:
-      return handleBeginLabelEdit();
+      return labelEdit_ ? labelEdit_->handleBeginEdit() : FALSE;
     case LVN_ENDLABELEDITW:
-      return handleEndLabelEdit(hdr);
+      return labelEdit_ ? labelEdit_->handleEndEdit(hdr) : FALSE;
     case LVN_ODCACHEHINT:
     case LVN_ODSTATECHANGED:
       return 0;
@@ -845,70 +749,6 @@ void MainWindow::handleItemActivate(NMHDR* hdr) {
     return;
   }
   pane_->openItem(static_cast<std::uint32_t>(nmia->iItem));
-}
-
-void MainWindow::handleItemChanged(NMHDR* hdr) {
-  if (hdr == nullptr || !pane_ || reapplyingSelection_) {
-    return;
-  }
-  auto* nmlv = reinterpret_cast<NMLISTVIEW*>(hdr);
-  if ((nmlv->uChanged & LVIF_STATE) == 0) {
-    return;
-  }
-  if (nmlv->iItem < 0) {
-    // -1 is a list-wide change (LVS_OWNERDATA broadcast); we re-derive
-    // selection from the pane on the next reapplySelectionFromPane(),
-    // so nothing to track here.
-    return;
-  }
-  const auto row = static_cast<std::size_t>(nmlv->iItem);
-  const auto& store = pane_->store();
-  if (row >= store.publishedCount()) {
-    return;
-  }
-  const std::span<const std::uint32_t> order = store.visibleOrder();
-  if (row >= order.size()) {
-    return;
-  }
-  const std::uint32_t raw = order[row];
-  const bool wasSelected = (nmlv->uOldState & LVIS_SELECTED) != 0;
-  const bool isSelected = (nmlv->uNewState & LVIS_SELECTED) != 0;
-  if (wasSelected == isSelected) {
-    return;
-  }
-  // selectRaw / deselectRaw use unordered_set under the hood and
-  // therefore can throw bad_alloc; an uncaught C++ exception leaving
-  // the wndProc callstack is UB on Win32, so we swallow the
-  // synchronization miss — the next reapplySelectionFromPane()
-  // rebuilds list-view state from the pane model.
-  try {
-    if (isSelected) {
-      pane_->selectRaw(raw);
-    } else {
-      pane_->deselectRaw(raw);
-    }
-  } catch (const std::bad_alloc&) {
-  }
-}
-
-void MainWindow::reapplySelectionFromPane() {
-  if (!pane_ || listView_ == nullptr) {
-    return;
-  }
-  ScopedFlag guard(reapplyingSelection_);
-  // -1 broadcasts the state mask to every item; this clears the
-  // LVIS_SELECTED bit list-wide before we re-set it on the rows the
-  // pane says are still selected.
-  ListView_SetItemState(listView_, -1, 0, LVIS_SELECTED);
-  try {
-    for (int row : pane_->selectedRowsUnderCurrentOrder()) {
-      ListView_SetItemState(listView_, row, LVIS_SELECTED, LVIS_SELECTED);
-    }
-  } catch (const std::bad_alloc&) {
-    // Best-effort: the broadcast clear above leaves the list-view in
-    // a coherent "nothing selected" state, which is better than
-    // letting the exception cross the wndProc boundary.
-  }
 }
 
 void MainWindow::handleColumnClick(NMHDR* hdr) {
