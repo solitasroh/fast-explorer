@@ -5,6 +5,7 @@
 
 #include "bench/bench-cli.h"
 #include "bench/enumeration-bench.h"
+#include "bench/head-to-head-bench.h"
 
 namespace fast_explorer::bench {
 
@@ -25,5 +26,12 @@ MachineInfo captureMachineInfo() noexcept;
 std::string formatEnumerateBenchJson(const EnumerateArgs& args,
                                      const EnumerationBenchResult& result,
                                      const MachineInfo& machine);
+
+// Same envelope as formatEnumerateBenchJson but carries the two
+// per-method run vectors + the relative speed delta produced by
+// runHeadToHeadBench.
+std::string formatHeadToHeadBenchJson(const HeadToHeadArgs& args,
+                                      const HeadToHeadResult& result,
+                                      const MachineInfo& machine);
 
 }  // namespace fast_explorer::bench

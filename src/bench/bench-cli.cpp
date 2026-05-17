@@ -262,9 +262,46 @@ bool parseEnumerateArgs(int argc, const wchar_t* const* argv,
 
 bool parseHeadToHeadArgs(int argc, const wchar_t* const* argv,
                          ParsedCommand& result) {
-  return parsePathAndRunsArgs(argc, argv, result, L"head-to-head",
-                              result.headToHead.path,
-                              result.headToHead.runs);
+  bool gotPath = false;
+  for (int i = 2; i < argc; ++i) {
+    const OptionToken tok = readOption(argc, argv, &i, result);
+    if (!tok.ok) {
+      return false;
+    }
+    if (tok.name == L"path") {
+      if (tok.value.empty()) {
+        setUsageError(result, L"--path cannot be empty");
+        return false;
+      }
+      result.headToHead.path.assign(tok.value);
+      gotPath = true;
+    } else if (tok.name == L"runs") {
+      int runs = 0;
+      if (!parseRangedInt(tok.value, 1, 10000, runs)) {
+        setUsageError(result, L"invalid --runs value (1..10000): ", tok.value);
+        return false;
+      }
+      result.headToHead.runs = runs;
+    } else if (tok.name == L"format") {
+      if (tok.value == L"text") {
+        result.headToHead.format = OutputFormat::Text;
+      } else if (tok.value == L"json") {
+        result.headToHead.format = OutputFormat::Json;
+      } else {
+        setUsageError(result, L"invalid --format value (text|json): ",
+                      tok.value);
+        return false;
+      }
+    } else {
+      setUsageError(result, L"unknown option for head-to-head: --", tok.name);
+      return false;
+    }
+  }
+  if (!gotPath) {
+    setUsageError(result, L"head-to-head requires --path");
+    return false;
+  }
+  return true;
 }
 
 int runGenerate(const GenerateArgs& args, std::FILE* out, std::FILE* err) {
@@ -299,8 +336,6 @@ void printMethodBlock(std::FILE* out, const wchar_t* label,
 }
 
 int runHeadToHead(const HeadToHeadArgs& args, std::FILE* out, std::FILE* err) {
-  std::fwprintf(out, L"head-to-head path=%ls runs=%d\n", args.path.c_str(),
-                args.runs);
   const HeadToHeadResult r = runHeadToHeadBench(args.path, args.runs);
   if (r.error != EnumerationBenchError::None) {
     std::fwprintf(err, L"head-to-head failed: %ls (%ls)\n",
@@ -308,6 +343,23 @@ int runHeadToHead(const HeadToHeadArgs& args, std::FILE* out, std::FILE* err) {
                   r.errorDetail.empty() ? L"" : r.errorDetail.c_str());
     return kExitFailure;
   }
+  if (args.format == OutputFormat::Json) {
+    const MachineInfo machine = captureMachineInfo();
+    const std::string json = formatHeadToHeadBenchJson(args, r, machine);
+    const int needed = MultiByteToWideChar(CP_UTF8, 0, json.data(),
+                                           static_cast<int>(json.size()),
+                                           nullptr, 0);
+    if (needed > 0) {
+      std::wstring wide(static_cast<std::size_t>(needed), L'\0');
+      MultiByteToWideChar(CP_UTF8, 0, json.data(),
+                          static_cast<int>(json.size()), wide.data(), needed);
+      std::fputws(wide.c_str(), out);
+      std::fputwc(L'\n', out);
+    }
+    return kExitOk;
+  }
+  std::fwprintf(out, L"head-to-head path=%ls runs=%d\n", args.path.c_str(),
+                args.runs);
   printMethodBlock(out, L"FindFirstFileExW", r.findRuns, r.findMedianUs,
                    r.findP95Us);
   printMethodBlock(out, L"GetFileInformationByHandleEx", r.gfibheRuns,

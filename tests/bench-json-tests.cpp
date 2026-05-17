@@ -6,6 +6,7 @@
 #include "bench/bench-cli.h"
 #include "bench/bench-json.h"
 #include "bench/enumeration-bench.h"
+#include "bench/head-to-head-bench.h"
 
 using fast_explorer::bench::captureMachineInfo;
 using fast_explorer::bench::EnumerateArgs;
@@ -13,6 +14,9 @@ using fast_explorer::bench::EnumerationBenchError;
 using fast_explorer::bench::EnumerationBenchResult;
 using fast_explorer::bench::EnumerationRun;
 using fast_explorer::bench::formatEnumerateBenchJson;
+using fast_explorer::bench::formatHeadToHeadBenchJson;
+using fast_explorer::bench::HeadToHeadArgs;
+using fast_explorer::bench::HeadToHeadResult;
 using fast_explorer::bench::MachineInfo;
 
 namespace {
@@ -80,6 +84,39 @@ FE_TEST_CASE(BenchJson_FormatEnumerate_HasAllTopLevelKeys) {
     else if (c == '}') ++close;
   }
   FE_ASSERT_EQ(open, close);
+}
+
+FE_TEST_CASE(BenchJson_HeadToHead_HasMethodsAndDelta) {
+  HeadToHeadArgs args;
+  args.path = L"C:\\tmp\\sample";
+  args.runs = 3;
+  HeadToHeadResult r;
+  r.findMedianUs = 1000;
+  r.findP95Us = 1500;
+  r.gfibheMedianUs = 1600;
+  r.gfibheP95Us = 2000;
+  r.gfibhePercentFasterX100 = -3750;  // gfibhe 37.50% slower → find faster
+  r.findRuns.push_back(EnumerationRun{1000, 100});
+  r.gfibheRuns.push_back(EnumerationRun{1600, 100});
+
+  MachineInfo m;
+  m.architecture = "x64";
+  m.processorCount = 8;
+  m.pageSize = 4096;
+  m.osMajor = 10;
+
+  const std::string json = formatHeadToHeadBenchJson(args, r, m);
+  FE_ASSERT_TRUE(json.find("\"machine\":") != std::string::npos);
+  FE_ASSERT_TRUE(json.find("\"methods\":") != std::string::npos);
+  FE_ASSERT_TRUE(json.find("\"find_first_file_ex_w\":") != std::string::npos);
+  FE_ASSERT_TRUE(json.find("\"get_file_information_by_handle_ex\":") !=
+                 std::string::npos);
+  FE_ASSERT_TRUE(json.find("\"delta\":") != std::string::npos);
+  FE_ASSERT_TRUE(json.find("\"gfibhe_percent_faster_x100\":-3750") !=
+                 std::string::npos);
+  FE_ASSERT_TRUE(json.find("\"median_us\":1000") != std::string::npos);
+  FE_ASSERT_TRUE(json.find("\"median_us\":1600") != std::string::npos);
+  FE_ASSERT_TRUE(!json.empty() && json.back() == '}');
 }
 
 FE_TEST_CASE(BenchJson_PathEscaping_QuotesAndBackslashes) {

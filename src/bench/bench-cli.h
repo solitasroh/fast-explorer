@@ -47,6 +47,7 @@ struct EnumerateArgs {
 struct HeadToHeadArgs {
   std::wstring path;
   int runs = 5;
+  OutputFormat format = OutputFormat::Text;
 };
 
 struct ParsedCommand {

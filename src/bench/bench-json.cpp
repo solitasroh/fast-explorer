@@ -202,4 +202,77 @@ std::string formatEnumerateBenchJson(const EnumerateArgs& args,
   return out;
 }
 
+namespace {
+
+void appendRunArray(std::string& out,
+                    const std::vector<EnumerationRun>& runs) {
+  out.append("[");
+  for (std::size_t i = 0; i < runs.size(); ++i) {
+    if (i > 0) out.append(",");
+    out.append("{\"microseconds\":");
+    appendU64(out, runs[i].microseconds);
+    out.append(",\"entries\":");
+    appendU64(out, runs[i].entriesObserved);
+    out.append("}");
+  }
+  out.append("]");
+}
+
+}  // namespace
+
+std::string formatHeadToHeadBenchJson(const HeadToHeadArgs& args,
+                                      const HeadToHeadResult& result,
+                                      const MachineInfo& machine) {
+  std::string out;
+  out.reserve(1024);
+  out.append("{");
+
+  // machine block
+  out.append("\"machine\":{\"architecture\":");
+  appendEscapedJsonString(out, machine.architecture);
+  out.append(",\"processor_count\":");
+  appendU32(out, machine.processorCount);
+  out.append(",\"page_size\":");
+  appendU32(out, machine.pageSize);
+  out.append(",\"os\":{\"major\":");
+  appendU32(out, machine.osMajor);
+  out.append(",\"minor\":");
+  appendU32(out, machine.osMinor);
+  out.append(",\"build\":");
+  appendU32(out, machine.osBuild);
+  out.append("}}");
+
+  // args
+  out.append(",\"args\":{\"path\":");
+  appendEscapedJsonString(out, wideToUtf8(args.path));
+  out.append(",\"runs\":");
+  appendU32(out, static_cast<std::uint32_t>(args.runs));
+  out.append("}");
+
+  // methods
+  out.append(",\"methods\":{\"find_first_file_ex_w\":{\"median_us\":");
+  appendU64(out, result.findMedianUs);
+  out.append(",\"p95_us\":");
+  appendU64(out, result.findP95Us);
+  out.append(",\"runs\":");
+  appendRunArray(out, result.findRuns);
+  out.append("},\"get_file_information_by_handle_ex\":{\"median_us\":");
+  appendU64(out, result.gfibheMedianUs);
+  out.append(",\"p95_us\":");
+  appendU64(out, result.gfibheP95Us);
+  out.append(",\"runs\":");
+  appendRunArray(out, result.gfibheRuns);
+  out.append("}}");
+
+  // delta
+  out.append(",\"delta\":{\"gfibhe_percent_faster_x100\":");
+  char buf[32];
+  std::snprintf(buf, sizeof(buf), "%d", result.gfibhePercentFasterX100);
+  out.append(buf);
+  out.append("}");
+
+  out.append("}");
+  return out;
+}
+
 }  // namespace fast_explorer::bench
