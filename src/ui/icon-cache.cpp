@@ -14,9 +14,11 @@ namespace {
 // the list-view's small-icon metric.
 HICON loadPlaceholderIcon(DWORD fileAttributes) noexcept {
   SHFILEINFOW sfi{};
-  // The sentinel path is not required to exist under
-  // SHGFI_USEFILEATTRIBUTES; any well-formed Win32 path syntax works.
-  const wchar_t* sentinel = L"C:\\";
+  // Sentinel must not look like a drive root (e.g. "C:\\") — the shell
+  // pattern-matches drive roots to the system-drive volume icon (Windows
+  // logo overlay) even under SHGFI_USEFILEATTRIBUTES. A bare relative
+  // name yields the generic folder/file icon from the attribute mask.
+  const wchar_t* sentinel = L"x";
   const UINT flags = SHGFI_ICON | SHGFI_SMALLICON | SHGFI_USEFILEATTRIBUTES;
   if (SHGetFileInfoW(sentinel, fileAttributes, &sfi, sizeof(sfi), flags) == 0) {
     return nullptr;
