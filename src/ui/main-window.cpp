@@ -21,6 +21,7 @@
 #include "ui/label-edit-controller.h"
 #include "ui/messages.h"
 #include "ui/pane-controller.h"
+#include "ui/pane-layout.h"
 #include "ui/pane-manager.h"
 #include "ui/selection-sync.h"
 #include "ui/status-text.h"
@@ -498,8 +499,12 @@ LRESULT MainWindow::onSize(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
       SetWindowPos(addressBar_, nullptr, 0, 0, clientW, addressH,
                    SWP_NOZORDER | SWP_NOACTIVATE);
     }
-    const int listH = std::max<int>(0, clientH - statusH - addressH);
-    SetWindowPos(listView_, nullptr, 0, addressH, clientW, listH,
+    const std::size_t paneCount = paneManager_ ? paneManager_->count() : 1;
+    const auto rects = computePaneRects(clientW, clientH, addressH, statusH,
+                                        paneCount);
+    const RECT& left = rects.panes[0];
+    SetWindowPos(listView_, nullptr, left.left, left.top,
+                 left.right - left.left, left.bottom - left.top,
                  SWP_NOZORDER | SWP_NOACTIVATE);
   }
   if (wParam == SIZE_MINIMIZED) {
