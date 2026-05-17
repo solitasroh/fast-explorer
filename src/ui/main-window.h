@@ -48,8 +48,11 @@ class MainWindow {
   // Creates the second pane (list-view + PaneController + per-pane
   // coordinators) and triggers a layout refresh. No-op when already
   // in dual mode. Does not change the active pane — the caller
-  // decides whether the new pane gets focus.
-  void enterDualMode();
+  // decides whether the new pane gets focus. The second pane opens
+  // on `secondPath` when non-empty; otherwise it falls back to the
+  // active pane's current folder so a manual Ctrl+2 lands on the
+  // working location rather than an empty list.
+  void enterDualMode(const std::wstring& secondPath = {});
 
   // Destroys the second pane (releases its coordinators, removes the
   // PaneController, destroys the second list-view) and triggers a
@@ -67,6 +70,13 @@ class MainWindow {
   // the slot for a first run or a corrupted settings file. No-op when
   // the window has not been created yet.
   void applyInitialState(const fast_explorer::core::SessionState& state);
+
+  // Restores the persisted pane layout (Single/Dual) and the second-
+  // pane folder from a prior session. Must run after the active pane
+  // has been opened on lastPath so the fallback "open pane 1 on pane
+  // 0's folder" yields a meaningful path. No-op for Single layout.
+  void restoreLayoutFromSession(
+      const fast_explorer::core::SessionState& state);
 
   // The session state observed at WM_DESTROY: pane's current path +
   // restored window rect (via GetWindowPlacement so a minimized

@@ -4,11 +4,25 @@
 
 #include <cstddef>
 #include <memory>
+#include <string>
 #include <vector>
 
 namespace fast_explorer::ui {
 
 class PaneController;
+
+// Resolves the initial folder for a freshly-opened second pane.
+// `requested` is the session-restored path (empty when there is no
+// persisted second_path or when the user hit Ctrl+2 fresh). The
+// fallback is the active pane's current folder so a manual Ctrl+2
+// lands on the user's working location instead of an empty list.
+// Returns a reference into one of the inputs so noexcept is honest
+// (no allocation); the caller keeps the chosen source alive while
+// the reference is used.
+[[nodiscard]] inline const std::wstring& chooseSecondPaneInitialPath(
+    const std::wstring& requested, const std::wstring& fallback) noexcept {
+  return requested.empty() ? fallback : requested;
+}
 
 // Owns one or more PaneControllers and tracks which one accelerators
 // currently target. Skeleton ships single-pane only — atom 1 of the

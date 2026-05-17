@@ -4,6 +4,7 @@
 #include "ui/pane-controller.h"
 #include "ui/pane-manager.h"
 
+using fast_explorer::ui::chooseSecondPaneInitialPath;
 using fast_explorer::ui::PaneController;
 using fast_explorer::ui::PaneManager;
 
@@ -90,4 +91,24 @@ FE_TEST_CASE(PaneManager_SetActive_DualMode_SwitchesBetweenPanes) {
   FE_ASSERT_TRUE(&pm.active() == &pm.at(1));
   FE_ASSERT_TRUE(pm.setActive(0));
   FE_ASSERT_EQ(pm.activeIndex(), static_cast<std::size_t>(0));
+}
+
+FE_TEST_CASE(ChooseSecondPaneInitialPath_RequestedNonEmpty_TakesPrecedence) {
+  const std::wstring requested = L"D:\\saved";
+  const std::wstring fallback  = L"C:\\active";
+  FE_ASSERT_WSTREQ(chooseSecondPaneInitialPath(requested, fallback),
+                   requested);
+}
+
+FE_TEST_CASE(ChooseSecondPaneInitialPath_RequestedEmpty_UsesFallback) {
+  const std::wstring requested;
+  const std::wstring fallback = L"C:\\active";
+  FE_ASSERT_WSTREQ(chooseSecondPaneInitialPath(requested, fallback),
+                   fallback);
+}
+
+FE_TEST_CASE(ChooseSecondPaneInitialPath_BothEmpty_ReturnsEmpty) {
+  const std::wstring requested;
+  const std::wstring fallback;
+  FE_ASSERT_TRUE(chooseSecondPaneInitialPath(requested, fallback).empty());
 }

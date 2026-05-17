@@ -237,6 +237,10 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance,
                         initialState.lastPath.c_str());
           }
         }
+        // Layout restore runs after lastPath is open so the second
+        // pane's fallback ("open on active pane's folder" when no
+        // secondPath was persisted) lands on a meaningful location.
+        window.restoreLayoutFromSession(initialState);
         fast_explorer::ui::StallHistogram stallHistogram;
         exitCode = runMessageLoop(services.perf(), logger, stallHistogram,
                                   window.handle(), hAccel);

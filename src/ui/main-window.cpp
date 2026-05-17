@@ -231,13 +231,17 @@ void MainWindow::relayout() {
   onSize(hwnd_, WM_SIZE, SIZE_RESTORED, lp);
 }
 
-void MainWindow::enterDualMode() {
+void MainWindow::enterDualMode(const std::wstring& secondPath) {
   if (hwnd_ == nullptr || !paneManager_) {
     return;
   }
   if (paneManager_->isDual()) {
     return;
   }
+  // Capture the fallback before openSecond so the read is obviously
+  // independent of any PaneManager mutation.
+  const std::wstring fallback =
+      pane_ ? pane_->currentPath() : std::wstring();
   HWND second = createListView(hwnd_, instance_);
   if (second == nullptr) {
     return;
@@ -257,6 +261,14 @@ void MainWindow::enterDualMode() {
     DestroyWindow(second);
     listViews_[1] = nullptr;
     return;
+  }
+  const std::wstring& openIn =
+      chooseSecondPaneInitialPath(secondPath, fallback);
+  if (!openIn.empty()) {
+    // Best-effort: an invalid persisted path (deleted folder) leaves
+    // the second pane empty rather than failing the whole dual-mode
+    // entry — the user can still navigate via Ctrl+L or Alt+Up.
+    paneManager_->at(1).openFolder(openIn);
   }
   relayout();
 }
@@ -318,6 +330,13 @@ void MainWindow::applyInitialState(
   const int h = std::max(state.windowHeight, 240);
   SetWindowPos(hwnd_, nullptr, state.windowX, state.windowY, w, h,
                SWP_NOZORDER | SWP_NOACTIVATE);
+}
+
+void MainWindow::restoreLayoutFromSession(
+    const fast_explorer::core::SessionState& state) {
+  if (state.layoutMode == fast_explorer::core::LayoutMode::Dual) {
+    enterDualMode(state.secondPath);
+  }
 }
 
 const fast_explorer::core::SessionState&
@@ -533,6 +552,15 @@ LRESULT MainWindow::handleMessage(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPa
       }
       if (pane_) {
         capturedState_->lastPath = pane_->currentPath();
+      }
+      if (paneManager_) {
+        const bool dual = paneManager_->isDual();
+        capturedState_->layoutMode = dual
+            ? fast_explorer::core::LayoutMode::Dual
+            : fast_explorer::core::LayoutMode::Single;
+        capturedState_->secondPath = dual
+            ? paneManager_->at(1).currentPath()
+            : std::wstring();
       }
       PostQuitMessage(0);
       return 0;
