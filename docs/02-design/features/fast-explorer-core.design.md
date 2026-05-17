@@ -1510,7 +1510,7 @@ Exit criteria:
 - **Multi-pane soak: dual nav 50회 누적 working set Δ ≤ 10 MB**
 - `EmptyWorkingSet` 호출 후 working set 회복 ≤ 200 ms 검증 — ProcessMemoryService now brackets the EmptyWorkingSet syscall with QPC and publishes an `EmptyWorkingSetProbe { callMicros, bytesBefore, bytesAfter }` envelope via `lastEmptyWorkingSetProbe()` (2026-05-17). The probe is also logged on every notifyMinimized so any session that minimized leaves a `call=N us  before=N KB  after=N KB` trace. The 200 ms gate is on full working-set restoration after notifyRestored (touching pages back in), which requires the UI automation harness to drive minimize→restore→activity cycles — that quantitative pass remains a follow-up; the call-latency half is now observable.
 - Low-memory notification 시 caches drop 검증 (quantitative; the path is implemented in M6)
-- 1-hour soak: crash 0, memory leak 0
+- 1-hour soak: crash 0, memory leak 0 — manual checklist at `docs/02-design/runbooks/m7-1hour-soak-checklist.md` (2026-05-17). Specifies the 60-minute interactive run schedule, the per-criterion pass/fail bar (crash, working-set drift ≤ 5 MB, stall histogram ≥500ms bucket = 0, GETDISPINFO p99 ≤ 50 µs, EmptyWorkingSet call < 200 ms), and the result-recording protocol. The checklist is the interim measurement protocol until UI automation lands.
 - design performance gates can be measured
 - Check phase gap analysis can compare implementation to this document
 
