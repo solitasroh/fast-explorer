@@ -13,6 +13,30 @@ std::size_t PaneManager::openInitial(HWND host) {
   return 0;
 }
 
+std::size_t PaneManager::openSecond(HWND host) {
+  if (panes_.size() >= 2) {
+    return 1;
+  }
+  panes_.push_back(std::make_unique<PaneController>(host, 1));
+  return 1;
+}
+
+void PaneManager::closeSecond() {
+  if (panes_.size() <= 1) {
+    return;
+  }
+  panes_.pop_back();
+  activeIndex_ = 0;
+}
+
+bool PaneManager::setActive(std::size_t idx) noexcept {
+  if (idx >= panes_.size()) {
+    return false;
+  }
+  activeIndex_ = idx;
+  return true;
+}
+
 bool PaneManager::isDual() const noexcept {
   return panes_.size() > 1;
 }

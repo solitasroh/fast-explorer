@@ -190,6 +190,73 @@ MainWindow::~MainWindow() {
   }
 }
 
+void MainWindow::enterDualMode() {
+  if (hwnd_ == nullptr || !paneManager_) {
+    return;
+  }
+  if (paneManager_->isDual()) {
+    return;
+  }
+  HWND second = createListView(hwnd_, instance_);
+  if (second == nullptr) {
+    return;
+  }
+  if (!addColumns(second, GetDpiForWindow(hwnd_))) {
+    DestroyWindow(second);
+    return;
+  }
+  ListView_SetItemCountEx(second, 0, 0);
+  listViews_[1] = second;
+  paneManager_->openSecond(hwnd_);
+  PaneController& secondPane = paneManager_->at(1);
+  iconCoords_[1] = std::make_unique<IconCacheCoordinator>(
+      hwnd_, second, GetDpiForWindow(hwnd_), 1);
+  if (iconCoords_[1] && iconCoords_[1]->ok()) {
+    ListView_SetImageList(second, iconCoords_[1]->imageListHandle(),
+                          LVSIL_SMALL);
+  }
+  selectionSyncs_[1] = std::make_unique<SelectionSync>(second, secondPane);
+  labelEdits_[1] = std::make_unique<LabelEditController>(second, secondPane);
+  // Force the layout to recompute so the existing list-view shrinks
+  // to the left half and the new one fills the right half.
+  PostMessageW(hwnd_, WM_SIZE, SIZE_RESTORED, 0);
+}
+
+void MainWindow::enterSingleMode() {
+  if (hwnd_ == nullptr || !paneManager_ || !paneManager_->isDual()) {
+    return;
+  }
+  // Release per-pane coordinators first so the second pane's worker
+  // threads (icon STA, shell STA) join before we tear down the
+  // PaneController they reference.
+  labelEdits_[1].reset();
+  selectionSyncs_[1].reset();
+  iconCoords_[1].reset();
+  paneManager_->closeSecond();
+  pane_ = &paneManager_->active();
+  if (listViews_[1] != nullptr) {
+    DestroyWindow(listViews_[1]);
+    listViews_[1] = nullptr;
+  }
+  PostMessageW(hwnd_, WM_SIZE, SIZE_RESTORED, 0);
+}
+
+void MainWindow::setActivePane(std::size_t idx) {
+  if (!paneManager_ || !paneManager_->setActive(idx)) {
+    return;
+  }
+  pane_ = &paneManager_->active();
+  if (listViews_[idx] != nullptr) {
+    SetFocus(listViews_[idx]);
+  }
+  if (statusBar_) {
+    const wchar_t* label =
+        idx == 0 ? L"활성: 왼쪽" : L"활성: 오른쪽";
+    SendMessageW(statusBar_, SB_SETTEXTW, 0,
+                 reinterpret_cast<LPARAM>(label));
+  }
+}
+
 void MainWindow::applyInitialState(
     const fast_explorer::core::SessionState& state) {
   if (hwnd_ == nullptr) {
@@ -456,6 +523,7 @@ LRESULT MainWindow::onCreate(HWND hwnd) {
     return -1;
   }
   ListView_SetItemCountEx(listView_, 0, 0);
+  listViews_[0] = listView_;
   statusBar_ = createStatusBar(hwnd, instance_);
   addressBar_ = createAddressBar(hwnd, instance_);
   if (addressBar_) {
@@ -527,10 +595,19 @@ LRESULT MainWindow::onSize(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
     const std::size_t paneCount = paneManager_ ? paneManager_->count() : 1;
     const auto rects = computePaneRects(clientW, clientH, addressH, statusH,
                                         paneCount);
-    const RECT& left = rects.panes[0];
-    SetWindowPos(listView_, nullptr, left.left, left.top,
-                 left.right - left.left, left.bottom - left.top,
-                 SWP_NOZORDER | SWP_NOACTIVATE);
+    for (std::size_t i = 0; i < listViews_.size(); ++i) {
+      if (listViews_[i] == nullptr) continue;
+      const RECT& r = rects.panes[i];
+      const int w = r.right - r.left;
+      const int h = r.bottom - r.top;
+      if (w <= 0 || h <= 0) {
+        ShowWindow(listViews_[i], SW_HIDE);
+        continue;
+      }
+      ShowWindow(listViews_[i], SW_SHOW);
+      SetWindowPos(listViews_[i], nullptr, r.left, r.top, w, h,
+                   SWP_NOZORDER | SWP_NOACTIVATE);
+    }
   }
   if (wParam == SIZE_MINIMIZED) {
     memory_.notifyMinimized();

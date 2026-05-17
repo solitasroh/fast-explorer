@@ -45,6 +45,23 @@ class MainWindow {
   // is not yet created or the path is invalid.
   bool openFolder(const std::wstring& path);
 
+  // Creates the second pane (list-view + PaneController + per-pane
+  // coordinators) and triggers a layout refresh. No-op when already
+  // in dual mode. Does not change the active pane — the caller
+  // decides whether the new pane gets focus.
+  void enterDualMode();
+
+  // Destroys the second pane (releases its coordinators, removes the
+  // PaneController, destroys the second list-view) and triggers a
+  // layout refresh. No-op when already in single mode.
+  void enterSingleMode();
+
+  // Sets the active pane index and updates the cached pane_ pointer.
+  // Focuses the matching list-view so subsequent F2 / Delete /
+  // Ctrl+Shift+N accelerators target the new active pane. No-op when
+  // idx is out of range.
+  void setActivePane(std::size_t idx);
+
   // Applies the persisted window position/size from a prior session.
   // Members equal to kSettingsUseDefault are skipped, so the OS picks
   // the slot for a first run or a corrupted settings file. No-op when
@@ -126,7 +143,12 @@ class MainWindow {
   fast_explorer::core::PerfTracker& perf_;
   HINSTANCE instance_ = nullptr;
   HWND hwnd_ = nullptr;
+  // listViews_[0] is the original list-view created in onCreate; alias
+  // listView_ keeps the single-pane code paths unchanged. listViews_
+  // [1] is created on demand by enterDualMode() and destroyed by
+  // enterSingleMode().
   HWND listView_ = nullptr;
+  std::array<HWND, 2> listViews_{nullptr, nullptr};
   HWND statusBar_ = nullptr;
   HWND addressBar_ = nullptr;
   bool firstBatchSeen_ = false;

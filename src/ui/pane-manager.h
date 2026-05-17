@@ -30,9 +30,20 @@ class PaneManager {
   // Must be called exactly once before any active() / at() call.
   std::size_t openInitial(HWND host);
 
-  // True when more than one pane is currently open. Stays false in
-  // the atom-1 skeleton; atom 2 will flip it when dual layout is
-  // wired.
+  // Opens the second pane on `host`. Returns the new pane's index
+  // (always 1). No-op + returns 1 if the second pane already exists.
+  // Does not change activeIndex_; the caller decides whether to focus
+  // the new pane.
+  std::size_t openSecond(HWND host);
+
+  // Tears down the second pane and resets activeIndex_ to 0. No-op
+  // when only the initial pane is open.
+  void closeSecond();
+
+  // Sets activeIndex_ to `idx`, clamped to the currently open pane
+  // range. Returns false when the index is out of range (no change).
+  bool setActive(std::size_t idx) noexcept;
+
   [[nodiscard]] bool isDual() const noexcept;
 
   [[nodiscard]] std::size_t count() const noexcept;
