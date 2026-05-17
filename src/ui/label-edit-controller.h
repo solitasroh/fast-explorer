@@ -33,8 +33,10 @@ class LabelEditController {
   void beginCreateSubfolder();
 
   // Called from onEnumComplete. Locates the row whose leaf matches
-  // the pending name (cleared either way) and starts the in-place
-  // edit. No-op when nothing is pending.
+  // the pending name and starts the in-place edit; the swap-and-clear
+  // happens only after the listView_ + non-empty-pending gate passes,
+  // so a null-listView call preserves the pending name for a later
+  // call that does have a real HWND.
   void maybeStartPendingEdit();
 
   // LVN_BEGINLABELEDITW handler. Returning FALSE permits the edit.
@@ -44,6 +46,13 @@ class LabelEditController {
   // LVS_OWNERDATA (the list-view stores no text of its own); commits
   // the rename through PaneController on a non-cancel.
   [[nodiscard]] LRESULT handleEndEdit(NMHDR* hdr);
+
+  // Test affordance: lets tests observe the swap-and-clear handoff
+  // between beginCreateSubfolder() and maybeStartPendingEdit() without
+  // exposing the internal state to other production callers.
+  const std::wstring& pendingFolderNameForTest() const noexcept {
+    return pendingFolderName_;
+  }
 
  private:
   HWND listView_;

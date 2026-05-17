@@ -463,26 +463,8 @@ FE_TEST_CASE(PaneController_RequestSort_ActuallyReordersVisible) {
   FE_ASSERT_TRUE(lastAsc == firstDesc);
 }
 
-namespace {
-
-bool diskFileExists(const std::wstring& path) {
-  const DWORD attr = GetFileAttributesW(path.c_str());
-  if (attr != INVALID_FILE_ATTRIBUTES) {
-    return true;
-  }
-  const DWORD err = GetLastError();
-  return err != ERROR_FILE_NOT_FOUND && err != ERROR_PATH_NOT_FOUND;
-}
-
-void writeEmptyDiskFile(const std::wstring& path) {
-  HANDLE h = CreateFileW(path.c_str(), GENERIC_WRITE, 0, nullptr,
-                         CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
-  if (h != INVALID_HANDLE_VALUE) {
-    CloseHandle(h);
-  }
-}
-
-}  // namespace
+using fast_explorer::tests::diskPathExists;
+using fast_explorer::tests::writeEmptyDiskFile;
 
 FE_TEST_CASE(PaneController_DeleteItem_EmptyStore_ReturnsFalse) {
   PaneController pane(nullptr);
@@ -509,7 +491,7 @@ FE_TEST_CASE(PaneController_DeleteItem_ValidRow_RemovesFileFromDisk) {
   const std::wstring victim =
       fast_explorer::core::joinPath(tmp.path(), L"victim.txt");
   writeEmptyDiskFile(victim);
-  FE_ASSERT_TRUE(diskFileExists(victim));
+  FE_ASSERT_TRUE(diskPathExists(victim));
 
   PaneController pane(nullptr);
   FE_ASSERT_TRUE(pane.openFolder(tmp.path()));
@@ -529,7 +511,7 @@ FE_TEST_CASE(PaneController_DeleteItem_ValidRow_RemovesFileFromDisk) {
 
   FE_ASSERT_TRUE(pane.deleteItem(victimRow));
   pane.shellWorkerForTest().waitForProcessedForTest(1);
-  FE_ASSERT_FALSE(diskFileExists(victim));
+  FE_ASSERT_FALSE(diskPathExists(victim));
 }
 
 FE_TEST_CASE(PaneController_RenameItem_EmptyStore_ReturnsFalse) {
@@ -586,7 +568,7 @@ FE_TEST_CASE(PaneController_CreateSubfolder_ValidName_CreatesOnDisk) {
 
   const std::wstring childPath =
       fast_explorer::core::joinPath(tmp.path(), L"NewSub");
-  FE_ASSERT_TRUE(diskFileExists(childPath));
+  FE_ASSERT_TRUE(diskPathExists(childPath));
   const DWORD attr = GetFileAttributesW(childPath.c_str());
   FE_ASSERT_TRUE((attr & FILE_ATTRIBUTE_DIRECTORY) != 0);
 }
@@ -599,7 +581,7 @@ FE_TEST_CASE(PaneController_RenameItem_ValidRow_RenamesOnDisk) {
   const std::wstring after =
       fast_explorer::core::joinPath(tmp.path(), L"after.txt");
   writeEmptyDiskFile(before);
-  FE_ASSERT_TRUE(diskFileExists(before));
+  FE_ASSERT_TRUE(diskPathExists(before));
 
   PaneController pane(nullptr);
   FE_ASSERT_TRUE(pane.openFolder(tmp.path()));
@@ -619,6 +601,6 @@ FE_TEST_CASE(PaneController_RenameItem_ValidRow_RenamesOnDisk) {
 
   FE_ASSERT_TRUE(pane.renameItem(sourceRow, L"after.txt"));
   pane.shellWorkerForTest().waitForProcessedForTest(1);
-  FE_ASSERT_FALSE(diskFileExists(before));
-  FE_ASSERT_TRUE(diskFileExists(after));
+  FE_ASSERT_FALSE(diskPathExists(before));
+  FE_ASSERT_TRUE(diskPathExists(after));
 }

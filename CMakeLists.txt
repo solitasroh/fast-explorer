@@ -162,6 +162,8 @@ add_executable(core-tests
   tests/bench-json-tests.cpp
   tests/dispinfo-histogram-tests.cpp
   tests/process-memory-tests.cpp
+  tests/selection-sync-tests.cpp
+  tests/label-edit-controller-tests.cpp
   tests/bench-fs-helper.h
   src/ui/messages.h
   src/ui/column-formatter.cpp

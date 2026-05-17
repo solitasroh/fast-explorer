@@ -8,6 +8,29 @@
 
 namespace fast_explorer::tests {
 
+// True if `path` exists on disk (file or directory). Returns true for
+// ERROR_ACCESS_DENIED and similar non-not-found errors so the helper
+// does not paper over real permission failures with a false negative.
+inline bool diskPathExists(const std::wstring& path) {
+  const DWORD attr = GetFileAttributesW(path.c_str());
+  if (attr != INVALID_FILE_ATTRIBUTES) {
+    return true;
+  }
+  const DWORD err = GetLastError();
+  return err != ERROR_FILE_NOT_FOUND && err != ERROR_PATH_NOT_FOUND;
+}
+
+// Creates `path` as a zero-byte file, overwriting any prior content.
+// No-op on CreateFileW failure; callers gate behavior on a subsequent
+// diskPathExists(path) check.
+inline void writeEmptyDiskFile(const std::wstring& path) {
+  HANDLE h = CreateFileW(path.c_str(), GENERIC_WRITE, 0, nullptr,
+                         CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+  if (h != INVALID_HANDLE_VALUE) {
+    CloseHandle(h);
+  }
+}
+
 // Recursively deletes `path` and everything under it. Best-effort: returns
 // false if any node could not be removed. Uses Win32 only.
 inline bool removeDirectoryRecursive(const std::wstring& path) {
