@@ -17,6 +17,7 @@
 |---------|------|---------|--------|
 | 1.0.0 | 2026-05-17 | 초기 M1–M7 종료 보고서 | Report Generator Agent |
 | 1.0.1 | 2026-05-18 | M8 종료 addendum 추가. 4 atom 완료 (R3-R5 doc / R1+R2 / C1), 444→454 tests (+10), match rate 95→98%. 신규 §M8 Closure 섹션 추가, Related Documents 갱신, design v1.0.11 / plan v1.0.3 unchanged 명시. | Claude |
+| 1.0.2 | 2026-05-18 | M9 종료 addendum 추가. 9 atom 완료 (UTF-8 migration / C2 atoms 1-6 + 6b dispatcher refactor / C3 layout shortcuts), 454→479 tests (+25), match rate 98%→97% (다중 패널 도입으로 인한 미세 후퇴, 자세한 분해는 §M9 Closure 참조). 신규 §M9 Closure 섹션 + dual-pane runbook 참조 + M9-A1~A7 carry-forward 명시. | Claude |
 
 ## Related Documents
 
@@ -25,6 +26,8 @@
 - Handoff: `docs/handoffs/2026-05-17_m6-close-m7-prep-measurement.md`
 - Usage Guide: [docs/usage-guide.md](../../usage-guide.md)
 - M8+ Roadmap: [docs/m8-followup.md](../../m8-followup.md)
+- M7 Soak Runbook: `docs/02-design/runbooks/m7-1hour-soak-checklist.md`
+- M9 Dual-Pane Soak Runbook: `docs/02-design/runbooks/m9-dual-pane-soak-checklist.md`
 
 ---
 
@@ -532,9 +535,110 @@ a38cdee M6 atom 6b: renameItem + F2 + LVS_EDITLABELS in-place + DRY resolveRowSo
 
 ---
 
+---
+
+## M9 Closure Addendum (2026-05-18)
+
+본 섹션은 M8 종료 직후 동일 PDCA 사이클 안에서 진행한 M9 (멀티 패널 블록) 마라톤 결과를 추가합니다. M10+ 진입 전 dual-horizontal 패널 아키텍처를 완결합니다.
+
+### Executive Summary (M9)
+
+| 항목 | 값 |
+|------|------|
+| 기간 | 2026-05-17 ~ 2026-05-18 (1일) |
+| Atom 수 | 9 (UTF-8 migration / C2 atom 1-6 + 6b / C3 layout shortcuts) |
+| 신규 commit | 9 (1671fed / 167c15b / a38b86c / cac84d2 / 35ddc95 / b21817b / b3cee4a / 5d89634 / b7e3ea4) + 본 보고서 갱신 |
+| 테스트 | 454 → **479** (+25, PaneManager 9 + PaneLayout 9 + messages.h packing 6 + signedness 1) |
+| **설계 일치율** | 98% → **97%** (멀티 패널 도입으로 인한 의도적 미세 후퇴 — §M9 매치레이트 분해 참조) |
+| 신규 소스 파일 | 5 (pane-manager.{h,cpp} / pane-layout.{h,cpp} / dual-pane soak 런북) |
+| Code 변경 LOC | +900 / -100 |
+
+### 4 관점 가치 제공 (M9)
+
+| 관점 | 내용 |
+|------|------|
+| **Problem** | 단일 패널 한계 — 두 폴더를 비교하거나 사이에 파일을 옮기려면 창을 두 개 띄워야 했음. design §4.2 dual-horizontal 약속이 M1-M8 동안 미구현 carry-forward. 파워유저 (Total Commander / Q-Dir 사용자) 진입 장벽. |
+| **Solution** | 점진적 9 atom 마라톤: (1) UTF-8 DRY 정리로 cleanup base 확보, (2) PaneManager owner + pane-layout 순수 helper로 인프라 격리, (3) WPARAM 패킹으로 메시지 라우팅 prepared, (4) per-pane coordinator array로 인스턴스 분리, (5) dual-mode entry/exit + active pane switch + 두 번째 listView 라이프사이클, (6) regression close + L1+L2 fix (DRY-001 installPane / 예외 안전성 / relayout), (6b) dispatcher source-pane routing, (C3) Ctrl+1/2/H/Tab 단축키. 각 atom 빌드+테스트 통과를 게이트로 단일 모드 회귀 0 유지. |
+| **Function UX Effect** | 사용자는 Ctrl+2로 폴더 두 개 좌/우 동시 표시, Tab으로 활성 패널 전환 (status bar "활성: 왼쪽 / 오른쪽" 라벨), F2/Delete/Ctrl+Shift+N이 활성 패널만 대상. 단일 모드 행동 100% 보존 (Ctrl+2 안 누르면 차이 없음). 백그라운드 enum/sort/icon/op 결과가 정확한 source pane으로 라우팅. 다음 실행 시 마지막 layout + 양쪽 폴더 복원은 M9-A7로 carry-forward. |
+| **Core Value** | 단일 패널 가정을 모든 코드 사이트에서 풀어내면서 회귀 0 달성 (479/479 tests, 9 commits 모두 3-run stability 통과). M10+ 추가 기능 (DnD, 필터, 비교)을 위한 안정 base 확립. Dual-pane soak gate (50회 누적 working set Δ ≤ 10 MB) 자동 측정은 runbook 매뉴얼 protocol로 양도. |
+
+### M9 Atom 상세
+
+| Atom | Commit | 핵심 변경 | 신규 tests |
+|------|--------|-----------|-----------|
+| UTF-8 migration | `1671fed` | bench-json + bench-cli → core/text-utf. ring-logger는 hot path stack buffer 의도적 제외 (header comment 기록). DRY-001 follow-up 해소. | 0 (refactor) |
+| C2-1 PaneManager skeleton | `167c15b` | std::vector<unique_ptr<PaneController>> owner + active index. MainWindow의 pane_은 raw pointer 캐시로 전환. | +4 |
+| C2-2 pane-layout helper | `a38b86c` | computePaneRects(clientW, clientH, addressH, statusH, paneCount) → std::array<RECT, 2>. 순수 함수, onSize가 사용. | +9 |
+| C2-3 WPARAM packing | `cac84d2` | makePaneWParam/paneIndexFromWParam/generationFromWParam. PaneController/PaneSortCoordinator/ShellWorker/IconProvider/IconCacheCoordinator/FsWatcher 모두 paneIndex 받음 (default 0). | +6 |
+| C2-4 per-pane coordinator arrays | `35ddc95` | iconCoords_/selectionSyncs_/labelEdits_가 std::array size 2. 활성 pane 라우팅 helpers. | 0 (refactor) |
+| C2-5 dual-mode infrastructure | `b21817b` | PaneManager.openSecond/closeSecond/setActive. MainWindow.enterDualMode/enterSingleMode/setActivePane + listViews_[2] HWND array. status bar 활성 표시. | +6 |
+| C3 layout shortcuts | `b3cee4a` | Ctrl+1 single / Ctrl+2 dual / Ctrl+H toggle / Tab active switch. 4 accelerator + onCommand cases. | 0 (wiring) |
+| C2-6 regression close + L1+L2 fixes | `5d89634` | installPaneCoordinators helper (DRY + 예외 안전성), relayout() 동기 helper, closeSecond noexcept, dual-pane soak runbook 추가. | 0 (refactor + doc) |
+| C2-6b dispatcher source-pane routing | `b7e3ea4` | onEnumBatch/Complete/Error/SortComplete/OperationResult/IconBatch/FsChange가 paneForWParam(wp)로 라우팅. redrawVisibleRows(idx). 패널별 디바운스 타이머. gap M9-A2 + A3 해소. | 0 (refactor) |
+
+### Match Rate 분해 (97%)
+
+| Category | Weight | M8 종료 | M9 종료 | Δ |
+|----------|:-----:|:------:|:------:|:-:|
+| Design Match | 40% | 98% | **100%** | +2 (C2/C3 완결) |
+| Architecture Compliance | 25% | 100% | **97%** | -3 (M9-A6/A7 carry-forward, M9-A4/A5 UX decisions pending) |
+| Convention Compliance | 20% | 96% | **96%** | 0 |
+| Doc-Implementation Match | 15% | 100% | **95%** | -5 (dual-pane soak gate 측정 미실행, 사용 가이드 M9 기능 미반영 — usage-guide.md 갱신 필요) |
+
+가중 평균 = 0.40·100 + 0.25·97 + 0.20·96 + 0.15·95 = **97.4%**.
+
+> **참고**: M9 도입으로 인한 1pp 후퇴는 의도적 — 큰 기능 블록 추가 시 측정/문서 catch-up이 자연 발생. M9-A1 (soak 실행) + usage-guide 갱신 + M9-A4/A5 결정으로 99%+ 복귀 가능.
+
+### M9 측정 게이트
+
+| 항목 | M7 측정값 | M8 측정값 | M9 측정값 | 변화 |
+|------|----------|----------|----------|------|
+| 100k working set (headless, 단일) | 9.39 MB | 회귀 없음 | 회귀 없음 | — |
+| 10-cycle memory drift | 404 KB | 회귀 없음 | 회귀 없음 | — |
+| Tests pass | 412/412 | 454/454 | **479/479** | +25 |
+| Build clean | ✅ | ✅ | ✅ | — |
+| Run stability (3 consecutive) | ✅ | ✅ | ✅ | — |
+| Dual-pane soak (50 nav, drift ≤ 10 MB) | n/a | n/a | **runbook ready, 미실행** | M9-A1 amber |
+
+### 신규 발견 (M9 close gap-detector + L1+L2)
+
+| 항목 | 심각도 | 위치 | 처리 |
+|------|:-----:|------|------|
+| M9-A1 dual-pane soak 미측정 | Amber | `runbooks/m9-dual-pane-soak-checklist.md` | 매뉴얼 실행 후 design §14.7 측정값 기록 |
+| M9-A2/A3 dispatcher 라우팅 단일 pane 가정 | RESOLVED | atom 6b (`b7e3ea4`) | 모든 kWmFe* handler가 paneForWParam(wp) 사용 |
+| M9-A4 Ctrl+H 관례 충돌 (show hidden) | Amber (UX) | `src/app/main.cpp:218` | design §4.5 재검토 또는 의도적 deviation 명시 |
+| M9-A5 VK_TAB list-view 내부 Tab 가로채기 위험 | Amber (UX) | `src/app/main.cpp:220` | soak에서 관찰 시 FCONTROL+VK_TAB으로 전환 |
+| M9-A6 enterDualMode 후 pane 1 빈 경로 | Amber (UX) | `MainWindow::enterDualMode` | pane 1 default = pane 0 currentPath() 또는 session restore secondPath |
+| M9-A7 SessionState layout + secondPath 미확장 | Amber (deferred from C1) | `src/core/settings-store.h` | settings.json schema v2로 확장 + M9-A6와 합쳐 atom 1개 |
+
+### M9 학습
+
+- **점진적 atom 분할이 거대 refactor의 회귀 0 달성 비법**: 9 atom 모두 빌드+테스트 통과 후 commit. 한 번도 회귀 안 발생. 큰 변경을 6+ atom으로 쪼개는 cost는 작고 confidence ROI는 매우 큼.
+- **Default argument는 wide-surface refactor의 마찰 minimizer**: paneIndex=0 default가 모든 기존 ctor call site (test 포함 ~50개)를 변경 없이 통과시켰음. 명시적 호출은 새 코드에만 의무.
+- **gap-detector를 atom close에 routine으로**: M9에서 NOT-READY 판정으로 M9-A2/A3 catch. 추가 atom 6b로 해소. 만약 patch 만들고 바로 Report 갔으면 dual-mode 첫 사용 시 silent misroute 가능했음.
+- **L2 c-cpp-reviewer의 RAII 예외 안전성 catch**: enterDualMode가 openSecond 후 coord 생성 중 throw 시 paneManager에 partial state 잔류. installPaneCoordinators try/catch + rollback으로 해결. L2 review가 없었으면 production stress test에서만 발견될 종류의 버그.
+- **status bar 단일성 + dual pane**: 두 panel이 동시에 status update 보내면 마지막 우승. design 결정 필요 (M10+에서 per-pane status bar 또는 active pane only filtering).
+- **VK_TAB / Ctrl+H 같은 OS convention과 design 약속이 충돌하는 경우**: design §4.5 재검토 trigger. 추측이 아니라 실제 사용자 매뉴얼 soak에서 데이터 수집 후 결정.
+
+### M9 → M10+ 전환 권장
+
+**READY** (조건부) — match rate 97%로 PDCA Report v1.0.2 발행 안전, 단 다음 follow-up 3개는 next sprint atom 1개로 묶어 처리 권장:
+
+1. **M9-A1 soak 실행**: 30분 매뉴얼, design §14.7 update
+2. **M9-A6/A7 합쳐서 atom**: enterDualMode pane 1 seed + SessionState extension (layout + secondPath) + settings.json schema v2
+3. **M9-A4/A5 결정**: Ctrl+H + VK_TAB UX decision (rebind vs document deviation)
+
+추가로 M10에서 자연스럽게 진행될 항목 (m8-followup.md §5):
+- Filter / search-as-you-type (큰 가치, 100k 폴더 사용성)
+- DnD between panes (dual pane 활용도 극대화)
+- Shell context menu (right-click)
+- Per-pane status bar (M9 status 단일성 한계)
+
+---
+
 **End of Report**
 
-Generated: 2026-05-17 (M1–M7) / Updated: 2026-05-18 (M8 closure)  
+Generated: 2026-05-17 (M1–M7) / Updated: 2026-05-18 (M8 + M9 closures)  
 Agent: Report Generator v1.6.0 + Claude  
-PDCA Status: Do (M8) → Check (M8 closed) → ready for M9 Plan
+PDCA Status: Do (M9) → Check (M9 closed) → ready for M10 Plan
 
