@@ -2,6 +2,7 @@
 
 #include <windows.h>
 
+#include <array>
 #include <memory>
 #include <string>
 
@@ -76,7 +77,12 @@ class MainWindow {
   LRESULT onEnumComplete(WPARAM wParam);
   LRESULT onEnumError(WPARAM wParam, LPARAM lParam);
   LRESULT onSortComplete(WPARAM wParam);
-  LRESULT onIconBatch();
+  LRESULT onIconBatch(WPARAM wParam);
+  // Active-pane accessors for accelerator-driven actions (F2, Ctrl+
+  // Shift+N, sort apply). They return nullptr until onCreate populates
+  // the slot — same defensive contract as pane_.
+  SelectionSync* activeSelectionSync();
+  LabelEditController* activeLabelEdit();
   LRESULT onOperationResult();
   LRESULT onLowMemory();
   LRESULT onFsChange(HWND hwnd);
@@ -131,9 +137,12 @@ class MainWindow {
   // paneManager_.
   PaneController* pane_ = nullptr;
   std::unique_ptr<class FormatCache> formatCache_;
-  std::unique_ptr<class IconCacheCoordinator> iconCoord_;
-  std::unique_ptr<SelectionSync> selectionSync_;
-  std::unique_ptr<LabelEditController> labelEdit_;
+  // Per-pane coordinators indexed by pane index. Slot 0 is populated
+  // by onCreate; slot 1 stays empty until the active-pane / dual-
+  // mode entry in a later M9 atom creates the second pane.
+  std::array<std::unique_ptr<class IconCacheCoordinator>, 2> iconCoords_;
+  std::array<std::unique_ptr<SelectionSync>, 2> selectionSyncs_;
+  std::array<std::unique_ptr<LabelEditController>, 2> labelEdits_;
   std::unique_ptr<class DispInfoHistogram> dispInfoHist_;
   std::uint64_t qpcFrequencyHz_ = 0;
   std::unique_ptr<fast_explorer::core::SessionState> capturedState_;

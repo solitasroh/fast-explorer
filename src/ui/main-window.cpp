@@ -254,6 +254,18 @@ PaneController* MainWindow::paneForWParam(WPARAM wParam) const {
   return &paneManager_->at(idx);
 }
 
+SelectionSync* MainWindow::activeSelectionSync() {
+  if (!paneManager_) return nullptr;
+  const std::size_t idx = paneManager_->activeIndex();
+  return idx < selectionSyncs_.size() ? selectionSyncs_[idx].get() : nullptr;
+}
+
+LabelEditController* MainWindow::activeLabelEdit() {
+  if (!paneManager_) return nullptr;
+  const std::size_t idx = paneManager_->activeIndex();
+  return idx < labelEdits_.size() ? labelEdits_[idx].get() : nullptr;
+}
+
 LRESULT CALLBACK MainWindow::addressBarSubclassProc(
     HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam,
     UINT_PTR /*uIdSubclass*/, DWORD_PTR /*dwRefData*/) {
@@ -394,7 +406,7 @@ LRESULT MainWindow::handleMessage(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPa
     case kWmFeEnumBatch:      return onEnumBatch(wParam, lParam);
     case kWmFeEnumComplete:   return onEnumComplete(wParam);
     case kWmFeSortComplete:   return onSortComplete(wParam);
-    case kWmFeIconBatch:      return onIconBatch();
+    case kWmFeIconBatch:      return onIconBatch(wParam);
     case kWmFeOperationResult: return onOperationResult();
     case kWmFeLowMemory:      return onLowMemory();
     case kWmFeEnumError:      return onEnumError(wParam, lParam);
@@ -453,19 +465,19 @@ LRESULT MainWindow::onCreate(HWND hwnd) {
   paneManager_->openInitial(hwnd);
   pane_ = &paneManager_->active();
   formatCache_ = std::make_unique<FormatCache>();
-  iconCoord_ = std::make_unique<IconCacheCoordinator>(
+  iconCoords_[0] = std::make_unique<IconCacheCoordinator>(
       hwnd, listView_, GetDpiForWindow(hwnd), 0);
-  selectionSync_ = std::make_unique<SelectionSync>(listView_, *pane_);
-  labelEdit_ = std::make_unique<LabelEditController>(listView_, *pane_);
+  selectionSyncs_[0] = std::make_unique<SelectionSync>(listView_, *pane_);
+  labelEdits_[0] = std::make_unique<LabelEditController>(listView_, *pane_);
   dispInfoHist_ = std::make_unique<DispInfoHistogram>();
   LARGE_INTEGER qpcFreq{};
   if (QueryPerformanceFrequency(&qpcFreq)) {
     qpcFrequencyHz_ = static_cast<std::uint64_t>(qpcFreq.QuadPart);
   }
-  if (iconCoord_->ok()) {
+  if (iconCoords_[0] && iconCoords_[0]->ok()) {
     // LVS_SHAREIMAGELISTS keeps ownership with the coordinator,
     // not the list-view.
-    ListView_SetImageList(listView_, iconCoord_->imageListHandle(),
+    ListView_SetImageList(listView_, iconCoords_[0]->imageListHandle(),
                           LVSIL_SMALL);
   }
   // Lambda captures the HWND by value; the notifier copies the
@@ -556,10 +568,10 @@ LRESULT MainWindow::onCommand(HWND hwnd, UINT msg, WPARAM wParam,
         deleteFocusedItem();
         return 0;
       case kAccelRename:
-        if (labelEdit_) labelEdit_->beginRenameFocused();
+        if (auto* le = activeLabelEdit()) le->beginRenameFocused();
         return 0;
       case kAccelCreateFolder:
-        if (labelEdit_) labelEdit_->beginCreateSubfolder();
+        if (auto* le = activeLabelEdit()) le->beginCreateSubfolder();
         return 0;
     }
     // Unknown accelerator id: swallow without calling DefWindowProc so
@@ -609,8 +621,8 @@ LRESULT MainWindow::onEnumComplete(WPARAM wParam) {
   fast_explorer::core::recordMemoryProbe(perf_);
   const std::wstring text = readyStatusText(finalCount);
   setStatusText(text.c_str());
-  if (labelEdit_) {
-    labelEdit_->maybeStartPendingEdit();
+  if (auto* le = activeLabelEdit()) {
+    le->maybeStartPendingEdit();
   }
   return 0;
 }
@@ -641,8 +653,12 @@ LRESULT MainWindow::onSortComplete(WPARAM wParam) {
   return 0;
 }
 
-LRESULT MainWindow::onIconBatch() {
-  if (iconCoord_ && iconCoord_->onIconBatch()) {
+LRESULT MainWindow::onIconBatch(WPARAM wParam) {
+  const std::size_t idx = paneIndexFromWParam(wParam);
+  if (idx >= iconCoords_.size() || !iconCoords_[idx]) {
+    return 0;
+  }
+  if (iconCoords_[idx]->onIconBatch()) {
     redrawVisibleRows();
   }
   return 0;
@@ -659,7 +675,16 @@ void MainWindow::redrawVisibleRows() {
 }
 
 LRESULT MainWindow::onLowMemory() {
-  if (iconCoord_ && iconCoord_->shrinkIconCache()) {
+  // Low-memory is a process-wide signal — broadcast the shrink to
+  // every populated pane's coordinator. Redraw once at the end if
+  // any pane actually shrank.
+  bool anyShrunk = false;
+  for (auto& coord : iconCoords_) {
+    if (coord && coord->shrinkIconCache()) {
+      anyShrunk = true;
+    }
+  }
+  if (anyShrunk) {
     redrawVisibleRows();
   }
   return 0;
@@ -694,8 +719,8 @@ void MainWindow::finalizeSortApply() {
   const auto spec = pane_->currentSortSpec();
   updateSortIndicator(listView_, sortKeyToColumnIndex(spec.key),
                       spec.direction);
-  if (selectionSync_) {
-    selectionSync_->reapplyFromPane();
+  if (auto* sync = activeSelectionSync()) {
+    sync->reapplyFromPane();
   }
   const int count = static_cast<int>(pane_->store().publishedCount());
   if (count > 0) {
@@ -718,12 +743,16 @@ LRESULT MainWindow::handleListViewNotify(NMHDR* hdr) {
       handleItemActivate(hdr);
       return 0;
     case LVN_ITEMCHANGED:
-      if (selectionSync_) selectionSync_->handleItemChanged(hdr);
+      if (auto* sync = activeSelectionSync()) sync->handleItemChanged(hdr);
       return 0;
-    case LVN_BEGINLABELEDITW:
-      return labelEdit_ ? labelEdit_->handleBeginEdit() : FALSE;
-    case LVN_ENDLABELEDITW:
-      return labelEdit_ ? labelEdit_->handleEndEdit(hdr) : FALSE;
+    case LVN_BEGINLABELEDITW: {
+      auto* le = activeLabelEdit();
+      return le ? le->handleBeginEdit() : FALSE;
+    }
+    case LVN_ENDLABELEDITW: {
+      auto* le = activeLabelEdit();
+      return le ? le->handleEndEdit(hdr) : FALSE;
+    }
     case LVN_ODCACHEHINT:
     case LVN_ODSTATECHANGED:
       return 0;
@@ -806,8 +835,9 @@ void MainWindow::handleGetDispInfoBody(NMHDR* hdr) {
   // without further plumbing. Identity until the first sort.
   const auto& entry = store.visibleAt(row);
   if ((disp->item.mask & LVIF_IMAGE) != 0) {
-    disp->item.iImage =
-        iconCoord_ ? iconCoord_->resolveIconIndex(entry) : 0;
+    auto& activeCoord = iconCoords_[paneManager_ ?
+                                    paneManager_->activeIndex() : 0];
+    disp->item.iImage = activeCoord ? activeCoord->resolveIconIndex(entry) : 0;
   }
   if ((disp->item.mask & LVIF_TEXT) == 0) {
     return;
