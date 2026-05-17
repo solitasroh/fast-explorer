@@ -18,6 +18,7 @@
 | 1.0.0 | 2026-05-17 | 초기 M1–M7 종료 보고서 | Report Generator Agent |
 | 1.0.1 | 2026-05-18 | M8 종료 addendum 추가. 4 atom 완료 (R3-R5 doc / R1+R2 / C1), 444→454 tests (+10), match rate 95→98%. 신규 §M8 Closure 섹션 추가, Related Documents 갱신, design v1.0.11 / plan v1.0.3 unchanged 명시. | Claude |
 | 1.0.2 | 2026-05-18 | M9 종료 addendum 추가. 9 atom 완료 (UTF-8 migration / C2 atoms 1-6 + 6b dispatcher refactor / C3 layout shortcuts), 454→479 tests (+25), match rate 98%→97% (다중 패널 도입으로 인한 미세 후퇴, 자세한 분해는 §M9 Closure 참조). 신규 §M9 Closure 섹션 + dual-pane runbook 참조 + M9-A1~A7 carry-forward 명시. | Claude |
+| 1.0.3 | 2026-05-18 | M9-A6+A7 follow-up addendum 추가. 2 atom 완료 (A7-1 settings v2 schema / A6+A7-2 dual-mode startup restore + second-pane initial path), 479→489 tests (+10: 7 schema + 3 policy), match rate 97%→**98%** (M9-A6 + M9-A7 carry-forward 2개 RESOLVED, A1/A4/A5 carry-forward는 잔존). v2 backward compat 100% 보존 (v1 settings.json → defaults 자동 fallback). 신규 §M9-A6+A7 Closure 섹션. | Claude |
 
 ## Related Documents
 
@@ -636,9 +637,54 @@ a38cdee M6 atom 6b: renameItem + F2 + LVS_EDITLABELS in-place + DRY resolveRowSo
 
 ---
 
+## M9-A6+A7 Follow-up Closure (v1.0.3 addendum, 2026-05-18)
+
+Prior v1.0.2 addendum closed the M9 multi-pane block with 7 carry-forward items (M9-A1 soak / A2-A3 dispatcher / A4-A5 UX / A6-A7 default-path + schema). Atom 6b shipped within the same session resolved A2-A3. This v1.0.3 addendum closes **A6 + A7** via the recommended combined atom from v1.0.2 §"M9 → M10+ 전환 권장" §2.
+
+### M9-A6+A7 Atom 상세
+
+| Atom | Commit | 내용 | Test Δ |
+|------|--------|------|--------|
+| A7-1 settings.json schema v2 | `c5308cc` | SessionState에 `LayoutMode {Single, Dual}` enum (uint8_t base) + `secondPath` (wstring) 추가. JSON writer가 `layout_mode` (string) + `second_path` (escaped) emit. Reader가 missing keys → defaults (v1 호환), 알 수 없는 layout_mode 문자열 → Single (lenient), wrong-type → 전체 load 실패 (strict). 작성기는 `appendKey{String,Int,RawString}` 헬퍼로 리팩토 (DRY-002 해결). `kKey*` constants → `std::string_view` (per-call strlen 제거). | +7 (479→486) |
+| A6+A7-2 dual-mode startup restore + second-pane initial path | `4f80b8e` | `enterDualMode(secondPath = {})` 시그니처 확장. 헬퍼 `chooseSecondPaneInitialPath(requested, fallback)` (const ref 반환, noexcept 정직) — requested 우선, 빈 경우 활성 패널 currentPath fallback. `MainWindow::restoreLayoutFromSession(state)` 신규 thin gate (applyInitialState는 window placement 책임 유지). main.cpp가 `openFolder(lastPath)` 이후 호출. WM_DESTROY가 layoutMode + secondPath 캡처. | +3 (486→489) |
+
+### Match Rate 분해 (98%)
+
+| Dimension | Weight | Score | Contribution | Δ vs v1.0.2 |
+|-----------|--------|-------|--------------|-------------|
+| Functional Coverage | 40% | 100% | 40 | 0 |
+| Test Coverage | 25% | 99% | 25 | +1 |
+| Design Doc Sync | 10% | 95% | 10 | 0 (settings v2 = code-only, design §11 미갱신) |
+| Architecture Compliance | 25% | 99% | **23** | **+2** (M9-A6 + M9-A7 carry-forward 2개 RESOLVED) |
+
+**잔존 carry-forward (3개):**
+- M9-A1 dual-pane soak 매뉴얼 미실행 (Amber, runbook ready, 30분 매뉴얼 필요)
+- M9-A4 Ctrl+H Windows Explorer "show hidden" 관례 충돌 (UX 결정 미정)
+- M9-A5 VK_TAB list-view internal Tab 가로채기 (UX 결정 미정)
+
+### gap-detector close 결과
+
+✅ 5/5 invariant 검증: enterDualMode가 pane 1을 실제 경로로 진입 / WM_DESTROY가 layoutMode+secondPath 캡처 / v1 backward compat 보존 / startup restore가 main.cpp에 lastPath 이후 wired / 알 수 없는 키 + lenient 모드 문자열 모두 테스트. NOT-READY 0건. Recommendation: commit-as-is.
+
+### M9-A6+A7 학습
+
+- **노출된 정책 헬퍼가 가장 작은 테스트 가능한 단위**: `chooseSecondPaneInitialPath`는 한 줄 ternary지만 free function + 3 test로 분리해 Win32 dependency 없이 정책 검증. enterDualMode 본체는 Win32 dependent라 단위 테스트 어려움 → 정책만 분리하면 unit cover, 통합은 soak runbook으로 cover.
+- **L2 catches `noexcept` lie**: 첫 구현은 `std::wstring`을 by value + noexcept 반환 — `bad_alloc` 시 `std::terminate`. 한 줄 변경(`const std::wstring&` 반환)으로 honest. 메모리 부족 시 정상 wndProc-level catch 경로로 전파. Pure code review가 잡지 못할 가능성, L2 c-cpp-reviewer 가치 검증.
+- **Schema versioning은 미래 자기 자신을 위한 투자**: lenient layout_mode("tri" → Single) + 알 수 없는 키 skip — 향후 v3 schema도 v2 reader가 partial 로드 가능. wrong-type은 strict (silent corruption 방지). Lenient + strict의 동시 운영이 forward+backward compat 동시 달성.
+- **fallback capture를 mutation 전으로 이동**: PaneManager.openSecond는 `std::vector<unique_ptr>` push_back으로 ABA 문제 없음(unique_ptr 안에 T가 heap), 그러나 raw `pane_` cache의 안정성 reasoning이 필요. L2 reviewer가 catch — 단 2줄 이동으로 의문 제거. "if it's hard to reason about, restructure rather than comment".
+
+### v1.0.3 carry-forward (next session 후보)
+
+1. **M9-A4/A5 결정**: Ctrl+H + VK_TAB UX decision (AskUserQuestion으로 rebind 대 deviation 명문화 결정).
+2. **M9-A1 soak 실행**: 30분 매뉴얼 (이제 secondPath persistence가 wired되어 더 의미 있음 — soak 중 Dual 상태로 종료 → 재실행 → 자동 Dual restore 검증 가능).
+3. **usage-guide.md M9 갱신**: Ctrl+1/2/H/Tab 단축키 + 듀얼 패널 + session restore (Dual 모드도 persisted).
+4. **PDCA M10 신규 사이클 시작 결정**: filter/DnD/shell-context는 새 기능 그룹 → 별도 plan 가치.
+
+---
+
 **End of Report**
 
-Generated: 2026-05-17 (M1–M7) / Updated: 2026-05-18 (M8 + M9 closures)  
+Generated: 2026-05-17 (M1–M7) / Updated: 2026-05-18 (M8 + M9 + M9-A6+A7 closures)  
 Agent: Report Generator v1.6.0 + Claude  
-PDCA Status: Do (M9) → Check (M9 closed) → ready for M10 Plan
+PDCA Status: Do (M9-A6+A7) → Check (closed) → ready for M9-A4/A5 decision or M10 Plan
 
