@@ -1488,7 +1488,7 @@ Deliverables:
 - UI stall probe full integration
 - scroll frame p95 / LVN_GETDISPINFO p99 측정
 - benchmark result JSON with machine info — `FastExplorerBench enumerate --format json` (added 2026-05-17) emits a UTF-8 JSON document carrying `{machine{architecture, processor_count, page_size, os{major, minor, build}}, args, timing{median_us, p95_us, total_entries, runs[]}, memory{last_run_entries_bytes, last_run_arena_committed_bytes, working_set{baseline_bytes, peak_bytes, final_bytes, max_cycle_drift_bytes, post_cycle_bytes[]}}}`. Machine info via `GetNativeSystemInfo` + `RtlGetVersion`. Output is the input format for the baseline-compare CI script.
-- baseline 비교 CI script (§11.5)
+- baseline 비교 CI script (§11.5) — `scripts/bench-compare.ps1` (2026-05-17) consumes two enumerate-JSON documents and reports per-row PASS/FAIL on `timing.median_us`, `timing.p95_us`, and `memory.working_set.peak_bytes` against a configurable tolerance (default 5%), plus an absolute §14.7 gate on `memory.working_set.max_cycle_drift_bytes ≤ 5 MB`. Exit codes: 0 = PASS, 1 = REGRESSION, 2 = INPUT ERROR. Verified locally on two same-dataset runs (tolerance 50% → PASS) and a tight-tolerance run (tolerance 1% → FAIL on p95 jitter as expected).
 - 1-hour soak test checklist
 - Optional: ETW custom provider, UI automation smoke (Plan §12.1 N2/N3/N4 해소)
 
