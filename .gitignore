@@ -3,16 +3,47 @@
 
 # Build outputs
 build/
+build-*/
 out/
 dist/
 bin/
 obj/
 
-# Local IDE/user files
+# CMake artifacts (outside build/ dir)
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+CTestTestfile.cmake
+compile_commands.json
+CMakeUserPresets.json
+
+# LSP / IntelliSense caches
+.cache/
+.clangd/
+.ccls-cache/
+
+# MSVC intermediate files
+*.ilk
+*.exp
+*.idb
+*.iobj
+*.ipdb
+*.tlog
+*.obj
+*.lib
+
+# Visual Studio local state
 .vs/
-.vscode/
 *.user
 *.suo
+
+# VSCode — keep shared config, ignore per-user state
+.vscode/*
+!.vscode/settings.json
+!.vscode/extensions.json
+!.vscode/launch.json
+!.vscode/tasks.json
+!.vscode/c_cpp_properties.json
 
 # Logs and diagnostics
 *.log

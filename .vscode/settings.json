@@ -1,0 +1,21 @@
+{
+  "cmake.generator": "Ninja",
+  "cmake.useCMakePresets": "always",
+  "cmake.configureOnOpen": true,
+  "cmake.buildDirectory": "${workspaceFolder}/build",
+  "cmake.preferredGenerators": ["Ninja"],
+  "C_Cpp.default.configurationProvider": "ms-vscode.cmake-tools",
+  "C_Cpp.default.cppStandard": "c++20",
+  "C_Cpp.default.intelliSenseMode": "windows-msvc-x64",
+  "C_Cpp.intelliSenseEngine": "default",
+  "C_Cpp.intelliSenseEngineFallback": "disabled",
+  "files.associations": {
+    "*.h": "cpp",
+    "*.inl": "cpp"
+  },
+  "editor.formatOnSave": false,
+  "search.exclude": {
+    "build/**": true,
+    "build-debug/**": true
+  }
+}
