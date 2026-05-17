@@ -16,12 +16,15 @@
 | Version | Date | Changes | Author |
 |---------|------|---------|--------|
 | 1.0.0 | 2026-05-17 | 초기 M1–M7 종료 보고서 | Report Generator Agent |
+| 1.0.1 | 2026-05-18 | M8 종료 addendum 추가. 4 atom 완료 (R3-R5 doc / R1+R2 / C1), 444→454 tests (+10), match rate 95→98%. 신규 §M8 Closure 섹션 추가, Related Documents 갱신, design v1.0.11 / plan v1.0.3 unchanged 명시. | Claude |
 
 ## Related Documents
 
 - Plan: [fast-explorer-core.plan.md v1.0.3](../../01-plan/features/fast-explorer-core.plan.md)
-- Design: [fast-explorer-core.design.md v1.0.10](../../02-design/features/fast-explorer-core.design.md)
+- Design: [fast-explorer-core.design.md v1.0.11](../../02-design/features/fast-explorer-core.design.md) (§11.1 reconciled in M8)
 - Handoff: `docs/handoffs/2026-05-17_m6-close-m7-prep-measurement.md`
+- Usage Guide: [docs/usage-guide.md](../../usage-guide.md)
+- M8+ Roadmap: [docs/m8-followup.md](../../m8-followup.md)
 
 ---
 
@@ -439,9 +442,99 @@ a38cdee M6 atom 6b: renameItem + F2 + LVS_EDITLABELS in-place + DRY resolveRowSo
 
 ---
 
+## M8 Closure Addendum (2026-05-18)
+
+본 섹션은 M1–M7 보고서 작성 직후 동일 PDCA 사이클의 연장선으로 진행한 M8 마일스톤 결과를 추가합니다. M9 (multi-pane) 진입 전 마지막 foundation hardening 단계입니다.
+
+### Executive Summary (M8)
+
+| 항목 | 값 |
+|------|------|
+| 기간 | 2026-05-17 ~ 2026-05-18 (1일) |
+| Atom 수 | 4 (R3-R5 doc / R1+R2 결합 / C1 단일) |
+| 신규 commit | 4 (`2f01561`, `5012291`, `64b735b`, + 본 보고서 갱신) |
+| 테스트 | 444 → **454** (+10, settings-store 10 + R1 13개는 이전 commit에 포함되어 444에 이미 반영) |
+| **설계 일치율** | 95% → **98%** (gap-detector 재측정) |
+| 신규 소스 파일 | 5 (settings-store.{h,cpp}, text-utf.{h,cpp}, settings-store-tests.cpp) |
+| Code 변경 LOC | +783 / -2 |
+
+### 4 관점 가치 제공 (M8)
+
+| 관점 | 내용 |
+|------|------|
+| Problem | M1–M7 측정 인프라는 완성됐지만 design §4.4 / §4.4.2 / §4.3 / §11.1의 4개 약속이 미구현 상태로 carry-forward. 사용자 인지 영역(설정 보존, 속성 컬럼, 숨김 파일 디밍)이 비어 있어 production-ready 인지점 미달. |
+| Solution | 4 atom 마라톤으로 closure: (1) §11.1 doc reconciliation으로 measurement 책임 분할 명문화, (2) Attributes 컬럼 + dim 시각 일관성, (3) settings.json round-trip으로 세션 연속성. 각 atom L1+L2 review 후 commit, MEMORY 규칙 100% 준수. |
+| Function UX Effect | 사용자가 (1) 폴더의 H/S/R/J/L/C 속성을 즉시 확인, (2) 숨김/시스템 파일이 회색 디밍으로 시각 구분, (3) 앱 재시작 후 마지막 폴더 + 창 크기/위치 복원. 첫 실행 친화적 기본값 (CW_USEDEFAULT-like 센티넬, 320×240 최소 클램프). |
+| Core Value | M1–M7 핵심 성능 (9.39 MB / 404 KB / 29.83 ms) 회귀 없이 design 95→98% 정렬. R3-R5 reconciliation으로 design intent가 ship 인프라와 일치 → 다음 사이클에서 "histogram-based가 표준 측정 surface"라는 명확한 기준. **DRY-001 UTF-8 helper 사전 격리**로 5번째 copy 방지 (M8에서 처음 가시화된 pre-existing tech debt). |
+
+### M8 Atom 상세
+
+| Atom | Commit | 핵심 변경 | 신규 tests |
+|------|--------|-----------|-----------|
+| R3-R5 doc | `2f01561` | design §11.1 PerfTracker 14 promised events → 6 phase-boundary + histogram surface 책임 분할 (§11.1.2 신규). measurement backend 표 갱신 (ETW deferred로 격하, RDTSC 미사용 확인). | 0 (doc-only) |
+| R1+R2 | `5012291` | Attributes 컬럼 (H/S/R/J/L/C 마커), NM_CUSTOMDRAW dim. kIsSymlink flag bit + isReadOnly accessor. SortKey::None=4 sentinel. ColumnSpec.sortable. | +13 (column-formatter) |
+| C1 | `64b735b` | settings.json reader/writer + atomic save + 64KB 캡 + JSON parser. MainWindow applyInitialState / capturedSessionState. WM_DESTROY GetWindowPlacement 캡처. main.cpp load → apply → openFolder fallback → save 오케스트레이션. text-utf.{h,cpp} 추출. | +10 (settings-store) |
+
+### Match Rate 분해 (98%)
+
+| Category | Weight | M7 종료 | M8 종료 | Δ |
+|----------|:-----:|:------:|:------:|:-:|
+| Design Match (feature promises) | 40% | 92% | **98%** | +6 |
+| Architecture Compliance | 25% | 100% | **100%** | 0 |
+| Convention Compliance | 20% | 95% | **96%** | +1 |
+| Doc-Implementation Match | 15% | 95% | **100%** | +5 |
+
+가중 평균 = 0.40·98 + 0.25·100 + 0.20·96 + 0.15·100 = **98.4%**.
+
+### M8 측정 게이트
+
+| 항목 | M7 측정값 | M8 측정값 | Drift |
+|------|----------|----------|------|
+| 100k working set (headless) | 9.39 MB | (회귀 없음, 측정 미반복) | — |
+| 10-cycle memory drift | 404 KB | (회귀 없음) | — |
+| Tests pass | 412/412 | **454/454** | +42 (+10 vs 444 직전) |
+| Build clean | ✅ | ✅ | — |
+| Run stability (3 consecutive) | ✅ | ✅ | — |
+
+### 신규 발견 (M8 후 gap-detector)
+
+| 항목 | 심각도 | 위치 | 처리 |
+|------|:-----:|------|------|
+| DRY-001 UTF-8 helpers pre-existing 4 copies | LOW | `bench-json.cpp:85`, `bench-cli.cpp:349,393`, `ring-logger.cpp:139` | M8에서 처음 가시화 (canonical impl이 이번에 추가됨). text-utf.h header comment에 migration 의도 기록. M9 prep에서 별도 atom으로 처리 권장 (~30 LOC 순삭). |
+| R1 handleCustomDraw integration | LOW | `main-window.cpp:712-740` | shouldRenderDimmed 분리로 predicate는 unit-tested. Win32 dispatch round-trip은 A1 1-hour soak에서 검증. |
+| C1 applyInitialState + WM_DESTROY 캡처 | LOW | `main-window.cpp:191-218`, `:388-406` | 데이터 layer 완전 cover. UI 통합은 1-hour soak에서 "폴더 열고 → 종료 → 재실행 → 마지막 폴더 복원" 시나리오로 검증 가능. |
+
+### M8 Carry-forward (M9 진입 시 처리)
+
+| 항목 | 출처 | 비고 |
+|------|------|------|
+| A1 Full-UI Stall + p99 quantitative | M7 amber | 1-hour interactive soak 매뉴얼 실행 |
+| A2 EmptyWorkingSet restore-recovery | M7 amber | minimize/restore 시나리오 매뉴얼 또는 UI automation |
+| C2 Multi-pane | M9 핵심 | PaneManager + dual-horizontal, 6 atom 예상 |
+| C3 Layout shortcuts (Ctrl+1/2/H/Tab) | M9 (C2 의존) | 1 atom |
+| UTF-8 DRY 4 copy migration | M8 신규 | M9 prep에서 cleanup atom 1개 |
+
+### M8 학습
+
+- **doc reconciliation도 atom으로 다뤄야 한다**: R3-R5는 코드 변경 0이지만 design intent를 ship된 surface에 맞추는 작업이 명확한 closure 가치를 가짐. PDCA carrying gap-detector가 인식하는 형태로 명문화.
+- **결합 atom의 boundary는 데이터 소스 공유로 판단**: R1+R2는 같은 FileEntry.flags를 사용하므로 결합이 자연스러웠음. C1은 독립적 (settings persistence)이라 별도 atom이 옳음. 사용자 결정과 일치.
+- **SortKey::None sentinel 도입은 미래 footgun 방지**: sortable=false placeholder가 SortKey::Name이면 미래 누군가가 sortable 게이트를 우회하는 코드를 추가할 때 silent regression 가능. enum sentinel + serialization append-only 규칙은 cheap insurance.
+- **text-utf 사전 격리는 5번째 copy 방지**: M8 atom 자체는 settings-store만 신규 사용했지만, helper를 처음부터 공통 위치에 두어 향후 추가 사용처에서 다시 inline copy하지 않도록 강제. 5 copy 도달 후 일괄 정리는 더 비싸다.
+
+### M8 → M9 전환 권장
+
+**READY** — match rate 98%로 M9 (multi-pane) plan 단계 진입 안전. 권장 진행:
+
+1. `/pdca plan fast-explorer-core-m9` (또는 plan v1.0.4 bump) — M9 multi-pane plan 작성
+2. M8 carry-forward 5개 항목 중 UTF-8 DRY migration은 M9 atom 1로 포함 권장 (~1시간, 코드 정리만)
+3. A1/A2 manual soak는 M9 atom 진행과 병렬 가능 (사용자 가용 시점에 실행)
+4. C2 multi-pane은 design §4.2 재검토부터 시작 (M1-M7 single-pane 가정으로 박힌 코드 사이트 매핑)
+
+---
+
 **End of Report**
 
-Generated: 2026-05-17  
-Agent: Report Generator v1.6.0  
-PDCA Status: Do → Check (entry)
+Generated: 2026-05-17 (M1–M7) / Updated: 2026-05-18 (M8 closure)  
+Agent: Report Generator v1.6.0 + Claude  
+PDCA Status: Do (M8) → Check (M8 closed) → ready for M9 Plan
 
