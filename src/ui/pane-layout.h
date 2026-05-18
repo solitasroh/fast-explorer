@@ -6,14 +6,16 @@
 #include <cstddef>
 #include <cstdint>
 
+#include "core/layout-orientation.h"
+
 namespace fast_explorer::ui {
 
-// Orientation of the seam in a 2-pane layout. Vertical splits the
-// client area along a vertical seam (panes side-by-side, original
-// behaviour). Horizontal splits along a horizontal seam (panes
-// stacked top-over-bottom). The enum is stored as an explicit
-// uint8_t because it is also serialized into settings.json.
-enum class LayoutOrientation : std::uint8_t { Vertical = 0, Horizontal = 1 };
+// Seam orientation lives in core for settings round-trip; re-exported
+// here so the existing `ui::LayoutOrientation::*` call sites
+// (computePaneRects, resolveLayoutToggle, MainWindow) compile
+// unchanged. Vertical = panes side-by-side (default). Horizontal =
+// panes stacked top-over-bottom.
+using LayoutOrientation = fast_explorer::core::LayoutOrientation;
 
 // Action the layout-toggle resolver wants the caller to perform.
 enum class LayoutAction : std::uint8_t {

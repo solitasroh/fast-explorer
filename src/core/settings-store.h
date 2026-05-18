@@ -4,6 +4,8 @@
 #include <cstdint>
 #include <string>
 
+#include "core/layout-orientation.h"
+
 namespace fast_explorer::core {
 
 // Sentinel for "use system default position/size". Matches the spirit
@@ -21,6 +23,7 @@ struct SessionState {
   int windowHeight = kSettingsUseDefault;
   LayoutMode layoutMode = LayoutMode::Single;
   std::wstring secondPath;
+  LayoutOrientation orientation = LayoutOrientation::Vertical;
 };
 
 // Resolves the canonical settings file path:
@@ -33,11 +36,14 @@ struct SessionState {
 // I/O error, or malformed content; `state` is left at construction
 // defaults. The format is a flat object with these keys: last_path
 // (string), window_x / window_y / window_w / window_h (integers),
-// layout_mode (string "single"|"dual"), second_path (string). A
-// settings file produced by an older build (missing layout_mode /
-// second_path) loads cleanly with those fields at their defaults
-// (Single, empty). An unrecognized layout_mode string is treated as
-// Single rather than failing the whole load.
+// layout_mode (string "single"|"dual"), second_path (string),
+// orientation (string "vertical"|"horizontal"). A settings file
+// produced by an older build (missing the newer keys) loads cleanly
+// with those fields at their defaults (layoutMode=Single, secondPath
+// empty, orientation=Vertical). Unrecognized layout_mode or
+// orientation strings are treated as their defaults rather than
+// failing the whole load (lenient forward-compat); a wrong-type
+// value fails the load (strict against schema corruption).
 [[nodiscard]] bool loadSessionState(const std::wstring& path,
                                     SessionState& state);
 

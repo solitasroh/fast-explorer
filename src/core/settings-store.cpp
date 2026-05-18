@@ -35,8 +35,11 @@ constexpr std::string_view kKeyWindowW    {"window_w"};
 constexpr std::string_view kKeyWindowH    {"window_h"};
 constexpr std::string_view kKeyLayoutMode {"layout_mode"};
 constexpr std::string_view kKeySecondPath {"second_path"};
+constexpr std::string_view kKeyOrientation{"orientation"};
 constexpr std::string_view kLayoutSingle  {"single"};
 constexpr std::string_view kLayoutDual    {"dual"};
+constexpr std::string_view kOrientVertical  {"vertical"};
+constexpr std::string_view kOrientHorizontal{"horizontal"};
 
 bool readWholeFileBytes(const std::wstring& path, std::vector<char>& out) {
   HANDLE h = CreateFileW(path.c_str(), GENERIC_READ,
@@ -155,7 +158,7 @@ class JsonReader {
   }
 
  private:
-  std::string_view text_;
+  const std::string_view text_;
   std::size_t pos_ = 0;
 
   char peek() const {
@@ -249,6 +252,17 @@ class JsonReader {
                                               : LayoutMode::Single;
       return true;
     }
+    if (key == kKeyOrientation) {
+      std::string raw;
+      if (!parseStringInto(raw)) return false;
+      // Same lenient policy as layout_mode — a future "diagonal" or
+      // a hand-edit typo falls back to Vertical (the historical
+      // default) rather than failing the whole load.
+      state.orientation = (raw == kOrientHorizontal)
+          ? LayoutOrientation::Horizontal
+          : LayoutOrientation::Vertical;
+      return true;
+    }
     int* slot = nullptr;
     if      (key == kKeyWindowX) slot = &state.windowX;
     else if (key == kKeyWindowY) slot = &state.windowY;
@@ -340,13 +354,17 @@ bool saveSessionState(const std::wstring& path, const SessionState& state) {
   out.reserve(kSerializedReserveHint);
   const std::string_view layoutLabel =
       state.layoutMode == LayoutMode::Dual ? kLayoutDual : kLayoutSingle;
-  appendKeyString   (out, kKeyLastPath,   state.lastPath,    /*first*/ true);
-  appendKeyInt      (out, kKeyWindowX,    state.windowX,     /*first*/ false);
-  appendKeyInt      (out, kKeyWindowY,    state.windowY,     /*first*/ false);
-  appendKeyInt      (out, kKeyWindowW,    state.windowWidth, /*first*/ false);
-  appendKeyInt      (out, kKeyWindowH,    state.windowHeight,/*first*/ false);
-  appendKeyRawString(out, kKeyLayoutMode, layoutLabel,       /*first*/ false);
-  appendKeyString   (out, kKeySecondPath, state.secondPath,  /*first*/ false);
+  const std::string_view orientLabel =
+      state.orientation == LayoutOrientation::Horizontal
+          ? kOrientHorizontal : kOrientVertical;
+  appendKeyString   (out, kKeyLastPath,    state.lastPath,    /*first*/ true);
+  appendKeyInt      (out, kKeyWindowX,     state.windowX,     /*first*/ false);
+  appendKeyInt      (out, kKeyWindowY,     state.windowY,     /*first*/ false);
+  appendKeyInt      (out, kKeyWindowW,     state.windowWidth, /*first*/ false);
+  appendKeyInt      (out, kKeyWindowH,     state.windowHeight,/*first*/ false);
+  appendKeyRawString(out, kKeyLayoutMode,  layoutLabel,       /*first*/ false);
+  appendKeyString   (out, kKeySecondPath,  state.secondPath,  /*first*/ false);
+  appendKeyRawString(out, kKeyOrientation, orientLabel,       /*first*/ false);
   out.append("\n}\n");
 
   const std::wstring temp = path + L".tmp";

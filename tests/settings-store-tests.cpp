@@ -10,6 +10,7 @@
 using fast_explorer::core::defaultSettingsPath;
 using fast_explorer::core::kSettingsUseDefault;
 using fast_explorer::core::LayoutMode;
+using fast_explorer::core::LayoutOrientation;
 using fast_explorer::core::loadSessionState;
 using fast_explorer::core::saveSessionState;
 using fast_explorer::core::SessionState;
@@ -50,6 +51,7 @@ FE_TEST_CASE(SettingsStore_DefaultState_HasSentinels) {
   FE_ASSERT_EQ(s.windowHeight, kSettingsUseDefault);
   FE_ASSERT_EQ(s.layoutMode, LayoutMode::Single);
   FE_ASSERT_TRUE(s.secondPath.empty());
+  FE_ASSERT_EQ(s.orientation, LayoutOrientation::Vertical);
 }
 
 FE_TEST_CASE(SettingsStore_Load_NonexistentFile_ReturnsFalseAndKeepsDefaults) {
@@ -300,6 +302,89 @@ FE_TEST_CASE(SettingsStore_RoundTrip_SecondPathBackslashEscape) {
   SessionState read;
   FE_ASSERT_TRUE(loadSessionState(path, read));
   FE_ASSERT_WSTREQ(read.secondPath, written.secondPath);
+}
+
+FE_TEST_CASE(SettingsStore_RoundTrip_HorizontalOrientation) {
+  TempDir tmp(L"settings-orient-horizontal");
+  const std::wstring path = makeSettingsPath(tmp);
+  SessionState written;
+  written.lastPath = L"C:\\";
+  written.windowX = 0; written.windowY = 0;
+  written.windowWidth = 1280; written.windowHeight = 800;
+  written.layoutMode = LayoutMode::Dual;
+  written.secondPath = L"D:\\";
+  written.orientation = LayoutOrientation::Horizontal;
+  FE_ASSERT_TRUE(saveSessionState(path, written));
+
+  SessionState read;
+  FE_ASSERT_TRUE(loadSessionState(path, read));
+  FE_ASSERT_EQ(read.orientation, LayoutOrientation::Horizontal);
+}
+
+FE_TEST_CASE(SettingsStore_RoundTrip_VerticalOrientationDefault) {
+  TempDir tmp(L"settings-orient-vertical-default");
+  const std::wstring path = makeSettingsPath(tmp);
+  SessionState written;
+  written.lastPath = L"C:\\";
+  written.windowX = 0; written.windowY = 0;
+  written.windowWidth = 320; written.windowHeight = 240;
+  // orientation field left at default.
+  FE_ASSERT_TRUE(saveSessionState(path, written));
+
+  SessionState read;
+  FE_ASSERT_TRUE(loadSessionState(path, read));
+  FE_ASSERT_EQ(read.orientation, LayoutOrientation::Vertical);
+}
+
+FE_TEST_CASE(SettingsStore_Load_V2FileMissingOrientation_DefaultsVertical) {
+  // A settings file written by a pre-v3 build does not carry the
+  // orientation key. Loader must fall back to Vertical so the user
+  // sees the same dual layout that prior versions of this app
+  // shipped exclusively.
+  TempDir tmp(L"settings-v2-compat");
+  const std::wstring path = makeSettingsPath(tmp);
+  SessionState seed;
+  FE_ASSERT_TRUE(saveSessionState(path, seed));
+  FE_ASSERT_TRUE(writeRawUtf8(
+      path,
+      "{\"last_path\":\"C:\\\\v2\",\"window_x\":10,\"window_y\":20,"
+      "\"window_w\":640,\"window_h\":480,\"layout_mode\":\"dual\","
+      "\"second_path\":\"D:\\\\v2\"}"));
+
+  SessionState s;
+  FE_ASSERT_TRUE(loadSessionState(path, s));
+  FE_ASSERT_EQ(s.layoutMode, LayoutMode::Dual);
+  FE_ASSERT_WSTREQ(s.secondPath, L"D:\\v2");
+  FE_ASSERT_EQ(s.orientation, LayoutOrientation::Vertical);
+}
+
+FE_TEST_CASE(SettingsStore_Load_UnknownOrientationString_FallsBackToVertical) {
+  TempDir tmp(L"settings-unknown-orient");
+  const std::wstring path = makeSettingsPath(tmp);
+  SessionState seed;
+  FE_ASSERT_TRUE(saveSessionState(path, seed));
+  FE_ASSERT_TRUE(writeRawUtf8(
+      path,
+      "{\"last_path\":\"\",\"window_x\":0,\"window_y\":0,"
+      "\"window_w\":0,\"window_h\":0,\"layout_mode\":\"single\","
+      "\"second_path\":\"\",\"orientation\":\"diagonal\"}"));
+
+  SessionState s;
+  FE_ASSERT_TRUE(loadSessionState(path, s));
+  FE_ASSERT_EQ(s.orientation, LayoutOrientation::Vertical);
+}
+
+FE_TEST_CASE(SettingsStore_Load_OrientationWrongType_ReturnsFalse) {
+  TempDir tmp(L"settings-orient-wrong-type");
+  const std::wstring path = makeSettingsPath(tmp);
+  SessionState seed;
+  FE_ASSERT_TRUE(saveSessionState(path, seed));
+  FE_ASSERT_TRUE(writeRawUtf8(
+      path,
+      "{\"last_path\":\"\",\"orientation\":0}"));
+
+  SessionState s;
+  FE_ASSERT_FALSE(loadSessionState(path, s));
 }
 
 FE_TEST_CASE(SettingsStore_DefaultSettingsPath_NonEmptyOnTypicalEnv) {

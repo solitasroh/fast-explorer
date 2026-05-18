@@ -416,8 +416,14 @@ void MainWindow::applyInitialState(
 
 void MainWindow::restoreLayoutFromSession(
     const fast_explorer::core::SessionState& state) {
+  // Even in single mode we adopt the persisted orientation so the
+  // next Alt+V / Alt+H press lands in the user's last-used seam
+  // (and so a saved file with layout_mode=single + orientation=
+  // horizontal is meaningful — pressing Alt+V from there enters
+  // dual in horizontal, which is the natural "last-mode wins" UX).
+  orientation_ = state.orientation;
   if (state.layoutMode == fast_explorer::core::LayoutMode::Dual) {
-    enterDualMode(state.secondPath);
+    enterDualMode(state.secondPath, state.orientation);
   }
 }
 
@@ -747,6 +753,7 @@ LRESULT MainWindow::handleMessage(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPa
             ? paneManager_->at(1).currentPath()
             : std::wstring();
       }
+      capturedState_->orientation = orientation_;
       if (addressBarPopup_) {
         addressBarPopup_->hide();
         addressBarPopup_.reset();
