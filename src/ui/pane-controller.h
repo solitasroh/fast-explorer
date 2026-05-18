@@ -101,6 +101,16 @@ class PaneController {
     }
     sortCoord_.applyPendingSort(gen);
   }
+  // Reapplies the persisted sort spec after an enumeration finishes
+  // so refresh and navigation preserve the user's chosen column +
+  // direction. Caller (MainWindow::onEnumComplete) gates on the
+  // enumeration worker having joined.
+  void reapplyPersistedSort() {
+    if (workerActive_.load(std::memory_order_acquire)) {
+      return;
+    }
+    sortCoord_.reapplyAfterEnumeration();
+  }
   fast_explorer::core::SortSpec currentSortSpec() const noexcept {
     return sortCoord_.currentSortSpec();
   }

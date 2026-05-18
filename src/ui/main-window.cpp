@@ -425,10 +425,17 @@ void MainWindow::syncAddressBar(std::size_t paneIdx) {
 }
 
 void MainWindow::clearListViewForNavigation(std::size_t paneIdx) noexcept {
-  if (paneIdx < listViews_.size() && listViews_[paneIdx] != nullptr) {
-    ListView_SetItemCountEx(listViews_[paneIdx], 0, 0);
-    InvalidateRect(listViews_[paneIdx], nullptr, TRUE);
+  if (paneIdx >= listViews_.size() || listViews_[paneIdx] == nullptr) {
+    return;
   }
+  HWND lv = listViews_[paneIdx];
+  // LVS_OWNERDATA keeps LVIS_SELECTED/LVIS_FOCUSED bits per-index
+  // internally; SetItemCountEx(0) alone does NOT clear them. Without
+  // this broadcast, the new folder's rows inherit the old folder's
+  // selection bits at their old indices.
+  ListView_SetItemState(lv, -1, 0, LVIS_SELECTED | LVIS_FOCUSED);
+  ListView_SetItemCountEx(lv, 0, 0);
+  InvalidateRect(lv, nullptr, TRUE);
 }
 
 void MainWindow::applyActivePaneAppearance() noexcept {
@@ -983,20 +990,24 @@ LRESULT MainWindow::onEnumComplete(WPARAM wParam) {
   if (target == nullptr) {
     return 0;
   }
+  // Reapply the persisted sort spec before reading itemCount so the
+  // user-visible row count + header arrow + first paint all reflect
+  // the sorted permutation in one shot.
+  target->reapplyPersistedSort();
   const size_t finalCount = target->store().itemCount();
   fast_explorer::core::recordMemoryProbe(perf_);
   const std::wstring text = readyStatusText(finalCount);
   setStatusText(text.c_str());
   const std::size_t idx = paneIndexFromWParam(wParam);
-  // Empty folders never emit kWmFeEnumBatch, so the list-view item
-  // count carries over the previous folder's rows otherwise.
   if (idx < listViews_.size() && listViews_[idx] != nullptr) {
     ListView_SetItemCountEx(listViews_[idx], static_cast<int>(finalCount),
                             LVSICF_NOSCROLL);
-    // SetItemCountEx alone does not always repaint when shrinking;
-    // force an invalidate so the cached row paint from the previous
-    // folder is not left on screen.
     InvalidateRect(listViews_[idx], nullptr, TRUE);
+  }
+  // Header arrow + dimmed-row repaint after the sort re-apply above.
+  finalizeSortApply(idx);
+  if (idx < selectionSyncs_.size() && selectionSyncs_[idx]) {
+    selectionSyncs_[idx]->reapplyFromPane();
   }
   if (idx < labelEdits_.size() && labelEdits_[idx]) {
     labelEdits_[idx]->maybeStartPendingEdit();
@@ -1352,9 +1363,19 @@ void MainWindow::handleItemActivate(NMHDR* hdr) {
   // one; flipping activeness keeps subsequent accelerators on the
   // source pane.
   setActivePane(paneIdx);
-  paneManager_->at(paneIdx).openItem(static_cast<std::uint32_t>(nmia->iItem));
-  clearListViewForNavigation(paneIdx);
-  syncAddressBar(paneIdx);
+  auto& target = paneManager_->at(paneIdx);
+  const auto row = static_cast<std::uint32_t>(nmia->iItem);
+  // Activating a file shells out (ShellExecuteExW) without navigating
+  // the pane, so clearing the list-view / wiping the address bar
+  // afterwards would discard the user's selection and current path.
+  const bool willNavigate =
+      row < target.store().publishedCount() &&
+      fast_explorer::core::isDirectory(target.store().visibleAt(row));
+  target.openItem(row);
+  if (willNavigate) {
+    clearListViewForNavigation(paneIdx);
+    syncAddressBar(paneIdx);
+  }
 }
 
 void MainWindow::handleColumnClick(NMHDR* hdr) {

@@ -69,6 +69,12 @@ class PaneSortCoordinator {
   // sort worker does not read entries_ that are about to be cleared.
   void cancel() noexcept;
 
+  // Re-applies the previously requested sort spec to the freshly
+  // enumerated store. Caller must invoke after enumeration finishes
+  // and the enumeration worker has joined; no-op when no prior sort
+  // was applied or the store is still empty.
+  void reapplyAfterEnumeration();
+
   // Test seam: lowers the threshold so a small dataset can hit the
   // background path. No production caller.
   void setSortThresholdRowsForTest(std::uint32_t rows) noexcept {

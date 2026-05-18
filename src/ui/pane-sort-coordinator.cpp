@@ -105,7 +105,21 @@ void PaneSortCoordinator::applyPendingSort(std::uint32_t gen) {
 void PaneSortCoordinator::cancel() noexcept {
   stopAndJoin(sortWorker_);
   pendingSortedOrder_.clear();
+  // Drop the "applied to current store" flag, but keep sortSpec_
+  // intact so the next enumeration can re-apply the user's chosen
+  // column + direction (see reapplyAfterEnumeration).
   sorted_ = false;
+}
+
+void PaneSortCoordinator::reapplyAfterEnumeration() {
+  if (sortSpec_.key == fast_explorer::core::SortKey::None) {
+    return;
+  }
+  if (store_.publishedCount() == 0) {
+    return;
+  }
+  store_.sort(sortSpec_);
+  sorted_ = true;
 }
 
 }  // namespace fast_explorer::ui
