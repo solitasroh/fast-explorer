@@ -8,7 +8,8 @@ PaneLayoutRects computePaneRects(int clientWidth,
                                  int clientHeight,
                                  int addressBarHeight,
                                  int statusBarHeight,
-                                 std::size_t paneCount) noexcept {
+                                 std::size_t paneCount,
+                                 LayoutOrientation orientation) noexcept {
   PaneLayoutRects out{};
   if (paneCount == 0 || paneCount > 2) {
     return out;
@@ -17,16 +18,21 @@ PaneLayoutRects computePaneRects(int clientWidth,
   if (listH <= 0 || clientWidth <= 0) {
     return out;
   }
+  const int topY = addressBarHeight;
+  const int bottomY = addressBarHeight + listH;
   if (paneCount == 1) {
-    out.panes[0] = {0, addressBarHeight, clientWidth,
-                    addressBarHeight + listH};
+    out.panes[0] = {0, topY, clientWidth, bottomY};
     return out;
   }
-  const int leftRight = clientWidth / 2;
-  out.panes[0] = {0, addressBarHeight, leftRight,
-                  addressBarHeight + listH};
-  out.panes[1] = {leftRight, addressBarHeight, clientWidth,
-                  addressBarHeight + listH};
+  if (orientation == LayoutOrientation::Horizontal) {
+    const int midY = topY + listH / 2;
+    out.panes[0] = {0, topY,  clientWidth, midY};
+    out.panes[1] = {0, midY,  clientWidth, bottomY};
+    return out;
+  }
+  const int midX = clientWidth / 2;
+  out.panes[0] = {0,    topY, midX,        bottomY};
+  out.panes[1] = {midX, topY, clientWidth, bottomY};
   return out;
 }
 

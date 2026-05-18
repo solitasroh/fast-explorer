@@ -4,6 +4,7 @@
 #include "ui/pane-layout.h"
 
 using fast_explorer::ui::computePaneRects;
+using fast_explorer::ui::LayoutOrientation;
 using fast_explorer::ui::PaneLayoutRects;
 
 namespace {
@@ -71,4 +72,62 @@ FE_TEST_CASE(PaneLayout_ZeroClientWidth_ReturnsZeroedRects) {
 FE_TEST_CASE(PaneLayout_NoAddressBar_ListStartsAtTop) {
   const auto out = computePaneRects(1280, 800, 0, 22, 1);
   FE_ASSERT_TRUE(rectEquals(out.panes[0], 0, 0, 1280, 778));
+}
+
+FE_TEST_CASE(PaneLayout_Dual_Vertical_ExplicitMatchesDefault) {
+  const auto def = computePaneRects(1280, 800, 28, 22, 2);
+  const auto exp = computePaneRects(1280, 800, 28, 22, 2,
+                                    LayoutOrientation::Vertical);
+  FE_ASSERT_TRUE(rectEquals(exp.panes[0], def.panes[0].left,
+                            def.panes[0].top, def.panes[0].right,
+                            def.panes[0].bottom));
+  FE_ASSERT_TRUE(rectEquals(exp.panes[1], def.panes[1].left,
+                            def.panes[1].top, def.panes[1].right,
+                            def.panes[1].bottom));
+}
+
+FE_TEST_CASE(PaneLayout_Dual_Horizontal_SplitTopBottomFiftyFifty) {
+  // listH = 800 - 28 - 22 = 750; midY = 28 + 375 = 403
+  const auto out = computePaneRects(1280, 800, 28, 22, 2,
+                                    LayoutOrientation::Horizontal);
+  FE_ASSERT_TRUE(rectEquals(out.panes[0], 0, 28,  1280, 403));
+  FE_ASSERT_TRUE(rectEquals(out.panes[1], 0, 403, 1280, 778));
+}
+
+FE_TEST_CASE(PaneLayout_Dual_Horizontal_OddListH_TopAbsorbsLossOnRoundDown) {
+  // listH = 801 - 28 - 22 = 751; 751/2 = 375; midY = 28 + 375 = 403
+  // Top covers [28, 403) -> height 375, bottom covers [403, 779) -> 376
+  const auto out = computePaneRects(1280, 801, 28, 22, 2,
+                                    LayoutOrientation::Horizontal);
+  FE_ASSERT_TRUE(rectEquals(out.panes[0], 0, 28,  1280, 403));
+  FE_ASSERT_TRUE(rectEquals(out.panes[1], 0, 403, 1280, 779));
+}
+
+FE_TEST_CASE(PaneLayout_Single_Horizontal_OrientationIgnored) {
+  const auto out = computePaneRects(1280, 800, 28, 22, 1,
+                                    LayoutOrientation::Horizontal);
+  FE_ASSERT_TRUE(rectEquals(out.panes[0], 0, 28, 1280, 778));
+  FE_ASSERT_TRUE(rectZero(out.panes[1]));
+}
+
+FE_TEST_CASE(PaneLayout_Dual_Horizontal_ZeroListH_ReturnsZeroedRects) {
+  const auto out = computePaneRects(1280, 50, 28, 22, 2,
+                                    LayoutOrientation::Horizontal);
+  FE_ASSERT_TRUE(rectZero(out.panes[0]));
+  FE_ASSERT_TRUE(rectZero(out.panes[1]));
+}
+
+FE_TEST_CASE(PaneLayout_Dual_Horizontal_ZeroClientWidth_ReturnsZeroedRects) {
+  const auto out = computePaneRects(0, 800, 28, 22, 2,
+                                    LayoutOrientation::Horizontal);
+  FE_ASSERT_TRUE(rectZero(out.panes[0]));
+  FE_ASSERT_TRUE(rectZero(out.panes[1]));
+}
+
+FE_TEST_CASE(PaneLayout_Dual_Horizontal_NoAddressBar) {
+  // listH = 800 - 0 - 22 = 778; midY = 0 + 389 = 389
+  const auto out = computePaneRects(1280, 800, 0, 22, 2,
+                                    LayoutOrientation::Horizontal);
+  FE_ASSERT_TRUE(rectEquals(out.panes[0], 0, 0,   1280, 389));
+  FE_ASSERT_TRUE(rectEquals(out.panes[1], 0, 389, 1280, 778));
 }
