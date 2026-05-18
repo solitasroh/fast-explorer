@@ -65,12 +65,12 @@ std::size_t FileModelStore::appendBatch(std::span<const FileEntry> batch) {
   return stored;
 }
 
-const FileEntry& FileModelStore::entryAt(std::size_t index) const {
+const FileEntry& FileModelStore::entryAt(std::size_t index) const noexcept {
   assert(index < workerSize_.load(std::memory_order_acquire));
   return entries_[index];
 }
 
-const FileEntry& FileModelStore::visibleAt(std::size_t visibleIndex) const {
+const FileEntry& FileModelStore::visibleAt(std::size_t visibleIndex) const noexcept {
   assert(visibleIndex < workerSize_.load(std::memory_order_acquire));
   const std::uint32_t raw = visibleOrder_[visibleIndex];
   assert(raw < workerSize_.load(std::memory_order_acquire));

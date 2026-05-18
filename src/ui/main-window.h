@@ -198,6 +198,11 @@ class MainWindow {
   // window resizes in both single and dual mode.
   void applyStatusParts(int clientWidth);
 
+  // Recomputes the selection summary for `paneIdx` and writes it to
+  // that pane's status-bar part. Driven by the debounced selection
+  // timer in onTimer so a Ctrl+A storm collapses to a single update.
+  void refreshSelectionSummary(std::size_t paneIdx);
+
   fast_explorer::core::ProcessMemoryService& memory_;
   fast_explorer::core::PerfTracker& perf_;
   HINSTANCE instance_ = nullptr;

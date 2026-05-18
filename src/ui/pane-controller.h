@@ -131,6 +131,32 @@ class PaneController {
   std::size_t selectedCount() const noexcept {
     return selectedRaws_.size();
   }
+
+  struct SelectionSummary {
+    std::size_t selectedCount{};
+    std::uint64_t selectedBytes{};   // directories excluded
+  };
+
+  // O(N) over the selected-raw set; N is the number of currently
+  // selected rows. Folders are excluded from the byte total because
+  // their size field is always zero (and Explorer-parity: the
+  // status bar never sums folder content for the selection).
+  // Worst case: Ctrl+A on a 100k folder iterates 100k entries once
+  // — sub-millisecond in practice, and the caller debounces UI
+  // updates so this is invoked at most once per ~100 ms.
+  SelectionSummary selectionSummary() const noexcept {
+    SelectionSummary out;
+    out.selectedCount = selectedRaws_.size();
+    const std::size_t bound = store_.publishedCount();
+    for (std::uint32_t raw : selectedRaws_) {
+      if (raw >= bound) continue;
+      const auto& e = store_.entryAt(raw);
+      if (!fast_explorer::core::isDirectory(e)) {
+        out.selectedBytes += e.size;
+      }
+    }
+    return out;
+  }
   // Returns the visible-row positions of every selected raw index
   // under the current visibleOrder permutation, sorted ascending.
   // Used by MainWindow after a sort apply to reapply LVIS_SELECTED to

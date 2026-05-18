@@ -15,6 +15,25 @@ std::wstring loadingProgressStatusText(uint64_t itemsSoFar);
 std::wstring readyStatusText(size_t itemCount);
 std::wstring errorStatusText(fast_explorer::core::EnumerationError err);
 
+// Compact human-readable byte size: "0 B", "512 B", "1.2 KB",
+// "45.2 MB", "1.5 GB", "2.3 TB". Single-decimal precision above
+// 1 KB so the value stays under ~8 characters of status-bar
+// real estate even for terabyte totals. No allocation up to the
+// SSO threshold of std::wstring (~15 wchars on MSVC).
+std::wstring humanReadableSize(std::uint64_t bytes);
+
+// Formats the combined "total | selected" line used on each
+// pane's status-bar part. When `selectedCount == 0` only the
+// total is rendered ("1,234 items"); otherwise the selection
+// summary follows after a separator ("1,234 items | 5 selected
+// (45.2 MB)"). `selectedBytes` is rendered through
+// humanReadableSize and is expected to already exclude folders
+// per Explorer convention (folders sum to 0 bytes for selection
+// status, summing folder content is too expensive to do inline).
+std::wstring formatSelectionSummary(std::size_t totalCount,
+                                    std::size_t selectedCount,
+                                    std::uint64_t selectedBytes);
+
 // Formats a shell operation outcome for the status bar.
 // Examples:
 //   "Moved 'foo.txt' to Recycle Bin"

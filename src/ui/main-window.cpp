@@ -43,6 +43,13 @@ constexpr std::size_t kMaxPanes = 2;
 // One timer id per pane so dual-mode debounce windows do not collide.
 constexpr UINT_PTR kTimerFsCoalesceBase = 1;
 constexpr UINT kFsCoalesceMs = 100;
+// Separate timer band so a selection-storm (Ctrl+A on a 100k folder
+// fires LVN_ITEMCHANGED once per row) collapses into a single
+// status-bar refresh instead of N format calls. 80 ms is one
+// vsync past the 60 Hz frame budget — fast enough to feel live,
+// slow enough to absorb every selection burst observed so far.
+constexpr UINT_PTR kTimerSelSummaryBase = kTimerFsCoalesceBase + kMaxPanes;
+constexpr UINT kSelSummaryDebounceMs = 80;
 
 struct ColumnSpec {
   const wchar_t* title;
@@ -333,6 +340,13 @@ void MainWindow::enterSingleMode() {
   if (addressBarPopup_) {
     addressBarPopup_->hide();
   }
+  // Stop any pending pane-1 timers BEFORE tearing the pane down so
+  // a queued WM_TIMER cannot reference the just-destroyed slot
+  // (refreshSelectionSummary / fs-coalesce refresh both gate on
+  // paneManager_->count() and would no-op, but discarding the
+  // event up front keeps the cleanup local).
+  KillTimer(hwnd_, kTimerFsCoalesceBase + 1);
+  KillTimer(hwnd_, kTimerSelSummaryBase + 1);
   // Release per-pane coordinators first so the second pane's worker
   // threads (icon STA, shell STA) join before we tear down the
   // PaneController they reference.
@@ -750,6 +764,15 @@ LRESULT MainWindow::handleMessage(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPa
     case kWmFeFsChange:       return onFsChange(hwnd, wParam);
     case WM_TIMER:            return onTimer(hwnd, msg, wParam, lParam);
     case WM_DESTROY: {
+      // Stop all pending timers before teardown so a queued
+      // WM_TIMER does not race the pane-coordinator destruction
+      // chain below. Win32 auto-purges per-HWND timers on destroy
+      // but a message already pulled by DispatchMessage would
+      // still fire — this explicit kill closes that window.
+      for (std::size_t i = 0; i < kMaxPanes; ++i) {
+        KillTimer(hwnd, kTimerFsCoalesceBase + i);
+        KillTimer(hwnd, kTimerSelSummaryBase + i);
+      }
       // GetWindowPlacement reports the restored rect even when the
       // window is currently minimized, so a Ctrl+Z-as-minimize-and-
       // close still records the visible position.
@@ -1064,7 +1087,26 @@ LRESULT MainWindow::onTimer(HWND hwnd, UINT msg, WPARAM wParam,
     }
     return 0;
   }
+  if (wParam >= kTimerSelSummaryBase &&
+      wParam < kTimerSelSummaryBase + kMaxPanes) {
+    const std::size_t idx = wParam - kTimerSelSummaryBase;
+    KillTimer(hwnd, wParam);
+    refreshSelectionSummary(idx);
+    return 0;
+  }
   return DefWindowProcW(hwnd, msg, wParam, lParam);
+}
+
+void MainWindow::refreshSelectionSummary(std::size_t paneIdx) {
+  if (!paneManager_ || paneIdx >= paneManager_->count()) {
+    return;
+  }
+  const PaneController& pane = paneManager_->at(paneIdx);
+  const std::size_t totalCount = pane.store().itemCount();
+  const auto sum = pane.selectionSummary();
+  const std::wstring text =
+      formatSelectionSummary(totalCount, sum.selectedCount, sum.selectedBytes);
+  setPaneStatusText(paneIdx, text.c_str());
 }
 
 LRESULT MainWindow::onEnumBatch(WPARAM wParam, LPARAM lParam) {
@@ -1104,8 +1146,10 @@ LRESULT MainWindow::onEnumComplete(WPARAM wParam) {
   const size_t finalCount = target->store().itemCount();
   fast_explorer::core::recordMemoryProbe(perf_);
   const std::size_t idx = paneIndexFromWParam(wParam);
-  const std::wstring text = readyStatusText(finalCount);
-  setPaneStatusText(idx, text.c_str());
+  // Single source of truth for the per-pane status line: the
+  // selection-aware refresh handles both no-selection ("N items")
+  // and sticky-selection (refresh / fs-watch path) cases.
+  refreshSelectionSummary(idx);
   if (idx < listViews_.size() && listViews_[idx] != nullptr) {
     ListView_SetItemCountEx(listViews_[idx], static_cast<int>(finalCount),
                             LVSICF_NOSCROLL);
@@ -1380,6 +1424,19 @@ LRESULT MainWindow::handleListViewNotify(NMHDR* hdr) {
       if (paneIndexFromListView(hdr->hwndFrom, idx) &&
           idx < selectionSyncs_.size() && selectionSyncs_[idx]) {
         selectionSyncs_[idx]->handleItemChanged(hdr);
+        // Debounce status-summary updates: a single Ctrl+A on a
+        // 100k folder fires ~100k LVN_ITEMCHANGED messages back to
+        // back, but we only need one final summary repaint after
+        // the storm settles. The timer is reset on every event.
+        const auto* nmlv = reinterpret_cast<const NMLISTVIEW*>(hdr);
+        if (nmlv->uChanged & LVIF_STATE) {
+          const UINT oldSel = nmlv->uOldState & LVIS_SELECTED;
+          const UINT newSel = nmlv->uNewState & LVIS_SELECTED;
+          if (oldSel != newSel) {
+            SetTimer(hwnd_, kTimerSelSummaryBase + idx,
+                     kSelSummaryDebounceMs, nullptr);
+          }
+        }
       }
       return 0;
     }

@@ -50,6 +50,58 @@ std::wstring readyStatusText(size_t itemCount) {
   return buf;
 }
 
+std::wstring humanReadableSize(std::uint64_t bytes) {
+  // Below 1 KiB the byte count is printed verbatim with the "B"
+  // suffix; above, we scale to the largest unit that keeps the
+  // value in [1.0, 1024.0) and render one decimal place. kUnits
+  // is named for the precondition that the caller already
+  // divided by 1024 once before consulting the table.
+  constexpr std::uint64_t kKiB = 1024ull;
+  if (bytes < kKiB) {
+    wchar_t buf[32];
+    swprintf_s(buf, _countof(buf), L"%llu B",
+               static_cast<unsigned long long>(bytes));
+    return buf;
+  }
+  static const wchar_t* const kUnitsAboveKiB[] = {
+      L"KB", L"MB", L"GB", L"TB", L"PB", L"EB"};
+  double value = static_cast<double>(bytes) / 1024.0;
+  std::size_t unitIdx = 0;
+  // Compare against 1023.95 so a value like 1023.99 KB rounds up
+  // to "1.0 MB" via the next-unit jump rather than printing
+  // "1024.0 KB" via swprintf rounding.
+  constexpr double kNextUnitThreshold = 1023.95;
+  while (value >= kNextUnitThreshold &&
+         unitIdx + 1 < (sizeof(kUnitsAboveKiB) / sizeof(*kUnitsAboveKiB))) {
+    value /= 1024.0;
+    ++unitIdx;
+  }
+  wchar_t buf[32];
+  swprintf_s(buf, _countof(buf), L"%.1f %ls", value,
+             kUnitsAboveKiB[unitIdx]);
+  return buf;
+}
+
+std::wstring formatSelectionSummary(std::size_t totalCount,
+                                    std::size_t selectedCount,
+                                    std::uint64_t selectedBytes) {
+  if (selectedCount == 0) {
+    return readyStatusText(totalCount);
+  }
+  const std::wstring size = humanReadableSize(selectedBytes);
+  // Worst-case bound: two uint64_t in decimal (20 wchars each), the
+  // literal "items | " / " selected (" / ")" prefixes (~24 wchars),
+  // plus humanReadableSize output (≤ ~10 wchars: "9999.9 XB"). Total
+  // ≤ ~74 wchars, comfortably inside the 128-wchar buffer.
+  wchar_t buf[128];
+  swprintf_s(buf, _countof(buf),
+             L"%llu items | %llu selected (%ls)",
+             static_cast<unsigned long long>(totalCount),
+             static_cast<unsigned long long>(selectedCount),
+             size.c_str());
+  return buf;
+}
+
 std::wstring errorStatusText(fast_explorer::core::EnumerationError err) {
   std::wstring out;
   out.reserve(32);

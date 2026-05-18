@@ -101,7 +101,7 @@ class FileModelStore {
   // entryAt's reference is invalidated by any subsequent append; only
   // FileEntry::namePtr remains valid because it points into the arena.
   // Precondition: index < itemCount(). Violations are UB in release.
-  const FileEntry& entryAt(std::size_t index) const;
+  const FileEntry& entryAt(std::size_t index) const noexcept;
 
   // Visible-order accessors. The store maintains a permutation of
   // entry indices so the UI can reorder rows (sort) without rewriting
@@ -113,7 +113,7 @@ class FileModelStore {
   // Precondition: visibleIndex < itemCount(). Violations are UB in release.
   // From the UI thread, guard the index against publishedCount() rather
   // than itemCount() so the worker's append stream stays race-free.
-  const FileEntry& visibleAt(std::size_t visibleIndex) const;
+  const FileEntry& visibleAt(std::size_t visibleIndex) const noexcept;
   // The span's data() is stable for the store's lifetime — using it
   // after the store is destroyed is UB, and forwarding it to another
   // thread requires the caller to keep the store alive for that
