@@ -84,9 +84,6 @@ int runMessageLoop(fast_explorer::core::PerfTracker& perf,
       perf.record(PerfTracker::EventId::AppInteractive);
       firstMessageSeen = true;
     }
-    // Stall is measured per dispatch: anything outside the
-    // Translate+Dispatch pair (the GetMessage blocking wait, our own
-    // post-dispatch logging) should not count against the budget.
     LARGE_INTEGER t0{};
     QueryPerformanceCounter(&t0);
     TranslateMessage(&msg);
@@ -179,7 +176,8 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance,
     if (ole.ok()) {
       INITCOMMONCONTROLSEX icc{};
       icc.dwSize = sizeof(icc);
-      icc.dwICC = ICC_LISTVIEW_CLASSES | ICC_BAR_CLASSES;
+      icc.dwICC = ICC_LISTVIEW_CLASSES | ICC_BAR_CLASSES |
+                  ICC_USEREX_CLASSES;
       InitCommonControlsEx(&icc);
 
       const std::wstring settingsPath =

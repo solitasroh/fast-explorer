@@ -3,6 +3,9 @@
 
 using fast_explorer::ui::generationFromWParam;
 using fast_explorer::ui::kWmFeAddressCommit;
+using fast_explorer::ui::kWmFeAddressPopupClick;
+using fast_explorer::ui::kWmFeAddressPopupHide;
+using fast_explorer::ui::kWmFeAddressPopupPick;
 using fast_explorer::ui::kWmFeBase;
 using fast_explorer::ui::kWmFeEnumBatch;
 using fast_explorer::ui::kWmFeEnumComplete;
@@ -20,7 +23,8 @@ FE_TEST_CASE(UiMessages_AllDistinct) {
       kWmFeBase,         kWmFeEnumBatch,    kWmFeEnumComplete,
       kWmFeEnumError,    kWmFeSortComplete, kWmFeIconBatch,
       kWmFeOperationResult, kWmFeFsChange,  kWmFePerfEvent,
-      kWmFeAddressCommit,
+      kWmFeAddressCommit, kWmFeAddressPopupPick,
+      kWmFeAddressPopupHide, kWmFeAddressPopupClick,
   };
   for (size_t i = 0; i < std::size(ids); ++i) {
     for (size_t j = i + 1; j < std::size(ids); ++j) {
@@ -31,7 +35,7 @@ FE_TEST_CASE(UiMessages_AllDistinct) {
 
 FE_TEST_CASE(UiMessages_WithinWmAppRange) {
   FE_ASSERT_TRUE(kWmFeBase >= WM_APP);
-  FE_ASSERT_TRUE(kWmFeAddressCommit <= 0xBFFFu);
+  FE_ASSERT_TRUE(kWmFeAddressPopupClick <= 0xBFFFu);
 }
 
 FE_TEST_CASE(UiMessages_ConsecutiveOffsets) {
@@ -39,6 +43,9 @@ FE_TEST_CASE(UiMessages_ConsecutiveOffsets) {
   FE_ASSERT_EQ(kWmFeEnumComplete, kWmFeBase + 0x02u);
   FE_ASSERT_EQ(kWmFePerfEvent, kWmFeBase + 0x08u);
   FE_ASSERT_EQ(kWmFeAddressCommit, kWmFeBase + 0x09u);
+  FE_ASSERT_EQ(kWmFeAddressPopupPick, kWmFeBase + 0x0Bu);
+  FE_ASSERT_EQ(kWmFeAddressPopupHide, kWmFeBase + 0x0Cu);
+  FE_ASSERT_EQ(kWmFeAddressPopupClick, kWmFeBase + 0x0Du);
 }
 
 FE_TEST_CASE(UiMessages_MakePaneWParam_ZeroPaneZeroGen_IsZero) {

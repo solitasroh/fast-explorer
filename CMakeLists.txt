@@ -31,6 +31,8 @@ set(FE_APP_SOURCES
   src/app/main.cpp
   src/app/app-services.cpp
   src/app/app-services.h
+  src/ui/address-bar-popup.cpp
+  src/ui/address-bar-popup.h
   src/ui/main-window.cpp
   src/ui/main-window.h
   src/ui/messages.h
@@ -67,6 +69,8 @@ set(FE_APP_SOURCES
   src/ui/result-channel.h
   src/ui/selection-sync.cpp
   src/ui/selection-sync.h
+  src/ui/shell-context-menu.cpp
+  src/ui/shell-context-menu.h
   src/ui/status-text.cpp
   src/ui/status-text.h
   src/ui/stall-probe.cpp
@@ -117,6 +121,7 @@ target_include_directories(FastExplorer PRIVATE src)
 target_link_libraries(FastExplorer PRIVATE
   comctl32
   shell32
+  shlwapi
   ole32
   oleaut32
   user32

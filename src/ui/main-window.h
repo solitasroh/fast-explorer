@@ -15,6 +15,7 @@ struct SessionState;
 
 namespace fast_explorer::ui {
 
+class AddressBarPopup;
 class DispInfoHistogram;
 class LabelEditController;
 class PaneController;
@@ -149,7 +150,9 @@ class MainWindow {
   // and the kWmFeSortComplete handler.
   void finalizeSortApply();
   LRESULT handleCustomDraw(NMHDR* hdr);
+  void handleListViewRightClick(NMHDR* hdr);
   void handleAddressCommit();
+  void syncAddressBar();
   // Queues a recycle-bin delete on the focused list-view row, if any.
   // Bound to the Delete accelerator. No-op when the list has no
   // focused item.
@@ -175,6 +178,7 @@ class MainWindow {
   std::array<HWND, 2> listViews_{nullptr, nullptr};
   HWND statusBar_ = nullptr;
   HWND addressBar_ = nullptr;
+  std::unique_ptr<AddressBarPopup> addressBarPopup_;
   bool firstBatchSeen_ = false;
   std::unique_ptr<PaneManager> paneManager_;
   // Cached pointer to the manager's currently active pane. Refreshed

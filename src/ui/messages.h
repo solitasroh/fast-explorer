@@ -21,6 +21,9 @@ inline constexpr UINT kWmFeFsChange        = kWmFeBase + 0x07;
 inline constexpr UINT kWmFePerfEvent       = kWmFeBase + 0x08;
 inline constexpr UINT kWmFeAddressCommit   = kWmFeBase + 0x09;
 inline constexpr UINT kWmFeLowMemory       = kWmFeBase + 0x0A;
+inline constexpr UINT kWmFeAddressPopupPick = kWmFeBase + 0x0B;
+inline constexpr UINT kWmFeAddressPopupHide = kWmFeBase + 0x0C;
+inline constexpr UINT kWmFeAddressPopupClick = kWmFeBase + 0x0D;
 
 inline constexpr WORD kAccelFocusAddress = 100;
 inline constexpr WORD kAccelNavBack       = 101;
@@ -37,7 +40,7 @@ inline constexpr WORD kAccelPaneSwitch    = 111;  // Tab
 
 static_assert(kWmFeBase >= WM_APP,
               "WM_FE_* must live in the WM_APP user range");
-static_assert(kWmFeLowMemory <= 0xBFFFu,
+static_assert(kWmFeAddressPopupClick <= 0xBFFFu,
               "WM_FE_* must not spill past the WM_APP user range");
 
 // WPARAM packing for multi-pane message routing. The low 32 bits hold

@@ -16,6 +16,7 @@
 #include "ui/dispinfo-histogram.h"
 #include "ui/dpi-scale.h"
 #include "ui/format-cache.h"
+#include "ui/address-bar-popup.h"
 #include "ui/icon-cache.h"
 #include "ui/icon-cache-coordinator.h"
 #include "ui/label-edit-controller.h"
@@ -24,6 +25,7 @@
 #include "ui/pane-layout.h"
 #include "ui/pane-manager.h"
 #include "ui/selection-sync.h"
+#include "ui/shell-context-menu.h"
 #include "ui/status-text.h"
 
 namespace fast_explorer::ui {
@@ -58,9 +60,11 @@ HWND createStatusBar(HWND parent, HINSTANCE instance) {
 }
 
 HWND createAddressBar(HWND parent, HINSTANCE instance) {
-  return CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", L"",
-                         WS_CHILD | WS_VISIBLE | WS_TABSTOP | ES_AUTOHSCROLL,
-                         0, 0, 0, 0, parent, nullptr, instance, nullptr);
+  return CreateWindowExW(
+      0, WC_COMBOBOXEXW, L"",
+      WS_CHILD | WS_VISIBLE | WS_TABSTOP |
+          CBS_DROPDOWN | CBS_AUTOHSCROLL,
+      0, 0, 0, 0, parent, nullptr, instance, nullptr);
 }
 
 HWND createListView(HWND parent, HINSTANCE instance) {
@@ -306,6 +310,7 @@ void MainWindow::setActivePane(std::size_t idx) {
     SendMessageW(statusBar_, SB_SETTEXTW, 0,
                  reinterpret_cast<LPARAM>(label));
   }
+  syncAddressBar();
 }
 
 void MainWindow::applyInitialState(
@@ -354,12 +359,19 @@ bool MainWindow::openFolder(const std::wstring& path) {
   if (!pane_->openFolder(path)) {
     return false;
   }
-  if (addressBar_) {
-    SetWindowTextW(addressBar_, path.c_str());
-  }
+  syncAddressBar();
   const std::wstring text = loadingStatusText(path);
   setStatusText(text.c_str());
   return true;
+}
+
+void MainWindow::syncAddressBar() {
+  if (!addressBar_ || !pane_) return;
+  const std::wstring& path = pane_->currentPath();
+  SetWindowTextW(addressBar_, path.c_str());
+  if (addressBarPopup_) {
+    addressBarPopup_->reflectCurrentPath(path);
+  }
 }
 
 bool MainWindow::isStaleGeneration(WPARAM wParam) const {
@@ -402,10 +414,8 @@ LRESULT CALLBACK MainWindow::addressBarSubclassProc(
     return DLGC_WANTMESSAGE;
   }
   if (msg == WM_KEYDOWN && wParam == VK_RETURN) {
-    HWND parent = GetParent(hwnd);
-    if (parent) {
-      SendMessageW(parent, kWmFeAddressCommit, 0, 0);
-    }
+    HWND root = GetAncestor(hwnd, GA_ROOT);
+    if (root) SendMessageW(root, kWmFeAddressCommit, 0, 0);
     return 0;
   }
   if (msg == WM_CHAR && wParam == VK_RETURN) {
@@ -528,6 +538,15 @@ LRESULT MainWindow::handleMessage(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPa
     case WM_SIZE:             return onSize(hwnd, msg, wParam, lParam);
     case WM_COMMAND:          return onCommand(hwnd, msg, wParam, lParam);
     case kWmFeAddressCommit:  handleAddressCommit(); return 0;
+    case kWmFeAddressPopupPick: {
+      auto* payload = reinterpret_cast<std::wstring*>(wParam);
+      if (payload) {
+        std::wstring path = std::move(*payload);
+        delete payload;
+        openFolder(path);
+      }
+      return 0;
+    }
     case kWmFeEnumBatch:      return onEnumBatch(wParam, lParam);
     case kWmFeEnumComplete:   return onEnumComplete(wParam);
     case kWmFeSortComplete:   return onSortComplete(wParam);
@@ -562,6 +581,10 @@ LRESULT MainWindow::handleMessage(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPa
             ? paneManager_->at(1).currentPath()
             : std::wstring();
       }
+      if (addressBarPopup_) {
+        addressBarPopup_->hide();
+        addressBarPopup_.reset();
+      }
       PostQuitMessage(0);
       return 0;
     }
@@ -594,7 +617,12 @@ LRESULT MainWindow::onCreate(HWND hwnd) {
   statusBar_ = createStatusBar(hwnd, instance_);
   addressBar_ = createAddressBar(hwnd, instance_);
   if (addressBar_) {
-    SetWindowSubclass(addressBar_, &MainWindow::addressBarSubclassProc, 0, 0);
+    HWND innerEdit = reinterpret_cast<HWND>(
+        SendMessageW(addressBar_, CBEM_GETEDITCONTROL, 0, 0));
+    if (innerEdit != nullptr) {
+      SetWindowSubclass(innerEdit, &MainWindow::addressBarSubclassProc, 0, 0);
+    }
+    addressBarPopup_ = std::make_unique<AddressBarPopup>(hwnd);
   }
   paneManager_ = std::make_unique<PaneManager>();
   paneManager_->openInitial(hwnd);
@@ -685,6 +713,19 @@ LRESULT MainWindow::onSize(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 
 LRESULT MainWindow::onCommand(HWND hwnd, UINT msg, WPARAM wParam,
                               LPARAM lParam) {
+  const HWND srcCtrl = reinterpret_cast<HWND>(lParam);
+  if (srcCtrl != nullptr && srcCtrl == addressBar_ && addressBar_ != nullptr) {
+    const WORD notif = HIWORD(wParam);
+    if (notif == CBN_DROPDOWN) {
+      SendMessageW(addressBar_, CB_SHOWDROPDOWN, FALSE, 0);
+      if (addressBarPopup_) {
+        addressBarPopup_->showFor(addressBar_,
+                                   pane_ ? pane_->currentPath()
+                                         : std::wstring());
+      }
+      return 0;
+    }
+  }
   if (HIWORD(wParam) == 1) {
     switch (LOWORD(wParam)) {
       case kAccelFocusAddress:
@@ -694,18 +735,16 @@ LRESULT MainWindow::onCommand(HWND hwnd, UINT msg, WPARAM wParam,
         }
         return 0;
       case kAccelNavBack:
-        if (pane_) pane_->back();
+        if (pane_) { pane_->back(); syncAddressBar(); }
         return 0;
       case kAccelNavForward:
-        if (pane_) pane_->forward();
+        if (pane_) { pane_->forward(); syncAddressBar(); }
         return 0;
       case kAccelNavUp:
-        if (pane_) pane_->up();
+        if (pane_) { pane_->up(); syncAddressBar(); }
         return 0;
       case kAccelRefresh:
-        if (pane_) {
-          pane_->refresh();
-        }
+        if (pane_) { pane_->refresh(); syncAddressBar(); }
         return 0;
       case kAccelDelete:
         deleteFocusedItem();
@@ -905,9 +944,12 @@ void MainWindow::finalizeSortApply() {
 }
 
 LRESULT MainWindow::handleListViewNotify(NMHDR* hdr) {
-  if (hdr == nullptr) {
-    return 0;
-  }
+  if (hdr == nullptr) return 0;
+  const bool fromListView =
+      hdr->hwndFrom != nullptr &&
+      std::find(listViews_.begin(), listViews_.end(), hdr->hwndFrom) !=
+          listViews_.end();
+  if (!fromListView) return 0;
   switch (hdr->code) {
     case LVN_GETDISPINFOW:
       handleGetDispInfo(hdr);
@@ -934,9 +976,57 @@ LRESULT MainWindow::handleListViewNotify(NMHDR* hdr) {
       return 0;
     case NM_CUSTOMDRAW:
       return handleCustomDraw(hdr);
+    case NM_RCLICK:
+      handleListViewRightClick(hdr);
+      return 0;
     default:
       return 0;
   }
+}
+
+void MainWindow::handleListViewRightClick(NMHDR* hdr) {
+  if (hdr == nullptr || paneManager_ == nullptr) return;
+  std::size_t paneIdx = 0;
+  for (std::size_t i = 0; i < listViews_.size(); ++i) {
+    if (listViews_[i] == hdr->hwndFrom) {
+      paneIdx = i;
+      break;
+    }
+  }
+  if (paneIdx >= paneManager_->count()) return;
+  PaneController& targetPane = paneManager_->at(paneIdx);
+  const std::wstring& folderPath = targetPane.currentPath();
+  if (folderPath.empty()) return;
+
+  auto* nmia = reinterpret_cast<NMITEMACTIVATE*>(hdr);
+  POINT screenPt = nmia->ptAction;
+  // ptAction is (-1, -1) for keyboard-invoked context menus (Shift+F10
+  // / VK_APPS). Anchor to the focused row's rect in that case, or the
+  // list-view origin when nothing is focused.
+  if (screenPt.x == -1 && screenPt.y == -1) {
+    const int focused = ListView_GetNextItem(hdr->hwndFrom, -1, LVNI_FOCUSED);
+    RECT r{};
+    if (focused >= 0 &&
+        ListView_GetItemRect(hdr->hwndFrom, focused, &r, LVIR_LABEL)) {
+      screenPt.x = r.left;
+      screenPt.y = r.bottom;
+    } else {
+      screenPt.x = 0;
+      screenPt.y = 0;
+    }
+  }
+  ClientToScreen(hdr->hwndFrom, &screenPt);
+
+  std::vector<std::wstring> leaves;
+  if (nmia->iItem >= 0) {
+    const auto& store = targetPane.store();
+    const auto row = static_cast<std::size_t>(nmia->iItem);
+    if (row < store.publishedCount()) {
+      const auto& entry = store.visibleAt(row);
+      leaves.emplace_back(entry.namePtr, entry.nameLength);
+    }
+  }
+  ShellContextMenu::show(hwnd_, folderPath, leaves, screenPt);
 }
 
 LRESULT MainWindow::handleCustomDraw(NMHDR* hdr) {
@@ -1051,6 +1141,7 @@ void MainWindow::handleItemActivate(NMHDR* hdr) {
     return;
   }
   pane_->openItem(static_cast<std::uint32_t>(nmia->iItem));
+  syncAddressBar();
 }
 
 void MainWindow::handleColumnClick(NMHDR* hdr) {
