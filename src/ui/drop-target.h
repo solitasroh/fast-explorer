@@ -46,6 +46,10 @@ class PaneDropTarget final : public IDropTarget {
   ComPtr<IDataObject> currentData_;
   ComPtr<IDropTarget> currentTarget_;
   std::wstring currentTargetPath_;
+  // Row under cursor that produced currentTarget_. -1 = empty area,
+  // -2 = uninitialised. Avoids the SHParseDisplayName + SHBindToObject
+  // chain on every DragOver when the cursor stays on the same row.
+  int lastHitRow_ = -2;
   LONG refCount_ = 1;
 };
 

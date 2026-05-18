@@ -6,7 +6,8 @@
 #include <array>
 #include <memory>
 #include <string>
-#include <unordered_set>
+
+#include "ui/cut-state-tracker.h"
 
 namespace fast_explorer::core {
 class ProcessMemoryService;
@@ -91,13 +92,6 @@ class MainWindow {
   static LRESULT CALLBACK wndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam);
   LRESULT handleMessage(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam);
 
-  // Per-message handlers split out of handleMessage so the dispatch
-  // switch reads as a flat routing table. Each helper returns the
-  // value handleMessage should return for that case. Argument policy:
-  // handlers that can fall back to DefWindowProcW (standard WM_*)
-  // take (HWND, UINT, WPARAM, LPARAM) so msg can be replayed; the
-  // kWmFe* user-message handlers take only the params they actually
-  // need.
   LRESULT onCreate(HWND hwnd);
   LRESULT onDpiChanged(HWND hwnd, WPARAM wParam, LPARAM lParam);
   LRESULT onSize(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam);
@@ -190,8 +184,7 @@ class MainWindow {
   HWND statusBar_ = nullptr;
   std::array<HWND, 2> addressBars_{nullptr, nullptr};
   std::array<IDropTarget*, 2> dropTargets_{nullptr, nullptr};
-  std::wstring cutFolderPath_;
-  std::unordered_set<std::wstring> cutLeaves_;
+  CutStateTracker cutState_;
   std::unique_ptr<AddressBarPopup> addressBarPopup_;
   std::array<bool, 2> firstBatchSeen_{false, false};
   std::unique_ptr<PaneManager> paneManager_;

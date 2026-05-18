@@ -23,6 +23,13 @@ class ComPtr {
   T*  operator->() const noexcept { return p_; }
   explicit operator bool() const noexcept { return p_ != nullptr; }
   void reset() noexcept { if (p_) { p_->Release(); p_ = nullptr; } }
+  // Adopts `raw` without AddRef (the caller's ref is now owned by *this).
+  void attach(T* raw) noexcept { reset(); p_ = raw; }
+  // Shares `raw` by adding a reference.
+  void copyFrom(T* raw) noexcept {
+    reset();
+    if (raw) { raw->AddRef(); p_ = raw; }
+  }
 
  private:
   T* p_ = nullptr;

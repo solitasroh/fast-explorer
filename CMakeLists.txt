@@ -73,10 +73,14 @@ set(FE_APP_SOURCES
   src/ui/shell-context-menu.h
   src/ui/clipboard-ops.cpp
   src/ui/clipboard-ops.h
+  src/ui/cut-state-tracker.cpp
+  src/ui/cut-state-tracker.h
   src/ui/drop-source.cpp
   src/ui/drop-source.h
   src/ui/drop-target.cpp
   src/ui/drop-target.h
+  src/ui/shell-bind.cpp
+  src/ui/shell-bind.h
   src/ui/status-text.cpp
   src/ui/status-text.h
   src/ui/stall-probe.cpp

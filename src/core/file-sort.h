@@ -35,11 +35,11 @@ struct SortSpec {
 // platform sort algorithm.
 [[nodiscard]] int compareEntries(const FileEntry& a,
                                  const FileEntry& b,
-                                 SortSpec spec);
+                                 SortSpec spec) noexcept;
 
 [[nodiscard]] inline bool lessEntries(const FileEntry& a,
                                       const FileEntry& b,
-                                      SortSpec spec) {
+                                      SortSpec spec) noexcept {
   return compareEntries(a, b, spec) < 0;
 }
 

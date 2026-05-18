@@ -8,30 +8,11 @@
 #include "core/file-model-store.h"
 #include "ui/pane-controller.h"
 #include "ui/pane-manager.h"
+#include "ui/shell-bind.h"
 
 namespace fast_explorer::ui {
 
 namespace {
-
-ComPtr<IDropTarget> queryFolderDropTarget(const std::wstring& path,
-                                          HWND ownerHwnd) {
-  ComPtr<IDropTarget> target;
-  if (path.empty()) return target;
-  LPITEMIDLIST pidl = nullptr;
-  SFGAOF attrs = 0;
-  if (FAILED(SHParseDisplayName(path.c_str(), nullptr, &pidl, 0, &attrs))) {
-    return target;
-  }
-  PidlOwner pidlOwner(pidl);
-  ComPtr<IShellFolder> folder;
-  if (FAILED(SHBindToObject(nullptr, pidlOwner.get(), nullptr,
-                            IID_PPV_ARGS(folder.put())))) {
-    return target;
-  }
-  folder->CreateViewObject(ownerHwnd, IID_IDropTarget,
-                           reinterpret_cast<void**>(target.put()));
-  return target;
-}
 
 std::wstring joinPath(const std::wstring& base, std::wstring_view leaf) {
   std::wstring out = base;
@@ -73,22 +54,27 @@ void PaneDropTarget::clearCurrentTarget() noexcept {
   }
   currentTarget_.reset();
   currentTargetPath_.clear();
+  lastHitRow_ = -2;
 }
 
 bool PaneDropTarget::rebindTarget(POINT screenPt) {
   if (!paneManager_ || paneIdx_ >= paneManager_->count()) {
     return false;
   }
-  PaneController& pane = paneManager_->at(paneIdx_);
-  std::wstring targetPath = pane.currentPath();
   POINT clientPt = screenPt;
   ScreenToClient(lv_, &clientPt);
   LVHITTESTINFO ht{};
   ht.pt = clientPt;
   const int hit = ListView_HitTest(lv_, &ht);
-  if (hit >= 0) {
+  const int hitRow = (hit >= 0) ? hit : -1;
+  if (hitRow == lastHitRow_ && currentTarget_) {
+    return false;
+  }
+  PaneController& pane = paneManager_->at(paneIdx_);
+  std::wstring targetPath = pane.currentPath();
+  if (hitRow >= 0) {
     const auto& store = pane.store();
-    const auto row = static_cast<std::size_t>(hit);
+    const auto row = static_cast<std::size_t>(hitRow);
     if (row < store.publishedCount()) {
       const auto& entry = store.visibleAt(row);
       if (fast_explorer::core::isDirectory(entry)) {
@@ -97,13 +83,11 @@ bool PaneDropTarget::rebindTarget(POINT screenPt) {
       }
     }
   }
-  if (targetPath == currentTargetPath_ && currentTarget_) {
-    return false;
-  }
   clearCurrentTarget();
   currentTarget_ = queryFolderDropTarget(targetPath, lv_);
   if (currentTarget_) {
     currentTargetPath_ = std::move(targetPath);
+    lastHitRow_ = hitRow;
     return true;
   }
   return false;
@@ -112,11 +96,7 @@ bool PaneDropTarget::rebindTarget(POINT screenPt) {
 STDMETHODIMP PaneDropTarget::DragEnter(IDataObject* data, DWORD keyState,
                                        POINTL pt, DWORD* effect) {
   if (effect == nullptr) return E_POINTER;
-  currentData_.reset();
-  if (data) {
-    data->AddRef();
-    *currentData_.put() = data;
-  }
+  currentData_.copyFrom(data);
   POINT screenPt{pt.x, pt.y};
   rebindTarget(screenPt);
   if (currentTarget_) {

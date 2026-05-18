@@ -5,24 +5,11 @@
 #include <shlobj.h>
 
 #include "ui/com-raii.h"
+#include "ui/shell-bind.h"
 
 namespace fast_explorer::ui {
 
 namespace {
-
-ComPtr<IShellFolder> bindFolderByPath(const std::wstring& path) {
-  ComPtr<IShellFolder> folder;
-  if (path.empty()) return folder;
-  LPITEMIDLIST raw = nullptr;
-  SFGAOF attrs = 0;
-  if (FAILED(SHParseDisplayName(path.c_str(), nullptr, &raw, 0, &attrs)) ||
-      raw == nullptr) {
-    return folder;
-  }
-  PidlOwner pidl(raw);
-  SHBindToObject(nullptr, pidl.get(), nullptr, IID_PPV_ARGS(folder.put()));
-  return folder;
-}
 
 ComPtr<IDataObject> buildDataObject(
     IShellFolder* folder, const std::vector<std::wstring>& leaves) {
@@ -80,16 +67,6 @@ bool stampPreferredDropEffect(IDataObject* data, DWORD effect) {
   return true;
 }
 
-ComPtr<IDropTarget> queryFolderDropTarget(const std::wstring& path,
-                                          HWND ownerHwnd) {
-  ComPtr<IDropTarget> target;
-  ComPtr<IShellFolder> folder = bindFolderByPath(path);
-  if (!folder) return target;
-  folder->CreateViewObject(ownerHwnd, IID_IDropTarget,
-                           reinterpret_cast<void**>(target.put()));
-  return target;
-}
-
 }  // namespace
 
 bool ClipboardOps::copy(const std::wstring& folderPath,
@@ -109,28 +86,34 @@ bool ClipboardOps::copy(const std::wstring& folderPath,
   return true;
 }
 
-bool ClipboardOps::paste(const std::wstring& folderPath, HWND ownerHwnd) {
-  if (folderPath.empty()) return false;
+PasteResult ClipboardOps::paste(const std::wstring& folderPath,
+                                 HWND ownerHwnd) {
+  if (folderPath.empty()) return PasteResult::NoData;
   ComPtr<IDataObject> data;
-  if (FAILED(OleGetClipboard(data.put())) || !data) return false;
+  if (FAILED(OleGetClipboard(data.put())) || !data) {
+    return PasteResult::NoData;
+  }
   ComPtr<IDropTarget> target = queryFolderDropTarget(folderPath, ownerHwnd);
-  if (!target) return false;
+  if (!target) return PasteResult::NoTarget;
   POINTL pt{0, 0};
   DWORD effect = DROPEFFECT_COPY | DROPEFFECT_MOVE | DROPEFFECT_LINK;
   if (FAILED(target->DragEnter(data.get(), MK_LBUTTON, pt, &effect))) {
-    return false;
+    return PasteResult::Rejected;
   }
   if (effect == DROPEFFECT_NONE) {
     target->DragLeave();
-    return false;
+    return PasteResult::Rejected;
   }
   effect = DROPEFFECT_COPY | DROPEFFECT_MOVE | DROPEFFECT_LINK;
   target->DragOver(MK_LBUTTON, pt, &effect);
   if (effect == DROPEFFECT_NONE) {
     target->DragLeave();
-    return false;
+    return PasteResult::Rejected;
   }
-  return SUCCEEDED(target->Drop(data.get(), MK_LBUTTON, pt, &effect));
+  // IDropTarget contract: Drop subsumes DragLeave on success.
+  return SUCCEEDED(target->Drop(data.get(), MK_LBUTTON, pt, &effect))
+             ? PasteResult::Success
+             : PasteResult::Rejected;
 }
 
 }  // namespace fast_explorer::ui

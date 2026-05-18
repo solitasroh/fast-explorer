@@ -25,11 +25,13 @@
 #include "ui/pane-controller.h"
 #include "ui/pane-layout.h"
 #include "ui/pane-manager.h"
+#include "../../resources/resource-ids.h"
 #include "ui/clipboard-ops.h"
 #include "ui/com-raii.h"
 #include "ui/drop-source.h"
 #include "ui/drop-target.h"
 #include "ui/selection-sync.h"
+#include "ui/shell-bind.h"
 #include "ui/shell-context-menu.h"
 #include "ui/status-text.h"
 
@@ -37,8 +39,8 @@ namespace fast_explorer::ui {
 
 namespace {
 
+constexpr std::size_t kMaxPanes = 2;
 // One timer id per pane so dual-mode debounce windows do not collide.
-// The actual id used is (kTimerFsCoalesceBase + paneIndex).
 constexpr UINT_PTR kTimerFsCoalesceBase = 1;
 constexpr UINT kFsCoalesceMs = 100;
 
@@ -195,10 +197,10 @@ bool registerClassOnce(HINSTANCE instance, const wchar_t* className, WNDPROC pro
   wc.hbrBackground = reinterpret_cast<HBRUSH>(COLOR_WINDOW + 1);
   wc.lpszClassName = className;
   // App icon: large for Alt+Tab / taskbar, small for window caption.
-  // MAKEINTRESOURCEW(101) = IDI_APP in resources/resource-ids.h.
-  wc.hIcon = LoadIconW(instance, MAKEINTRESOURCEW(101));
+  // MAKEINTRESOURCEW(IDI_APP) = IDI_APP in resources/resource-ids.h.
+  wc.hIcon = LoadIconW(instance, MAKEINTRESOURCEW(IDI_APP));
   wc.hIconSm = static_cast<HICON>(LoadImageW(
-      instance, MAKEINTRESOURCEW(101), IMAGE_ICON,
+      instance, MAKEINTRESOURCEW(IDI_APP), IMAGE_ICON,
       GetSystemMetrics(SM_CXSMICON), GetSystemMetrics(SM_CYSMICON),
       LR_DEFAULTCOLOR));
   return RegisterClassExW(&wc) != 0;
@@ -653,17 +655,9 @@ LRESULT CALLBACK MainWindow::wndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM 
   if (self) {
     // Win32 documents that a C++ exception crossing wndProc back into
     // the OS is undefined behavior, and the inner handlers do call
-    // throwing operations (std::make_unique, std::wstring formatting,
-    // std::vector growth, unordered_set::insert). Cap the boundary
-    // here: any C++ exception that escapes the handler chain is
-    // swallowed and we fall back to DefWindowProcW so the OS still
-    // gets a well-defined return value. Inner try/catches in
-    // handleItemChanged and reapplySelectionFromPane stay in place
-    // because they restore a finer-grained invariant before letting
-    // control continue. SEH (access violation, stack overflow, etc.)
-    // is intentionally NOT caught here — under /EHsc catch(...) does
-    // not see SEH, and swallowing a hardware fault on top of corrupt
-    // state would mask far worse bugs.
+    // C++ exception escaping wndProc is UB; cap it here so the OS
+    // still gets a well-defined LRESULT. SEH not caught (under /EHsc
+    // catch(...) does not see hardware faults).
     try {
       return self->handleMessage(hwnd, msg, wParam, lParam);
     } catch (...) {
@@ -1001,7 +995,7 @@ LRESULT MainWindow::onCommand(HWND hwnd, UINT msg, WPARAM wParam,
 LRESULT MainWindow::onTimer(HWND hwnd, UINT msg, WPARAM wParam,
                             LPARAM lParam) {
   if (wParam >= kTimerFsCoalesceBase &&
-      wParam < kTimerFsCoalesceBase + 2) {
+      wParam < kTimerFsCoalesceBase + kMaxPanes) {
     const std::size_t idx = wParam - kTimerFsCoalesceBase;
     KillTimer(hwnd, wParam);
     if (paneManager_ && idx < paneManager_->count()) {
@@ -1150,7 +1144,7 @@ LRESULT MainWindow::onFsChange(HWND hwnd, WPARAM wParam) {
   // pane index into the timer id so two panes' debounce windows do
   // not collide.
   const std::size_t idx = paneIndexFromWParam(wParam);
-  if (idx >= 2) return 0;
+  if (idx >= kMaxPanes) return 0;
   const UINT_PTR timerId = kTimerFsCoalesceBase + idx;
   SetTimer(hwnd, timerId, kFsCoalesceMs, nullptr);
   return 0;
@@ -1185,8 +1179,7 @@ void MainWindow::handleClipboardCopy(bool cut) {
   if (!ClipboardOps::copy(pane.currentPath(), leaves, cut)) return;
   clearCutState();
   if (cut) {
-    cutFolderPath_ = pane.currentPath();
-    cutLeaves_.insert(leaves.begin(), leaves.end());
+    cutState_.mark(pane.currentPath(), std::move(leaves));
     for (std::size_t i = 0; i < listViews_.size(); ++i) {
       applyCutStateToListView(i);
     }
@@ -1199,9 +1192,9 @@ void MainWindow::handleClipboardPaste() {
   if (idx >= listViews_.size() || listViews_[idx] == nullptr) return;
   PaneController& pane = paneManager_->at(idx);
   if (pane.currentPath().empty()) return;
-  if (ClipboardOps::paste(pane.currentPath(), listViews_[idx])) {
-    // Shell completed the operation; if it was a move it consumed
-    // the cut data object — drop the ghosted indicator.
+  if (ClipboardOps::paste(pane.currentPath(), listViews_[idx]) ==
+      PasteResult::Success) {
+    // Move consumed the cut data object; drop the ghost.
     clearCutState();
   }
 }
@@ -1213,23 +1206,22 @@ void MainWindow::applyCutStateToListView(std::size_t paneIdx) noexcept {
   }
   HWND lv = listViews_[paneIdx];
   ListView_SetItemState(lv, -1, 0, LVIS_CUT);
-  if (cutFolderPath_.empty() || cutLeaves_.empty()) return;
+  if (cutState_.empty()) return;
   PaneController& pane = paneManager_->at(paneIdx);
-  if (pane.currentPath() != cutFolderPath_) return;
+  if (pane.currentPath() != cutState_.folder()) return;
   const auto& store = pane.store();
   const auto count = store.publishedCount();
   for (std::size_t row = 0; row < count; ++row) {
     const auto& entry = store.visibleAt(row);
     std::wstring leaf(entry.namePtr, entry.nameLength);
-    if (cutLeaves_.count(leaf) > 0) {
+    if (cutState_.contains(leaf)) {
       ListView_SetItemState(lv, static_cast<int>(row), LVIS_CUT, LVIS_CUT);
     }
   }
 }
 
 void MainWindow::clearCutState() noexcept {
-  cutFolderPath_.clear();
-  cutLeaves_.clear();
+  cutState_.clear();
   for (std::size_t i = 0; i < listViews_.size(); ++i) {
     if (listViews_[i] != nullptr) {
       ListView_SetItemState(listViews_[i], -1, 0, LVIS_CUT);
@@ -1245,33 +1237,19 @@ void MainWindow::handleBeginDrag(NMHDR* hdr) {
     return;
   }
   PaneController& pane = paneManager_->at(paneIdx);
-  const auto& store = pane.store();
   const std::wstring& folderPath = pane.currentPath();
   if (folderPath.empty()) return;
-
   HWND lv = hdr->hwndFrom;
+  auto leaves = collectSelectedLeaves(lv, pane);
+  if (leaves.empty()) return;
+
+  ComPtr<IShellFolder> folder = bindFolderByPath(folderPath);
+  if (!folder) return;
   std::vector<PidlOwner> childPidls;
-  PidlOwner folderPidl;
-  {
-    LPITEMIDLIST raw = nullptr;
-    SFGAOF attrs = 0;
-    if (FAILED(SHParseDisplayName(folderPath.c_str(), nullptr, &raw, 0,
-                                   &attrs)) || raw == nullptr) {
-      return;
-    }
-    folderPidl.reset(raw);
-  }
-  ComPtr<IShellFolder> folder;
-  if (FAILED(SHBindToObject(nullptr, folderPidl.get(), nullptr,
-                            IID_PPV_ARGS(folder.put()))) || !folder) {
-    return;
-  }
-  int row = -1;
-  while ((row = ListView_GetNextItem(lv, row, LVNI_SELECTED)) >= 0) {
-    const auto idx = static_cast<std::size_t>(row);
-    if (idx >= store.publishedCount()) continue;
-    const auto& entry = store.visibleAt(idx);
-    const std::wstring leaf(entry.namePtr, entry.nameLength);
+  childPidls.reserve(leaves.size());
+  std::vector<LPCITEMIDLIST> rawPidls;
+  rawPidls.reserve(leaves.size());
+  for (const auto& leaf : leaves) {
     LPITEMIDLIST child = nullptr;
     ULONG eaten = 0;
     SFGAOF attrs = 0;
@@ -1282,12 +1260,9 @@ void MainWindow::handleBeginDrag(NMHDR* hdr) {
       return;
     }
     childPidls.emplace_back(child);
+    rawPidls.push_back(childPidls.back().get());
   }
-  if (childPidls.empty()) return;
 
-  std::vector<LPCITEMIDLIST> rawPidls;
-  rawPidls.reserve(childPidls.size());
-  for (const auto& p : childPidls) rawPidls.push_back(p.get());
   ComPtr<IDataObject> dataObj;
   if (FAILED(folder->GetUIObjectOf(lv, static_cast<UINT>(rawPidls.size()),
                                     rawPidls.data(), IID_IDataObject, nullptr,
@@ -1296,12 +1271,12 @@ void MainWindow::handleBeginDrag(NMHDR* hdr) {
     return;
   }
 
-  FileDropSource* dropSource = new (std::nothrow) FileDropSource();
+  ComPtr<IDropSource> dropSource;
+  dropSource.attach(new (std::nothrow) FileDropSource());
   if (!dropSource) return;
   DWORD effect = 0;
-  DoDragDrop(dataObj.get(), dropSource,
+  DoDragDrop(dataObj.get(), dropSource.get(),
              DROPEFFECT_COPY | DROPEFFECT_MOVE | DROPEFFECT_LINK, &effect);
-  dropSource->Release();
 }
 
 void MainWindow::finalizeSortApply(std::size_t paneIdx) {
@@ -1394,13 +1369,10 @@ LRESULT MainWindow::handleListViewNotify(NMHDR* hdr) {
 void MainWindow::handleListViewRightClick(NMHDR* hdr) {
   if (hdr == nullptr || paneManager_ == nullptr) return;
   std::size_t paneIdx = 0;
-  for (std::size_t i = 0; i < listViews_.size(); ++i) {
-    if (listViews_[i] == hdr->hwndFrom) {
-      paneIdx = i;
-      break;
-    }
+  if (!paneIndexFromListView(hdr->hwndFrom, paneIdx) ||
+      paneIdx >= paneManager_->count()) {
+    return;
   }
-  if (paneIdx >= paneManager_->count()) return;
   PaneController& targetPane = paneManager_->at(paneIdx);
   const std::wstring& folderPath = targetPane.currentPath();
   if (folderPath.empty()) return;
@@ -1493,10 +1465,8 @@ void MainWindow::handleGetDispInfoBody(NMHDR* hdr) {
   // this body, so resolve the owning pane from hwndFrom instead of
   // the active-pane cache to keep the inactive pane's rows correct.
   std::size_t paneIdx = 0;
-  for (std::size_t i = 0; i < listViews_.size(); ++i) {
-    if (listViews_[i] == hdr->hwndFrom) { paneIdx = i; break; }
-  }
-  if (paneIdx >= paneManager_->count()) {
+  if (!paneIndexFromListView(hdr->hwndFrom, paneIdx) ||
+      paneIdx >= paneManager_->count()) {
     return;
   }
   PaneController& sourcePane = paneManager_->at(paneIdx);
@@ -1555,10 +1525,8 @@ void MainWindow::handleItemActivate(NMHDR* hdr) {
     return;
   }
   std::size_t paneIdx = 0;
-  for (std::size_t i = 0; i < listViews_.size(); ++i) {
-    if (listViews_[i] == hdr->hwndFrom) { paneIdx = i; break; }
-  }
-  if (paneIdx >= paneManager_->count()) {
+  if (!paneIndexFromListView(hdr->hwndFrom, paneIdx) ||
+      paneIdx >= paneManager_->count()) {
     return;
   }
   auto* nmia = reinterpret_cast<NMITEMACTIVATE*>(hdr);
@@ -1589,13 +1557,8 @@ void MainWindow::handleColumnClick(NMHDR* hdr) {
     return;
   }
   std::size_t paneIdx = 0;
-  for (std::size_t i = 0; i < listViews_.size(); ++i) {
-    if (listViews_[i] == hdr->hwndFrom) {
-      paneIdx = i;
-      break;
-    }
-  }
-  if (paneIdx >= paneManager_->count() ||
+  if (!paneIndexFromListView(hdr->hwndFrom, paneIdx) ||
+      paneIdx >= paneManager_->count() ||
       listViews_[paneIdx] == nullptr) {
     return;
   }

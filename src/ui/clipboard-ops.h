@@ -2,24 +2,29 @@
 
 #include <windows.h>
 
+#include <cstdint>
 #include <string>
 #include <vector>
 
 namespace fast_explorer::ui {
 
+enum class PasteResult : std::uint8_t {
+  Success,
+  NoData,
+  NoTarget,
+  Rejected,
+};
+
 class ClipboardOps {
  public:
-  // Place the selection on the OLE clipboard. `cut` flags the data
-  // object with CFSTR_PREFERREDDROPEFFECT = DROPEFFECT_MOVE so a
-  // subsequent paste moves rather than copies.
+  // OLE clipboard write. cut => CFSTR_PREFERREDDROPEFFECT = MOVE.
   static bool copy(const std::wstring& folderPath,
                    const std::vector<std::wstring>& selectedLeaves,
                    bool cut);
 
-  // Drops the OLE clipboard's IDataObject onto `folderPath` via the
-  // shell IDropTarget, which honours CFSTR_PREFERREDDROPEFFECT and
-  // runs the shell's progress / conflict UI itself.
-  static bool paste(const std::wstring& folderPath, HWND ownerHwnd);
+  // Shell IDropTarget delegation honouring CFSTR_PREFERREDDROPEFFECT;
+  // shell runs progress / conflict UI itself.
+  static PasteResult paste(const std::wstring& folderPath, HWND ownerHwnd);
 };
 
 }  // namespace fast_explorer::ui

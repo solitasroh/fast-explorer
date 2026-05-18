@@ -2,8 +2,10 @@
 
 #include <windows.h>
 
+#include <algorithm>
+#include <array>
+#include <cstring>
 #include <cwctype>
-#include <string>
 #include <string_view>
 
 #include "file-entry.h"
@@ -32,27 +34,53 @@ int compareNameAsc(const FileEntry& a, const FileEntry& b) noexcept {
   return compareOrdinalIgnoreCase(nameView(a), nameView(b));
 }
 
-// Type description matches column-formatter's display: "File folder"
-// for directories, "EXT File" (extension uppercased, leading dot
-// dropped) for files with extensions, "File" otherwise. Type sort
-// uses this rather than raw extension so the visible ordering tracks
-// what the user sees in the Type column.
-std::wstring typeDescription(const FileEntry& e) {
-  if (isDirectory(e)) return L"File folder";
-  std::wstring_view ext = extensionView(e);
-  if (ext.empty()) return L"File";
-  if (!ext.empty() && ext.front() == L'.') ext.remove_prefix(1);
-  std::wstring out;
-  out.reserve(ext.size() + 5);
-  for (wchar_t c : ext) {
-    out.push_back(static_cast<wchar_t>(std::towupper(static_cast<wint_t>(c))));
+// Display description matching column-formatter: "File folder" for
+// directories, "EXT File" (uppercase ext, leading dot dropped) for
+// files with extensions, "File" otherwise. Stack buffer avoids the
+// heap allocation per comparison that std::sort would otherwise make
+// O(n log n).
+struct TypeDescBuf {
+  std::array<wchar_t, 32> buf{};
+  std::size_t len = 0;
+  std::wstring_view view() const noexcept {
+    return std::wstring_view(buf.data(), len);
   }
-  out.append(L" File");
+};
+
+TypeDescBuf typeDescription(const FileEntry& e) {
+  TypeDescBuf out;
+  if (isDirectory(e)) {
+    static constexpr std::wstring_view kFolder = L"File folder";
+    std::memcpy(out.buf.data(), kFolder.data(),
+                kFolder.size() * sizeof(wchar_t));
+    out.len = kFolder.size();
+    return out;
+  }
+  std::wstring_view ext = extensionView(e);
+  if (!ext.empty() && ext.front() == L'.') ext.remove_prefix(1);
+  if (ext.empty()) {
+    static constexpr std::wstring_view kFile = L"File";
+    std::memcpy(out.buf.data(), kFile.data(),
+                kFile.size() * sizeof(wchar_t));
+    out.len = kFile.size();
+    return out;
+  }
+  // Reserve 5 for trailing " File"; cap the extension to fit.
+  const std::size_t cap = out.buf.size() - 5;
+  const std::size_t n = std::min(ext.size(), cap);
+  for (std::size_t i = 0; i < n; ++i) {
+    out.buf[i] = static_cast<wchar_t>(
+        std::towupper(static_cast<wint_t>(ext[i])));
+  }
+  static constexpr wchar_t kSuffix[5] = {L' ', L'F', L'i', L'l', L'e'};
+  std::memcpy(out.buf.data() + n, kSuffix, sizeof(kSuffix));
+  out.len = n + 5;
   return out;
 }
 
 int compareTypeDescriptionAsc(const FileEntry& a, const FileEntry& b) {
-  return compareOrdinalIgnoreCase(typeDescription(a), typeDescription(b));
+  return compareOrdinalIgnoreCase(typeDescription(a).view(),
+                                   typeDescription(b).view());
 }
 
 int comparePrimary(const FileEntry& a,
@@ -81,7 +109,7 @@ int comparePrimary(const FileEntry& a,
 
 int compareEntries(const FileEntry& a,
                    const FileEntry& b,
-                   SortSpec spec) {
+                   SortSpec spec) noexcept {
   // Directories always group above files regardless of sort key and
   // direction. Matches Explorer's default "Group folders first"
   // behaviour and keeps the visual block contiguous.
