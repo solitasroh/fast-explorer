@@ -148,7 +148,7 @@ class MainWindow {
   // arrow, repaint the selection, and force LVN_GETDISPINFO to fetch
   // cells in the new order. Used by both the synchronous click path
   // and the kWmFeSortComplete handler.
-  void finalizeSortApply();
+  void finalizeSortApply(std::size_t paneIdx);
   LRESULT handleCustomDraw(NMHDR* hdr);
   void handleListViewRightClick(NMHDR* hdr);
   void handleAddressCommit();

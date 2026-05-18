@@ -2,6 +2,8 @@
 
 #include <windows.h>
 
+#include <cwctype>
+#include <string>
 #include <string_view>
 
 #include "file-entry.h"
@@ -9,9 +11,6 @@
 namespace fast_explorer::core {
 namespace {
 
-// CompareStringOrdinal requires non-null pointers even when the length is
-// zero; an empty wstring_view may legitimately carry a null .data(), so
-// substitute a stable empty literal in that case.
 constexpr const wchar_t* safeData(const wchar_t* p) noexcept {
   return p ? p : L"";
 }
@@ -33,13 +32,32 @@ int compareNameAsc(const FileEntry& a, const FileEntry& b) noexcept {
   return compareOrdinalIgnoreCase(nameView(a), nameView(b));
 }
 
-int compareExtensionAsc(const FileEntry& a, const FileEntry& b) noexcept {
-  return compareOrdinalIgnoreCase(extensionView(a), extensionView(b));
+// Type description matches column-formatter's display: "File folder"
+// for directories, "EXT File" (extension uppercased, leading dot
+// dropped) for files with extensions, "File" otherwise. Type sort
+// uses this rather than raw extension so the visible ordering tracks
+// what the user sees in the Type column.
+std::wstring typeDescription(const FileEntry& e) {
+  if (isDirectory(e)) return L"File folder";
+  std::wstring_view ext = extensionView(e);
+  if (ext.empty()) return L"File";
+  if (!ext.empty() && ext.front() == L'.') ext.remove_prefix(1);
+  std::wstring out;
+  out.reserve(ext.size() + 5);
+  for (wchar_t c : ext) {
+    out.push_back(static_cast<wchar_t>(std::towupper(static_cast<wint_t>(c))));
+  }
+  out.append(L" File");
+  return out;
+}
+
+int compareTypeDescriptionAsc(const FileEntry& a, const FileEntry& b) {
+  return compareOrdinalIgnoreCase(typeDescription(a), typeDescription(b));
 }
 
 int comparePrimary(const FileEntry& a,
                    const FileEntry& b,
-                   SortKey key) noexcept {
+                   SortKey key) {
   switch (key) {
     case SortKey::Name:
       return compareNameAsc(a, b);
@@ -52,7 +70,7 @@ int comparePrimary(const FileEntry& a,
       if (a.modifiedTime100ns > b.modifiedTime100ns) return 1;
       return 0;
     case SortKey::Type:
-      return compareExtensionAsc(a, b);
+      return compareTypeDescriptionAsc(a, b);
     case SortKey::None:
       return 0;
   }
@@ -63,7 +81,13 @@ int comparePrimary(const FileEntry& a,
 
 int compareEntries(const FileEntry& a,
                    const FileEntry& b,
-                   SortSpec spec) noexcept {
+                   SortSpec spec) {
+  // Directories always group above files regardless of sort key and
+  // direction. Matches Explorer's default "Group folders first"
+  // behaviour and keeps the visual block contiguous.
+  const bool da = isDirectory(a);
+  const bool db = isDirectory(b);
+  if (da != db) return da ? -1 : 1;
   int primary = comparePrimary(a, b, spec.key);
   if (spec.direction == SortDirection::Descending) {
     primary = -primary;

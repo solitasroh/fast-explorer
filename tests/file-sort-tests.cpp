@@ -216,3 +216,82 @@ FE_TEST_CASE(FileSort_StrictWeakOrdering_Irreflexive) {
   FE_ASSERT_FALSE(lessEntries(e, e, kModAsc));
   FE_ASSERT_FALSE(lessEntries(e, e, kTypeAsc));
 }
+
+FE_TEST_CASE(FileSort_Directory_BeforeFile_NameAscending) {
+  const auto dir = makeEntry(L"zebra", 0, 0, kNoExtension, flags::kIsDirectory);
+  const auto file = makeEntry(L"alpha.txt", 0, 0,
+                              findExtensionOffset(L"alpha.txt"));
+  FE_ASSERT_TRUE(compareEntries(dir, file, kNameAsc) < 0);
+  FE_ASSERT_TRUE(compareEntries(file, dir, kNameAsc) > 0);
+}
+
+FE_TEST_CASE(FileSort_Directory_BeforeFile_NameDescending) {
+  const auto dir = makeEntry(L"alpha", 0, 0, kNoExtension, flags::kIsDirectory);
+  const auto file = makeEntry(L"zebra.txt", 0, 0,
+                              findExtensionOffset(L"zebra.txt"));
+  FE_ASSERT_TRUE(compareEntries(dir, file, kNameDesc) < 0);
+  FE_ASSERT_TRUE(compareEntries(file, dir, kNameDesc) > 0);
+}
+
+FE_TEST_CASE(FileSort_Directory_BeforeFile_AllKeys) {
+  const auto dir = makeEntry(L"folder", 0, 9999, kNoExtension,
+                             flags::kIsDirectory);
+  const auto file = makeEntry(L"a.txt", 1, 0, findExtensionOffset(L"a.txt"));
+  FE_ASSERT_TRUE(compareEntries(dir, file, kSizeAsc) < 0);
+  FE_ASSERT_TRUE(compareEntries(dir, file, kSizeDesc) < 0);
+  FE_ASSERT_TRUE(compareEntries(dir, file, kModAsc) < 0);
+  FE_ASSERT_TRUE(compareEntries(dir, file, kModDesc) < 0);
+  FE_ASSERT_TRUE(compareEntries(dir, file, kTypeAsc) < 0);
+  FE_ASSERT_TRUE(compareEntries(dir, file, kTypeDesc) < 0);
+}
+
+FE_TEST_CASE(FileSort_Directory_TiebreakWithinGroup) {
+  const auto a = makeEntry(L"alpha", 0, 0, kNoExtension, flags::kIsDirectory);
+  const auto b = makeEntry(L"beta", 0, 0, kNoExtension, flags::kIsDirectory);
+  FE_ASSERT_TRUE(compareEntries(a, b, kNameAsc) < 0);
+  FE_ASSERT_TRUE(compareEntries(a, b, kNameDesc) > 0);
+}
+
+FE_TEST_CASE(FileSort_Type_GroupsBetweenFolderAndFile) {
+  // Two folders and one file. Even when sorting by Type ascending
+  // ("File folder" alphabetically follows "File"), the directory
+  // partition must keep folders ahead of the file.
+  std::vector<FileEntry> v{
+      makeEntry(L"readme.txt", 0, 0, findExtensionOffset(L"readme.txt")),
+      makeEntry(L"docs", 0, 0, kNoExtension, flags::kIsDirectory),
+      makeEntry(L"src", 0, 0, kNoExtension, flags::kIsDirectory),
+  };
+  std::sort(v.begin(), v.end(),
+            [](const FileEntry& a, const FileEntry& b) {
+              return lessEntries(a, b, kTypeAsc);
+            });
+  FE_ASSERT_EQ(std::wstring_view(v[0].namePtr, v[0].nameLength),
+               std::wstring_view(L"docs"));
+  FE_ASSERT_EQ(std::wstring_view(v[1].namePtr, v[1].nameLength),
+               std::wstring_view(L"src"));
+  FE_ASSERT_EQ(std::wstring_view(v[2].namePtr, v[2].nameLength),
+               std::wstring_view(L"readme.txt"));
+}
+
+FE_TEST_CASE(FileSort_Type_DescriptionOrdersByDisplayString) {
+  // ".cmake" -> "CMAKE File", ".json" -> "JSON File", ".md" -> "MD File".
+  // The visible order in the Type column must match the sort.
+  const auto cmake = makeEntry(L"a.cmake", 0, 0,
+                               findExtensionOffset(L"a.cmake"));
+  const auto json = makeEntry(L"b.json", 0, 0,
+                              findExtensionOffset(L"b.json"));
+  const auto md = makeEntry(L"c.md", 0, 0, findExtensionOffset(L"c.md"));
+  FE_ASSERT_TRUE(compareEntries(cmake, json, kTypeAsc) < 0);
+  FE_ASSERT_TRUE(compareEntries(json, md, kTypeAsc) < 0);
+  FE_ASSERT_TRUE(compareEntries(cmake, md, kTypeAsc) < 0);
+}
+
+FE_TEST_CASE(FileSort_Type_DotfileTreatedAsExtensionless) {
+  // ".clang-format" has no internal '.', so its extension is empty
+  // and it must sort under the "File" group, not as its own type.
+  const auto dotfile = makeEntry(L".clang-format", 0, 0, kNoExtension);
+  const auto plain = makeEntry(L"readme", 0, 0, kNoExtension);
+  // Both render as "File" -> tie -> name ascending. ".clang-format"
+  // sorts before "readme" because '.' < 'r' under ordinal compare.
+  FE_ASSERT_TRUE(compareEntries(dotfile, plain, kTypeAsc) < 0);
+}

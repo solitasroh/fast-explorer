@@ -1,6 +1,7 @@
 #include "ui/main-window.h"
 
 #include <commctrl.h>
+#include <uxtheme.h>
 
 #include <algorithm>
 #include <cstring>
@@ -74,11 +75,24 @@ HWND createListView(HWND parent, HINSTANCE instance) {
   // LVS_OWNERDATA the list-view does not store the edited text itself,
   // so LVN_ENDLABELEDIT must return FALSE and the model is updated
   // through the controller.
-  return CreateWindowExW(
+  HWND lv = CreateWindowExW(
       0, WC_LISTVIEWW, L"",
       WS_CHILD | WS_VISIBLE | WS_BORDER | LVS_REPORT | LVS_OWNERDATA |
           LVS_SHAREIMAGELISTS | LVS_EDITLABELS,
       0, 0, 0, 0, parent, nullptr, instance, nullptr);
+  if (lv != nullptr) {
+    // FULLROWSELECT extends the selection highlight across every
+    // column. DOUBLEBUFFER kills the report-mode flicker caused by
+    // LVS_OWNERDATA during scroll. LABELTIP shows a tooltip when a
+    // label is clipped. The Explorer theme is what actually paints
+    // the row-wide hover highlight under Vista+ visual styles —
+    // without it, hover state is invisible even with FULLROWSELECT.
+    const DWORD exStyle = LVS_EX_FULLROWSELECT | LVS_EX_DOUBLEBUFFER |
+                          LVS_EX_LABELTIP;
+    ListView_SetExtendedListViewStyle(lv, exStyle);
+    SetWindowTheme(lv, L"Explorer", nullptr);
+  }
+  return lv;
 }
 
 bool addColumns(HWND lv, unsigned int dpi) {
@@ -859,8 +873,9 @@ LRESULT MainWindow::onSortComplete(WPARAM wParam) {
   if (target == nullptr) {
     return 0;
   }
+  const std::size_t paneIdx = paneIndexFromWParam(wParam);
   target->applyPendingSort(generationFromWParam(wParam));
-  finalizeSortApply();
+  finalizeSortApply(paneIdx);
   return 0;
 }
 
@@ -927,19 +942,21 @@ LRESULT MainWindow::onFsChange(HWND hwnd, WPARAM wParam) {
   return 0;
 }
 
-void MainWindow::finalizeSortApply() {
-  if (!pane_ || listView_ == nullptr) {
+void MainWindow::finalizeSortApply(std::size_t paneIdx) {
+  if (!paneManager_ || paneIdx >= paneManager_->count() ||
+      paneIdx >= listViews_.size() || listViews_[paneIdx] == nullptr) {
     return;
   }
-  const auto spec = pane_->currentSortSpec();
-  updateSortIndicator(listView_, sortKeyToColumnIndex(spec.key),
-                      spec.direction);
-  if (auto* sync = activeSelectionSync()) {
-    sync->reapplyFromPane();
+  PaneController& target = paneManager_->at(paneIdx);
+  HWND lv = listViews_[paneIdx];
+  const auto spec = target.currentSortSpec();
+  updateSortIndicator(lv, sortKeyToColumnIndex(spec.key), spec.direction);
+  if (paneIdx < selectionSyncs_.size() && selectionSyncs_[paneIdx]) {
+    selectionSyncs_[paneIdx]->reapplyFromPane();
   }
-  const int count = static_cast<int>(pane_->store().publishedCount());
+  const int count = static_cast<int>(target.store().publishedCount());
   if (count > 0) {
-    ListView_RedrawItems(listView_, 0, count - 1);
+    ListView_RedrawItems(lv, 0, count - 1);
   }
 }
 
@@ -1145,32 +1162,35 @@ void MainWindow::handleItemActivate(NMHDR* hdr) {
 }
 
 void MainWindow::handleColumnClick(NMHDR* hdr) {
-  if (hdr == nullptr || !pane_ || listView_ == nullptr) {
+  if (hdr == nullptr || !paneManager_) {
     return;
   }
-  // NMLISTVIEW's first member is NMHDR by Win32 contract for LVN_*
-  // notifications, so the reinterpret is well-defined here. The
-  // dispatch in handleListViewNotify already gated on hdr->code.
+  std::size_t paneIdx = 0;
+  for (std::size_t i = 0; i < listViews_.size(); ++i) {
+    if (listViews_[i] == hdr->hwndFrom) {
+      paneIdx = i;
+      break;
+    }
+  }
+  if (paneIdx >= paneManager_->count() ||
+      listViews_[paneIdx] == nullptr) {
+    return;
+  }
   auto* nmlv = reinterpret_cast<NMLISTVIEW*>(hdr);
   fast_explorer::core::SortKey key;
   if (!columnIndexToSortKey(nmlv->iSubItem, key)) {
     return;
   }
-  // requestSort guards against the enumeration worker still writing
-  // entries_; the GETDISPINFO read path against in-flight appends is
-  // tracked separately.
-  const auto dispatch = pane_->requestSort(key);
+  PaneController& target = paneManager_->at(paneIdx);
+  const auto dispatch = target.requestSort(key);
   if (dispatch == fast_explorer::ui::SortDispatch::Rejected) {
     return;
   }
   if (dispatch == fast_explorer::ui::SortDispatch::AppliedSync) {
-    finalizeSortApply();
+    finalizeSortApply(paneIdx);
   } else {
-    // Background path: paint the arrow eagerly so the click feels
-    // responsive; the final selection-aware repaint runs in
-    // onSortComplete via finalizeSortApply().
-    const auto spec = pane_->currentSortSpec();
-    updateSortIndicator(listView_, sortKeyToColumnIndex(spec.key),
+    const auto spec = target.currentSortSpec();
+    updateSortIndicator(listViews_[paneIdx], sortKeyToColumnIndex(spec.key),
                         spec.direction);
   }
 }
