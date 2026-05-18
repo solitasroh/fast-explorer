@@ -34,6 +34,10 @@ class AddressBarPopup {
   // is used to expand the tree along the path and highlight the leaf.
   void showFor(HWND anchor, const std::wstring& currentPath);
 
+  // Forwarded to kWmFeAddressPopupPick::lParam so the owner can
+  // route the pick to the originating pane.
+  void setActivePane(std::size_t paneIdx) noexcept { activePaneIdx_ = paneIdx; }
+
   // Update the highlighted leaf to match `currentPath`. No-op if the
   // popup is not currently visible; called from openFolder so the
   // tree state stays consistent for the next show.
@@ -69,8 +73,9 @@ class AddressBarPopup {
   HWND popup_ = nullptr;
   HWND tree_ = nullptr;
   HHOOK mouseHook_ = nullptr;
-  std::wstring pendingPath_;  // applied after populateRoots on first show
+  std::wstring pendingPath_;
   bool rootsLoaded_ = false;
+  std::size_t activePaneIdx_ = 0;
 };
 
 }  // namespace fast_explorer::ui

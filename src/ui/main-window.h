@@ -151,8 +151,12 @@ class MainWindow {
   void finalizeSortApply(std::size_t paneIdx);
   LRESULT handleCustomDraw(NMHDR* hdr);
   void handleListViewRightClick(NMHDR* hdr);
-  void handleAddressCommit();
-  void syncAddressBar();
+  void handleAddressCommit(std::size_t paneIdx);
+  void syncAddressBar(std::size_t paneIdx);
+  bool addressBarPaneIndex(HWND ctrl, std::size_t& outIdx) const noexcept;
+  bool paneIndexFromListView(HWND lv, std::size_t& outIdx) const noexcept;
+  void clearListViewForNavigation(std::size_t paneIdx) noexcept;
+  void applyActivePaneAppearance() noexcept;
   // Queues a recycle-bin delete on the focused list-view row, if any.
   // Bound to the Delete accelerator. No-op when the list has no
   // focused item.
@@ -177,9 +181,9 @@ class MainWindow {
   HWND listView_ = nullptr;
   std::array<HWND, 2> listViews_{nullptr, nullptr};
   HWND statusBar_ = nullptr;
-  HWND addressBar_ = nullptr;
+  std::array<HWND, 2> addressBars_{nullptr, nullptr};
   std::unique_ptr<AddressBarPopup> addressBarPopup_;
-  bool firstBatchSeen_ = false;
+  std::array<bool, 2> firstBatchSeen_{false, false};
   std::unique_ptr<PaneManager> paneManager_;
   // Cached pointer to the manager's currently active pane. Refreshed
   // by onCreate (and by the active-pane switch handler in a later M9

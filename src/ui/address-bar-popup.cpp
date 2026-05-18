@@ -450,7 +450,8 @@ void AddressBarPopup::commitSelection(HTREEITEM node) {
   if (path.empty()) return;
   auto payload = std::make_unique<std::wstring>(std::move(path));
   if (PostMessageW(owner_, kWmFeAddressPopupPick,
-                   reinterpret_cast<WPARAM>(payload.get()), 0)) {
+                   reinterpret_cast<WPARAM>(payload.get()),
+                   static_cast<LPARAM>(activePaneIdx_))) {
     [[maybe_unused]] auto* leaked = payload.release();
   }
   hide();

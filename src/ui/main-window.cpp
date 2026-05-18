@@ -256,10 +256,9 @@ void MainWindow::enterDualMode(const std::wstring& secondPath) {
   if (paneManager_->isDual()) {
     return;
   }
-  // Capture the fallback before openSecond so the read is obviously
-  // independent of any PaneManager mutation.
+  // Capture before openSecond mutates active-pane state.
   const std::wstring fallback =
-      pane_ ? pane_->currentPath() : std::wstring();
+      paneManager_->active().currentPath();
   HWND second = createListView(hwnd_, instance_);
   if (second == nullptr) {
     return;
@@ -270,6 +269,15 @@ void MainWindow::enterDualMode(const std::wstring& secondPath) {
   }
   ListView_SetItemCountEx(second, 0, 0);
   listViews_[1] = second;
+  addressBars_[1] = createAddressBar(hwnd_, instance_);
+  if (addressBars_[1]) {
+    HWND innerEdit = reinterpret_cast<HWND>(
+        SendMessageW(addressBars_[1], CBEM_GETEDITCONTROL, 0, 0));
+    if (innerEdit != nullptr) {
+      SetWindowSubclass(innerEdit, &MainWindow::addressBarSubclassProc, 0,
+                        static_cast<DWORD_PTR>(1));
+    }
+  }
   paneManager_->openSecond(hwnd_);
   if (!installPaneCoordinators(1, second)) {
     // Coordinator construction failed mid-flight. Roll back so we do
@@ -282,18 +290,25 @@ void MainWindow::enterDualMode(const std::wstring& secondPath) {
   }
   const std::wstring& openIn =
       chooseSecondPaneInitialPath(secondPath, fallback);
-  if (!openIn.empty()) {
-    // Best-effort: an invalid persisted path (deleted folder) leaves
-    // the second pane empty rather than failing the whole dual-mode
-    // entry — the user can still navigate via Ctrl+L or Alt+Up.
-    paneManager_->at(1).openFolder(openIn);
+  if (!openIn.empty() && paneManager_->at(1).openFolder(openIn)) {
+    clearListViewForNavigation(1);
   }
+  // openFolder posts WM_FE_* asynchronously; the address bar text is
+  // a pure synchronous read of currentPath() and would otherwise stay
+  // blank until the first navigation event.
+  syncAddressBar(1);
+  applyActivePaneAppearance();
   relayout();
 }
 
 void MainWindow::enterSingleMode() {
   if (hwnd_ == nullptr || !paneManager_ || !paneManager_->isDual()) {
     return;
+  }
+  // Hide the popup before any pane-1 HWNDs go away — its mouse hook
+  // and pending pick payloads anchor on those windows.
+  if (addressBarPopup_) {
+    addressBarPopup_->hide();
   }
   // Release per-pane coordinators first so the second pane's worker
   // threads (icon STA, shell STA) join before we tear down the
@@ -307,6 +322,11 @@ void MainWindow::enterSingleMode() {
     DestroyWindow(listViews_[1]);
     listViews_[1] = nullptr;
   }
+  if (addressBars_[1] != nullptr) {
+    DestroyWindow(addressBars_[1]);
+    addressBars_[1] = nullptr;
+  }
+  applyActivePaneAppearance();
   relayout();
 }
 
@@ -318,13 +338,18 @@ void MainWindow::setActivePane(std::size_t idx) {
   if (listViews_[idx] != nullptr) {
     SetFocus(listViews_[idx]);
   }
+  if (addressBarPopup_) {
+    addressBarPopup_->hide();
+    addressBarPopup_->setActivePane(idx);
+  }
   if (statusBar_) {
     const wchar_t* label =
         idx == 0 ? L"활성: 왼쪽" : L"활성: 오른쪽";
     SendMessageW(statusBar_, SB_SETTEXTW, 0,
                  reinterpret_cast<LPARAM>(label));
   }
-  syncAddressBar();
+  applyActivePaneAppearance();
+  syncAddressBar(idx);
 }
 
 void MainWindow::applyInitialState(
@@ -369,23 +394,92 @@ bool MainWindow::openFolder(const std::wstring& path) {
   }
   perf_.record(fast_explorer::core::PerfTracker::EventId::PaneOpenStart);
   fast_explorer::core::recordMemoryProbe(perf_);
-  firstBatchSeen_ = false;
+  const std::size_t activeIdx =
+      paneManager_ ? paneManager_->activeIndex() : 0;
+  if (activeIdx < firstBatchSeen_.size()) {
+    firstBatchSeen_[activeIdx] = false;
+  }
   if (!pane_->openFolder(path)) {
     return false;
   }
-  syncAddressBar();
+  clearListViewForNavigation(activeIdx);
+  syncAddressBar(paneManager_ ? paneManager_->activeIndex() : 0);
   const std::wstring text = loadingStatusText(path);
   setStatusText(text.c_str());
   return true;
 }
 
-void MainWindow::syncAddressBar() {
-  if (!addressBar_ || !pane_) return;
-  const std::wstring& path = pane_->currentPath();
-  SetWindowTextW(addressBar_, path.c_str());
-  if (addressBarPopup_) {
+void MainWindow::syncAddressBar(std::size_t paneIdx) {
+  if (!paneManager_ || paneIdx >= paneManager_->count() ||
+      paneIdx >= addressBars_.size() ||
+      addressBars_[paneIdx] == nullptr) {
+    return;
+  }
+  const std::wstring& path = paneManager_->at(paneIdx).currentPath();
+  SetWindowTextW(addressBars_[paneIdx], path.c_str());
+  // Popup is shared; only mirror the active pane to avoid stealing
+  // the dropdown highlight during an inactive-pane navigation.
+  if (addressBarPopup_ && paneManager_->activeIndex() == paneIdx) {
     addressBarPopup_->reflectCurrentPath(path);
   }
+}
+
+void MainWindow::clearListViewForNavigation(std::size_t paneIdx) noexcept {
+  if (paneIdx < listViews_.size() && listViews_[paneIdx] != nullptr) {
+    ListView_SetItemCountEx(listViews_[paneIdx], 0, 0);
+    InvalidateRect(listViews_[paneIdx], nullptr, TRUE);
+  }
+}
+
+void MainWindow::applyActivePaneAppearance() noexcept {
+  if (!paneManager_) return;
+  const std::size_t active = paneManager_->activeIndex();
+  // Inactive pane gets the dialog face colour so the focused pane is
+  // visually obvious in dual mode; single mode skips the dim since
+  // there is no other pane to contrast against.
+  const bool dual = paneManager_->isDual();
+  for (std::size_t i = 0; i < listViews_.size(); ++i) {
+    HWND lv = listViews_[i];
+    if (lv == nullptr) continue;
+    const COLORREF bg = (!dual || i == active)
+                           ? GetSysColor(COLOR_WINDOW)
+                           : GetSysColor(COLOR_BTNFACE);
+    ListView_SetBkColor(lv, bg);
+    ListView_SetTextBkColor(lv, bg);
+    InvalidateRect(lv, nullptr, TRUE);
+  }
+}
+
+bool MainWindow::paneIndexFromListView(HWND lv,
+                                       std::size_t& outIdx) const noexcept {
+  if (lv == nullptr) return false;
+  for (std::size_t i = 0; i < listViews_.size(); ++i) {
+    if (listViews_[i] != nullptr && listViews_[i] == lv) {
+      outIdx = i;
+      return true;
+    }
+  }
+  return false;
+}
+
+bool MainWindow::addressBarPaneIndex(HWND ctrl,
+                                     std::size_t& outIdx) const noexcept {
+  if (ctrl == nullptr) return false;
+  for (std::size_t i = 0; i < addressBars_.size(); ++i) {
+    HWND bar = addressBars_[i];
+    if (bar == nullptr) continue;
+    if (bar == ctrl) {
+      outIdx = i;
+      return true;
+    }
+    HWND innerEdit = reinterpret_cast<HWND>(
+        SendMessageW(bar, CBEM_GETEDITCONTROL, 0, 0));
+    if (innerEdit != nullptr && innerEdit == ctrl) {
+      outIdx = i;
+      return true;
+    }
+  }
+  return false;
 }
 
 bool MainWindow::isStaleGeneration(WPARAM wParam) const {
@@ -419,7 +513,7 @@ LabelEditController* MainWindow::activeLabelEdit() {
 
 LRESULT CALLBACK MainWindow::addressBarSubclassProc(
     HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam,
-    UINT_PTR /*uIdSubclass*/, DWORD_PTR /*dwRefData*/) {
+    UINT_PTR /*uIdSubclass*/, DWORD_PTR dwRefData) {
   if (msg == WM_NCDESTROY) {
     RemoveWindowSubclass(hwnd, &MainWindow::addressBarSubclassProc, 0);
     return DefSubclassProc(hwnd, msg, wParam, lParam);
@@ -429,48 +523,60 @@ LRESULT CALLBACK MainWindow::addressBarSubclassProc(
   }
   if (msg == WM_KEYDOWN && wParam == VK_RETURN) {
     HWND root = GetAncestor(hwnd, GA_ROOT);
-    if (root) SendMessageW(root, kWmFeAddressCommit, 0, 0);
+    if (root) {
+      SendMessageW(root, kWmFeAddressCommit,
+                   static_cast<WPARAM>(dwRefData), 0);
+    }
     return 0;
   }
   if (msg == WM_CHAR && wParam == VK_RETURN) {
-    return 0;  // suppress the system beep on Enter
+    return 0;
   }
   return DefSubclassProc(hwnd, msg, wParam, lParam);
 }
 
 void MainWindow::deleteFocusedItem() {
-  if (!pane_ || listView_ == nullptr) {
+  if (!paneManager_) return;
+  // VK_DELETE accelerator fires globally; route it only when a
+  // list-view actually owns focus so editing in the address bar or
+  // an in-place label edit is not hijacked.
+  HWND focusedCtrl = GetFocus();
+  std::size_t paneIdx = 0;
+  if (!paneIndexFromListView(focusedCtrl, paneIdx) ||
+      paneIdx >= paneManager_->count()) {
     return;
   }
-  // Without this guard, the VK_DELETE accelerator would also fire while
-  // the address bar (or any non-list-view child) has focus, hijacking
-  // the user's "erase character" key. Accelerator translation runs in
-  // the message loop before the focused control sees the key, so the
-  // gate has to be here.
-  if (GetFocus() != listView_) {
-    return;
-  }
-  const int focused = ListView_GetNextItem(listView_, -1, LVNI_FOCUSED);
+  const int focused =
+      ListView_GetNextItem(focusedCtrl, -1, LVNI_FOCUSED);
   if (focused < 0) {
     return;
   }
-  pane_->deleteItem(static_cast<std::uint32_t>(focused));
+  paneManager_->at(paneIdx).deleteItem(static_cast<std::uint32_t>(focused));
 }
 
-void MainWindow::handleAddressCommit() {
-  if (!addressBar_) {
+void MainWindow::handleAddressCommit(std::size_t paneIdx) {
+  if (paneIdx >= addressBars_.size() ||
+      addressBars_[paneIdx] == nullptr || !paneManager_ ||
+      paneIdx >= paneManager_->count()) {
     return;
   }
-  const int len = GetWindowTextLengthW(addressBar_);
+  HWND bar = addressBars_[paneIdx];
+  const int len = GetWindowTextLengthW(bar);
   std::wstring text(static_cast<size_t>(len), L'\0');
   if (len > 0) {
-    GetWindowTextW(addressBar_, text.data(), len + 1);
+    GetWindowTextW(bar, text.data(), len + 1);
     text.resize(static_cast<size_t>(len));
   }
   if (text.empty()) {
     return;
   }
-  openFolder(text);
+  // Inactive-pane commit must navigate the source pane, not the
+  // active one, so flip activeness to the edited pane first.
+  setActivePane(paneIdx);
+  if (paneManager_->at(paneIdx).openFolder(text)) {
+    clearListViewForNavigation(paneIdx);
+    syncAddressBar(paneIdx);
+  }
 }
 
 void MainWindow::setStatusText(const wchar_t* text) {
@@ -551,13 +657,22 @@ LRESULT MainWindow::handleMessage(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPa
     case WM_DPICHANGED:       return onDpiChanged(hwnd, wParam, lParam);
     case WM_SIZE:             return onSize(hwnd, msg, wParam, lParam);
     case WM_COMMAND:          return onCommand(hwnd, msg, wParam, lParam);
-    case kWmFeAddressCommit:  handleAddressCommit(); return 0;
+    case kWmFeAddressCommit:
+      handleAddressCommit(static_cast<std::size_t>(wParam));
+      return 0;
     case kWmFeAddressPopupPick: {
       auto* payload = reinterpret_cast<std::wstring*>(wParam);
-      if (payload) {
+      if (payload && paneManager_) {
         std::wstring path = std::move(*payload);
         delete payload;
-        openFolder(path);
+        const std::size_t idx = static_cast<std::size_t>(lParam);
+        if (idx < paneManager_->count()) {
+          setActivePane(idx);
+          if (paneManager_->at(idx).openFolder(path)) {
+            clearListViewForNavigation(idx);
+            syncAddressBar(idx);
+          }
+        }
       }
       return 0;
     }
@@ -583,8 +698,8 @@ LRESULT MainWindow::handleMessage(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPa
         capturedState_->windowWidth = r.right - r.left;
         capturedState_->windowHeight = r.bottom - r.top;
       }
-      if (pane_) {
-        capturedState_->lastPath = pane_->currentPath();
+      if (paneManager_) {
+        capturedState_->lastPath = paneManager_->active().currentPath();
       }
       if (paneManager_) {
         const bool dual = paneManager_->isDual();
@@ -629,12 +744,13 @@ LRESULT MainWindow::onCreate(HWND hwnd) {
   ListView_SetItemCountEx(listView_, 0, 0);
   listViews_[0] = listView_;
   statusBar_ = createStatusBar(hwnd, instance_);
-  addressBar_ = createAddressBar(hwnd, instance_);
-  if (addressBar_) {
+  addressBars_[0] = createAddressBar(hwnd, instance_);
+  if (addressBars_[0]) {
     HWND innerEdit = reinterpret_cast<HWND>(
-        SendMessageW(addressBar_, CBEM_GETEDITCONTROL, 0, 0));
+        SendMessageW(addressBars_[0], CBEM_GETEDITCONTROL, 0, 0));
     if (innerEdit != nullptr) {
-      SetWindowSubclass(innerEdit, &MainWindow::addressBarSubclassProc, 0, 0);
+      SetWindowSubclass(innerEdit, &MainWindow::addressBarSubclassProc, 0,
+                        static_cast<DWORD_PTR>(0));
     }
     addressBarPopup_ = std::make_unique<AddressBarPopup>(hwnd);
   }
@@ -673,8 +789,10 @@ LRESULT MainWindow::onDpiChanged(HWND hwnd, WPARAM wParam, LPARAM lParam) {
   SetWindowPos(hwnd, nullptr, rect->left, rect->top,
                rect->right - rect->left, rect->bottom - rect->top,
                SWP_NOZORDER | SWP_NOACTIVATE);
-  if (listView_) {
-    rescaleColumnWidths(listView_, LOWORD(wParam));
+  for (HWND lv : listViews_) {
+    if (lv != nullptr) {
+      rescaleColumnWidths(lv, LOWORD(wParam));
+    }
   }
   return 0;
 }
@@ -683,7 +801,7 @@ LRESULT MainWindow::onSize(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
   if (statusBar_) {
     SendMessageW(statusBar_, WM_SIZE, 0, 0);
   }
-  if (listView_) {
+  if (hwnd_ != nullptr) {
     RECT client;
     GetClientRect(hwnd, &client);
     int statusH = 0;
@@ -693,15 +811,13 @@ LRESULT MainWindow::onSize(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
       statusH = sb.bottom - sb.top;
     }
     const int addressH =
-        addressBar_ ? scaleForDpi(28, GetDpiForWindow(hwnd)) : 0;
+        addressBars_[0] ? scaleForDpi(28, GetDpiForWindow(hwnd)) : 0;
     const int clientW = client.right - client.left;
     const int clientH = client.bottom - client.top;
-    if (addressBar_) {
-      SetWindowPos(addressBar_, nullptr, 0, 0, clientW, addressH,
-                   SWP_NOZORDER | SWP_NOACTIVATE);
-    }
+    // Each pane carries its own address bar; sliced out of each
+    // pane rect below, so computePaneRects gets zero global top.
     const std::size_t paneCount = paneManager_ ? paneManager_->count() : 1;
-    const auto rects = computePaneRects(clientW, clientH, addressH, statusH,
+    const auto rects = computePaneRects(clientW, clientH, 0, statusH,
                                         paneCount);
     for (std::size_t i = 0; i < listViews_.size(); ++i) {
       if (listViews_[i] == nullptr) continue;
@@ -709,11 +825,18 @@ LRESULT MainWindow::onSize(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
       const int w = r.right - r.left;
       const int h = r.bottom - r.top;
       if (w <= 0 || h <= 0) {
+        if (addressBars_[i]) ShowWindow(addressBars_[i], SW_HIDE);
         ShowWindow(listViews_[i], SW_HIDE);
         continue;
       }
+      const int barH = (addressBars_[i] != nullptr) ? addressH : 0;
+      if (addressBars_[i]) {
+        SetWindowPos(addressBars_[i], nullptr, r.left, r.top, w, barH,
+                     SWP_NOZORDER | SWP_NOACTIVATE);
+        ShowWindow(addressBars_[i], SW_SHOW);
+      }
       ShowWindow(listViews_[i], SW_SHOW);
-      SetWindowPos(listViews_[i], nullptr, r.left, r.top, w, h,
+      SetWindowPos(listViews_[i], nullptr, r.left, r.top + barH, w, h - barH,
                    SWP_NOZORDER | SWP_NOACTIVATE);
     }
   }
@@ -728,37 +851,56 @@ LRESULT MainWindow::onSize(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 LRESULT MainWindow::onCommand(HWND hwnd, UINT msg, WPARAM wParam,
                               LPARAM lParam) {
   const HWND srcCtrl = reinterpret_cast<HWND>(lParam);
-  if (srcCtrl != nullptr && srcCtrl == addressBar_ && addressBar_ != nullptr) {
+  std::size_t srcPaneIdx = 0;
+  const bool fromAddressBar = addressBarPaneIndex(srcCtrl, srcPaneIdx);
+  if (fromAddressBar) {
     const WORD notif = HIWORD(wParam);
     if (notif == CBN_DROPDOWN) {
-      SendMessageW(addressBar_, CB_SHOWDROPDOWN, FALSE, 0);
-      if (addressBarPopup_) {
-        addressBarPopup_->showFor(addressBar_,
-                                   pane_ ? pane_->currentPath()
-                                         : std::wstring());
+      HWND bar = addressBars_[srcPaneIdx];
+      SendMessageW(bar, CB_SHOWDROPDOWN, FALSE, 0);
+      if (addressBarPopup_ && paneManager_ &&
+          srcPaneIdx < paneManager_->count()) {
+        addressBarPopup_->setActivePane(srcPaneIdx);
+        addressBarPopup_->showFor(
+            bar, paneManager_->at(srcPaneIdx).currentPath());
       }
       return 0;
     }
   }
   if (HIWORD(wParam) == 1) {
+    const std::size_t activeIdx =
+        paneManager_ ? paneManager_->activeIndex() : 0;
     switch (LOWORD(wParam)) {
       case kAccelFocusAddress:
-        if (addressBar_) {
-          SetFocus(addressBar_);
-          SendMessageW(addressBar_, EM_SETSEL, 0, -1);
+        if (activeIdx < addressBars_.size() && addressBars_[activeIdx]) {
+          HWND bar = addressBars_[activeIdx];
+          SetFocus(bar);
+          SendMessageW(bar, EM_SETSEL, 0, -1);
         }
         return 0;
       case kAccelNavBack:
-        if (pane_) { pane_->back(); syncAddressBar(); }
+        if (pane_ && pane_->back()) {
+          clearListViewForNavigation(activeIdx);
+          syncAddressBar(activeIdx);
+        }
         return 0;
       case kAccelNavForward:
-        if (pane_) { pane_->forward(); syncAddressBar(); }
+        if (pane_ && pane_->forward()) {
+          clearListViewForNavigation(activeIdx);
+          syncAddressBar(activeIdx);
+        }
         return 0;
       case kAccelNavUp:
-        if (pane_) { pane_->up(); syncAddressBar(); }
+        if (pane_ && pane_->up()) {
+          clearListViewForNavigation(activeIdx);
+          syncAddressBar(activeIdx);
+        }
         return 0;
       case kAccelRefresh:
-        if (pane_) { pane_->refresh(); syncAddressBar(); }
+        if (pane_ && pane_->refresh()) {
+          clearListViewForNavigation(activeIdx);
+          syncAddressBar(activeIdx);
+        }
         return 0;
       case kAccelDelete:
         deleteFocusedItem();
@@ -820,11 +962,11 @@ LRESULT MainWindow::onEnumBatch(WPARAM wParam, LPARAM lParam) {
     return 0;
   }
   const auto count = static_cast<uint64_t>(lParam);
-  if (!firstBatchSeen_) {
+  if (idx < firstBatchSeen_.size() && !firstBatchSeen_[idx]) {
     perf_.record(fast_explorer::core::PerfTracker::EventId::PaneFirstBatch,
                  count);
     fast_explorer::core::recordMemoryProbe(perf_);
-    firstBatchSeen_ = true;
+    firstBatchSeen_[idx] = true;
   }
   ListView_SetItemCountEx(listViews_[idx], static_cast<int>(count),
                           LVSICF_NOSCROLL);
@@ -845,10 +987,17 @@ LRESULT MainWindow::onEnumComplete(WPARAM wParam) {
   fast_explorer::core::recordMemoryProbe(perf_);
   const std::wstring text = readyStatusText(finalCount);
   setStatusText(text.c_str());
-  // Label-edit pending consumption belongs to whichever pane just
-  // finished enumerating, not necessarily the currently active one
-  // (createSubfolder may complete on a background pane).
   const std::size_t idx = paneIndexFromWParam(wParam);
+  // Empty folders never emit kWmFeEnumBatch, so the list-view item
+  // count carries over the previous folder's rows otherwise.
+  if (idx < listViews_.size() && listViews_[idx] != nullptr) {
+    ListView_SetItemCountEx(listViews_[idx], static_cast<int>(finalCount),
+                            LVSICF_NOSCROLL);
+    // SetItemCountEx alone does not always repaint when shrinking;
+    // force an invalidate so the cached row paint from the previous
+    // folder is not left on screen.
+    InvalidateRect(listViews_[idx], nullptr, TRUE);
+  }
   if (idx < labelEdits_.size() && labelEdits_[idx]) {
     labelEdits_[idx]->maybeStartPendingEdit();
   }
@@ -977,16 +1126,29 @@ LRESULT MainWindow::handleListViewNotify(NMHDR* hdr) {
     case LVN_ITEMACTIVATE:
       handleItemActivate(hdr);
       return 0;
-    case LVN_ITEMCHANGED:
-      if (auto* sync = activeSelectionSync()) sync->handleItemChanged(hdr);
+    case LVN_ITEMCHANGED: {
+      std::size_t idx = 0;
+      if (paneIndexFromListView(hdr->hwndFrom, idx) &&
+          idx < selectionSyncs_.size() && selectionSyncs_[idx]) {
+        selectionSyncs_[idx]->handleItemChanged(hdr);
+      }
       return 0;
+    }
     case LVN_BEGINLABELEDITW: {
-      auto* le = activeLabelEdit();
-      return le ? le->handleBeginEdit() : FALSE;
+      std::size_t idx = 0;
+      if (!paneIndexFromListView(hdr->hwndFrom, idx) ||
+          idx >= labelEdits_.size() || !labelEdits_[idx]) {
+        return FALSE;
+      }
+      return labelEdits_[idx]->handleBeginEdit();
     }
     case LVN_ENDLABELEDITW: {
-      auto* le = activeLabelEdit();
-      return le ? le->handleEndEdit(hdr) : FALSE;
+      std::size_t idx = 0;
+      if (!paneIndexFromListView(hdr->hwndFrom, idx) ||
+          idx >= labelEdits_.size() || !labelEdits_[idx]) {
+        return FALSE;
+      }
+      return labelEdits_[idx]->handleEndEdit(hdr);
     }
     case LVN_ODCACHEHINT:
     case LVN_ODSTATECHANGED:
@@ -996,6 +1158,17 @@ LRESULT MainWindow::handleListViewNotify(NMHDR* hdr) {
     case NM_RCLICK:
       handleListViewRightClick(hdr);
       return 0;
+    case NM_SETFOCUS: {
+      std::size_t idx = 0;
+      if (paneIndexFromListView(hdr->hwndFrom, idx) &&
+          paneManager_ && paneManager_->activeIndex() != idx) {
+        // Click on either pane (including its empty area) reroutes
+        // accelerators (Alt+Up, F5, F2, Del, Ctrl+Shift+N) to that
+        // pane by flipping active.
+        setActivePane(idx);
+      }
+      return 0;
+    }
     default:
       return 0;
   }
@@ -1055,19 +1228,21 @@ LRESULT MainWindow::handleCustomDraw(NMHDR* hdr) {
     case CDDS_PREPAINT:
       return CDRF_NOTIFYITEMDRAW;
     case CDDS_ITEMPREPAINT: {
-      if (!pane_) {
+      std::size_t paneIdx = 0;
+      if (!paneManager_ ||
+          !paneIndexFromListView(cd->nmcd.hdr.hwndFrom, paneIdx) ||
+          paneIdx >= paneManager_->count()) {
         return CDRF_DODEFAULT;
       }
+      const auto& store = paneManager_->at(paneIdx).store();
       const auto row = static_cast<std::size_t>(cd->nmcd.dwItemSpec);
-      const auto& store = pane_->store();
       if (row >= store.publishedCount()) {
         return CDRF_DODEFAULT;
       }
       if (!shouldRenderDimmed(store.visibleAt(row))) {
         return CDRF_DODEFAULT;
       }
-      // CDRF_NEWFONT is the documented Win32 return value for honouring
-      // a clrText change even when no font swap is requested.
+      // CDRF_NEWFONT honours clrText changes without a font swap.
       cd->clrText = GetSysColor(COLOR_GRAYTEXT);
       return CDRF_NEWFONT;
     }
@@ -1094,9 +1269,20 @@ void MainWindow::handleGetDispInfo(NMHDR* hdr) {
 }
 
 void MainWindow::handleGetDispInfoBody(NMHDR* hdr) {
-  if (hdr == nullptr || !pane_) {
+  if (hdr == nullptr || !paneManager_) {
     return;
   }
+  // The dispatcher routes every list-view's notifications through
+  // this body, so resolve the owning pane from hwndFrom instead of
+  // the active-pane cache to keep the inactive pane's rows correct.
+  std::size_t paneIdx = 0;
+  for (std::size_t i = 0; i < listViews_.size(); ++i) {
+    if (listViews_[i] == hdr->hwndFrom) { paneIdx = i; break; }
+  }
+  if (paneIdx >= paneManager_->count()) {
+    return;
+  }
+  PaneController& sourcePane = paneManager_->at(paneIdx);
   auto* disp = reinterpret_cast<NMLVDISPINFOW*>(hdr);
   if (disp->item.iItem < 0) {
     return;
@@ -1104,7 +1290,7 @@ void MainWindow::handleGetDispInfoBody(NMHDR* hdr) {
   if ((disp->item.mask & (LVIF_TEXT | LVIF_IMAGE)) == 0) {
     return;
   }
-  const auto& store = pane_->store();
+  const auto& store = sourcePane.store();
   const size_t row = static_cast<size_t>(disp->item.iItem);
   // publishedCount() acquire-loads the worker's release-store after the
   // matching batch of push_backs, so rows below it are guaranteed to
@@ -1118,9 +1304,8 @@ void MainWindow::handleGetDispInfoBody(NMHDR* hdr) {
   // without further plumbing. Identity until the first sort.
   const auto& entry = store.visibleAt(row);
   if ((disp->item.mask & LVIF_IMAGE) != 0) {
-    auto& activeCoord = iconCoords_[paneManager_ ?
-                                    paneManager_->activeIndex() : 0];
-    disp->item.iImage = activeCoord ? activeCoord->resolveIconIndex(entry) : 0;
+    auto& coord = iconCoords_[paneIdx];
+    disp->item.iImage = coord ? coord->resolveIconIndex(entry) : 0;
   }
   if ((disp->item.mask & LVIF_TEXT) == 0) {
     return;
@@ -1149,16 +1334,27 @@ void MainWindow::handleGetDispInfoBody(NMHDR* hdr) {
 }
 
 void MainWindow::handleItemActivate(NMHDR* hdr) {
-  if (hdr == nullptr || !pane_) {
+  if (hdr == nullptr || !paneManager_) {
     return;
   }
-  // NMITEMACTIVATE's first member is NMHDR by Win32 contract.
+  std::size_t paneIdx = 0;
+  for (std::size_t i = 0; i < listViews_.size(); ++i) {
+    if (listViews_[i] == hdr->hwndFrom) { paneIdx = i; break; }
+  }
+  if (paneIdx >= paneManager_->count()) {
+    return;
+  }
   auto* nmia = reinterpret_cast<NMITEMACTIVATE*>(hdr);
   if (nmia->iItem < 0) {
     return;
   }
-  pane_->openItem(static_cast<std::uint32_t>(nmia->iItem));
-  syncAddressBar();
+  // Activate must navigate the clicked pane, not the cached active
+  // one; flipping activeness keeps subsequent accelerators on the
+  // source pane.
+  setActivePane(paneIdx);
+  paneManager_->at(paneIdx).openItem(static_cast<std::uint32_t>(nmia->iItem));
+  clearListViewForNavigation(paneIdx);
+  syncAddressBar(paneIdx);
 }
 
 void MainWindow::handleColumnClick(NMHDR* hdr) {
