@@ -8,6 +8,7 @@
 #include <string>
 
 #include "ui/cut-state-tracker.h"
+#include "ui/pane-layout.h"
 
 namespace fast_explorer::core {
 class ProcessMemoryService;
@@ -55,8 +56,13 @@ class MainWindow {
   // decides whether the new pane gets focus. The second pane opens
   // on `secondPath` when non-empty; otherwise it falls back to the
   // active pane's current folder so a manual Ctrl+2 lands on the
-  // working location rather than an empty list.
-  void enterDualMode(const std::wstring& secondPath = {});
+  // working location rather than an empty list. `orientation` picks
+  // the seam between the two panes (Vertical = side-by-side, default;
+  // Horizontal = top/bottom). Entering dual mode while already dual
+  // is a no-op — use setLayoutOrientation to flip the seam in place.
+  void enterDualMode(const std::wstring& secondPath = {},
+                     LayoutOrientation orientation =
+                         LayoutOrientation::Vertical);
 
   // Destroys the second pane (releases its coordinators, removes the
   // PaneController, destroys the second list-view) and triggers a
@@ -68,6 +74,18 @@ class MainWindow {
   // Ctrl+Shift+N accelerators target the new active pane. No-op when
   // idx is out of range.
   void setActivePane(std::size_t idx);
+
+  // Flips the seam between the two panes while staying in dual mode.
+  // No-op when single-mode or when the orientation is already the
+  // requested value. Does not destroy or recreate the panes; just
+  // updates the cached orientation and triggers a relayout.
+  void setLayoutOrientation(LayoutOrientation orientation);
+
+  // The current seam orientation. Always reflects the layout regardless
+  // of single/dual mode (used by session capture at WM_DESTROY).
+  [[nodiscard]] LayoutOrientation layoutOrientation() const noexcept {
+    return orientation_;
+  }
 
   // Applies the persisted window position/size from a prior session.
   // Members equal to kSettingsUseDefault are skipped, so the OS picks
@@ -203,6 +221,7 @@ class MainWindow {
   std::unique_ptr<class DispInfoHistogram> dispInfoHist_;
   std::uint64_t qpcFrequencyHz_ = 0;
   std::unique_ptr<fast_explorer::core::SessionState> capturedState_;
+  LayoutOrientation orientation_ = LayoutOrientation::Vertical;
 };
 
 }  // namespace fast_explorer::ui

@@ -4,8 +4,10 @@
 #include "ui/pane-layout.h"
 
 using fast_explorer::ui::computePaneRects;
+using fast_explorer::ui::LayoutAction;
 using fast_explorer::ui::LayoutOrientation;
 using fast_explorer::ui::PaneLayoutRects;
+using fast_explorer::ui::resolveLayoutToggle;
 
 namespace {
 
@@ -130,4 +132,61 @@ FE_TEST_CASE(PaneLayout_Dual_Horizontal_NoAddressBar) {
                                     LayoutOrientation::Horizontal);
   FE_ASSERT_TRUE(rectEquals(out.panes[0], 0, 0,   1280, 389));
   FE_ASSERT_TRUE(rectEquals(out.panes[1], 0, 389, 1280, 778));
+}
+
+// Compile-time truth table: lock the 3-action policy at every input
+// combination so a future edit to resolveLayoutToggle that breaks the
+// invariant fails the build, not just the runtime test.
+static_assert(resolveLayoutToggle(false, LayoutOrientation::Vertical,
+                                  LayoutOrientation::Vertical).action ==
+              LayoutAction::EnterDual);
+static_assert(resolveLayoutToggle(false, LayoutOrientation::Vertical,
+                                  LayoutOrientation::Horizontal).action ==
+              LayoutAction::EnterDual);
+static_assert(resolveLayoutToggle(true, LayoutOrientation::Vertical,
+                                  LayoutOrientation::Vertical).action ==
+              LayoutAction::ExitToSingle);
+static_assert(resolveLayoutToggle(true, LayoutOrientation::Horizontal,
+                                  LayoutOrientation::Horizontal).action ==
+              LayoutAction::ExitToSingle);
+static_assert(resolveLayoutToggle(true, LayoutOrientation::Vertical,
+                                  LayoutOrientation::Horizontal).action ==
+              LayoutAction::SwitchOrientation);
+static_assert(resolveLayoutToggle(true, LayoutOrientation::Horizontal,
+                                  LayoutOrientation::Vertical).action ==
+              LayoutAction::SwitchOrientation);
+
+FE_TEST_CASE(LayoutToggle_FromSingle_EnterDualInPressedOrientation) {
+  const auto t = resolveLayoutToggle(false, LayoutOrientation::Vertical,
+                                     LayoutOrientation::Horizontal);
+  FE_ASSERT_TRUE(t.action == LayoutAction::EnterDual);
+  FE_ASSERT_TRUE(t.target == LayoutOrientation::Horizontal);
+}
+
+FE_TEST_CASE(LayoutToggle_FromSingle_VerticalKey_EntersVertical) {
+  const auto t = resolveLayoutToggle(false, LayoutOrientation::Horizontal,
+                                     LayoutOrientation::Vertical);
+  // currentOrientation is ignored when single — the persisted value
+  // could carry the prior session's last seam but the press wins.
+  FE_ASSERT_TRUE(t.action == LayoutAction::EnterDual);
+  FE_ASSERT_TRUE(t.target == LayoutOrientation::Vertical);
+}
+
+FE_TEST_CASE(LayoutToggle_DualSameSeam_ExitsToSingle) {
+  const auto t = resolveLayoutToggle(true, LayoutOrientation::Vertical,
+                                     LayoutOrientation::Vertical);
+  FE_ASSERT_TRUE(t.action == LayoutAction::ExitToSingle);
+}
+
+FE_TEST_CASE(LayoutToggle_DualOtherSeam_SwitchesOrientation) {
+  const auto t = resolveLayoutToggle(true, LayoutOrientation::Vertical,
+                                     LayoutOrientation::Horizontal);
+  FE_ASSERT_TRUE(t.action == LayoutAction::SwitchOrientation);
+  FE_ASSERT_TRUE(t.target == LayoutOrientation::Horizontal);
+}
+
+FE_TEST_CASE(LayoutToggle_DualHorizontalSameSeam_ExitsToSingle) {
+  const auto t = resolveLayoutToggle(true, LayoutOrientation::Horizontal,
+                                     LayoutOrientation::Horizontal);
+  FE_ASSERT_TRUE(t.action == LayoutAction::ExitToSingle);
 }

@@ -260,13 +260,15 @@ void MainWindow::relayout() {
   onSize(hwnd_, WM_SIZE, SIZE_RESTORED, lp);
 }
 
-void MainWindow::enterDualMode(const std::wstring& secondPath) {
+void MainWindow::enterDualMode(const std::wstring& secondPath,
+                               LayoutOrientation orientation) {
   if (hwnd_ == nullptr || !paneManager_) {
     return;
   }
   if (paneManager_->isDual()) {
     return;
   }
+  orientation_ = orientation;
   // Capture before openSecond mutates active-pane state.
   const std::wstring fallback =
       paneManager_->active().currentPath();
@@ -376,6 +378,16 @@ void MainWindow::setActivePane(std::size_t idx) {
   }
   applyActivePaneAppearance();
   syncAddressBar(idx);
+}
+
+void MainWindow::setLayoutOrientation(LayoutOrientation orientation) {
+  if (orientation_ == orientation) {
+    return;
+  }
+  orientation_ = orientation;
+  if (paneManager_ && paneManager_->isDual()) {
+    relayout();
+  }
 }
 
 void MainWindow::applyInitialState(
@@ -862,7 +874,7 @@ LRESULT MainWindow::onSize(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
     // pane rect below, so computePaneRects gets zero global top.
     const std::size_t paneCount = paneManager_ ? paneManager_->count() : 1;
     const auto rects = computePaneRects(clientW, clientH, 0, statusH,
-                                        paneCount);
+                                        paneCount, orientation_);
     for (std::size_t i = 0; i < listViews_.size(); ++i) {
       if (listViews_[i] == nullptr) continue;
       const RECT& r = rects.panes[i];
@@ -961,13 +973,30 @@ LRESULT MainWindow::onCommand(HWND hwnd, UINT msg, WPARAM wParam,
       case kAccelLayoutDual:
         enterDualMode();
         return 0;
-      case kAccelLayoutToggle:
-        if (paneManager_ && paneManager_->isDual()) {
-          enterSingleMode();
-        } else {
-          enterDualMode();
+      case kAccelLayoutVerticalToggle:
+      case kAccelLayoutHorizontalToggle: {
+        const LayoutOrientation pressed =
+            LOWORD(wParam) == kAccelLayoutHorizontalToggle
+                ? LayoutOrientation::Horizontal
+                : LayoutOrientation::Vertical;
+        const bool dual = paneManager_ && paneManager_->isDual();
+        const auto t = resolveLayoutToggle(dual, orientation_, pressed);
+        switch (t.action) {
+          case LayoutAction::EnterDual:
+            enterDualMode({}, t.target);
+            break;
+          case LayoutAction::ExitToSingle:
+            enterSingleMode();
+            break;
+          case LayoutAction::SwitchOrientation:
+            setLayoutOrientation(t.target);
+            break;
+          // No default: every enumerator is handled. A future addition
+          // to LayoutAction should surface here as a compiler warning
+          // (/W4 -Wswitch) rather than silently falling through.
         }
         return 0;
+      }
       case kAccelCopy:
         handleClipboardCopy(false);
         return 0;
