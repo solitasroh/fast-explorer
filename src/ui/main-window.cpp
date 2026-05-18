@@ -25,6 +25,9 @@
 #include "ui/pane-controller.h"
 #include "ui/pane-layout.h"
 #include "ui/pane-manager.h"
+#include "ui/com-raii.h"
+#include "ui/drop-source.h"
+#include "ui/drop-target.h"
 #include "ui/selection-sync.h"
 #include "ui/shell-context-menu.h"
 #include "ui/status-text.h"
@@ -269,6 +272,16 @@ void MainWindow::enterDualMode(const std::wstring& secondPath) {
   }
   ListView_SetItemCountEx(second, 0, 0);
   listViews_[1] = second;
+  if (paneManager_) {
+    auto* dt = new (std::nothrow) PaneDropTarget(second, paneManager_.get(), 1);
+    if (dt) {
+      if (SUCCEEDED(RegisterDragDrop(second, dt))) {
+        dropTargets_[1] = dt;
+      } else {
+        dt->Release();
+      }
+    }
+  }
   addressBars_[1] = createAddressBar(hwnd_, instance_);
   if (addressBars_[1]) {
     HWND innerEdit = reinterpret_cast<HWND>(
@@ -318,6 +331,11 @@ void MainWindow::enterSingleMode() {
   iconCoords_[1].reset();
   paneManager_->closeSecond();
   pane_ = &paneManager_->active();
+  if (dropTargets_[1] != nullptr && listViews_[1] != nullptr) {
+    RevokeDragDrop(listViews_[1]);
+    dropTargets_[1]->Release();
+    dropTargets_[1] = nullptr;
+  }
   if (listViews_[1] != nullptr) {
     DestroyWindow(listViews_[1]);
     listViews_[1] = nullptr;
@@ -721,6 +739,13 @@ LRESULT MainWindow::handleMessage(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPa
         addressBarPopup_->hide();
         addressBarPopup_.reset();
       }
+      for (std::size_t i = 0; i < dropTargets_.size(); ++i) {
+        if (dropTargets_[i] != nullptr && listViews_[i] != nullptr) {
+          RevokeDragDrop(listViews_[i]);
+          dropTargets_[i]->Release();
+          dropTargets_[i] = nullptr;
+        }
+      }
       PostQuitMessage(0);
       return 0;
     }
@@ -751,6 +776,7 @@ LRESULT MainWindow::onCreate(HWND hwnd) {
   ListView_SetItemCountEx(listView_, 0, 0);
   listViews_[0] = listView_;
   statusBar_ = createStatusBar(hwnd, instance_);
+  // dropTargets_[0] is registered after paneManager_ exists; see below.
   addressBars_[0] = createAddressBar(hwnd, instance_);
   if (addressBars_[0]) {
     HWND innerEdit = reinterpret_cast<HWND>(
@@ -764,6 +790,17 @@ LRESULT MainWindow::onCreate(HWND hwnd) {
   paneManager_ = std::make_unique<PaneManager>();
   paneManager_->openInitial(hwnd);
   pane_ = &paneManager_->active();
+  {
+    auto* dt =
+        new (std::nothrow) PaneDropTarget(listView_, paneManager_.get(), 0);
+    if (dt) {
+      if (SUCCEEDED(RegisterDragDrop(listView_, dt))) {
+        dropTargets_[0] = dt;
+      } else {
+        dt->Release();
+      }
+    }
+  }
   formatCache_ = std::make_unique<FormatCache>();
   if (!installPaneCoordinators(0, listView_)) {
     return -1;
@@ -1102,6 +1139,73 @@ LRESULT MainWindow::onFsChange(HWND hwnd, WPARAM wParam) {
   return 0;
 }
 
+void MainWindow::handleBeginDrag(NMHDR* hdr) {
+  if (hdr == nullptr || !paneManager_) return;
+  std::size_t paneIdx = 0;
+  if (!paneIndexFromListView(hdr->hwndFrom, paneIdx) ||
+      paneIdx >= paneManager_->count()) {
+    return;
+  }
+  PaneController& pane = paneManager_->at(paneIdx);
+  const auto& store = pane.store();
+  const std::wstring& folderPath = pane.currentPath();
+  if (folderPath.empty()) return;
+
+  HWND lv = hdr->hwndFrom;
+  std::vector<PidlOwner> childPidls;
+  PidlOwner folderPidl;
+  {
+    LPITEMIDLIST raw = nullptr;
+    SFGAOF attrs = 0;
+    if (FAILED(SHParseDisplayName(folderPath.c_str(), nullptr, &raw, 0,
+                                   &attrs)) || raw == nullptr) {
+      return;
+    }
+    folderPidl.reset(raw);
+  }
+  ComPtr<IShellFolder> folder;
+  if (FAILED(SHBindToObject(nullptr, folderPidl.get(), nullptr,
+                            IID_PPV_ARGS(folder.put()))) || !folder) {
+    return;
+  }
+  int row = -1;
+  while ((row = ListView_GetNextItem(lv, row, LVNI_SELECTED)) >= 0) {
+    const auto idx = static_cast<std::size_t>(row);
+    if (idx >= store.publishedCount()) continue;
+    const auto& entry = store.visibleAt(idx);
+    const std::wstring leaf(entry.namePtr, entry.nameLength);
+    LPITEMIDLIST child = nullptr;
+    ULONG eaten = 0;
+    SFGAOF attrs = 0;
+    if (FAILED(folder->ParseDisplayName(nullptr, nullptr,
+                                         const_cast<LPWSTR>(leaf.c_str()),
+                                         &eaten, &child, &attrs)) ||
+        child == nullptr) {
+      return;
+    }
+    childPidls.emplace_back(child);
+  }
+  if (childPidls.empty()) return;
+
+  std::vector<LPCITEMIDLIST> rawPidls;
+  rawPidls.reserve(childPidls.size());
+  for (const auto& p : childPidls) rawPidls.push_back(p.get());
+  ComPtr<IDataObject> dataObj;
+  if (FAILED(folder->GetUIObjectOf(lv, static_cast<UINT>(rawPidls.size()),
+                                    rawPidls.data(), IID_IDataObject, nullptr,
+                                    reinterpret_cast<void**>(dataObj.put()))) ||
+      !dataObj) {
+    return;
+  }
+
+  FileDropSource* dropSource = new (std::nothrow) FileDropSource();
+  if (!dropSource) return;
+  DWORD effect = 0;
+  DoDragDrop(dataObj.get(), dropSource,
+             DROPEFFECT_COPY | DROPEFFECT_MOVE | DROPEFFECT_LINK, &effect);
+  dropSource->Release();
+}
+
 void MainWindow::finalizeSortApply(std::size_t paneIdx) {
   if (!paneManager_ || paneIdx >= paneManager_->count() ||
       paneIdx >= listViews_.size() || listViews_[paneIdx] == nullptr) {
@@ -1163,6 +1267,10 @@ LRESULT MainWindow::handleListViewNotify(NMHDR* hdr) {
     }
     case LVN_ODCACHEHINT:
     case LVN_ODSTATECHANGED:
+      return 0;
+    case LVN_BEGINDRAG:
+    case LVN_BEGINRDRAG:
+      handleBeginDrag(hdr);
       return 0;
     case NM_CUSTOMDRAW:
       return handleCustomDraw(hdr);

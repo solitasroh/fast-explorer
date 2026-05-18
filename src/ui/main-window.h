@@ -1,6 +1,7 @@
 #pragma once
 
 #include <windows.h>
+#include <oleidl.h>
 
 #include <array>
 #include <memory>
@@ -151,6 +152,7 @@ class MainWindow {
   void finalizeSortApply(std::size_t paneIdx);
   LRESULT handleCustomDraw(NMHDR* hdr);
   void handleListViewRightClick(NMHDR* hdr);
+  void handleBeginDrag(NMHDR* hdr);
   void handleAddressCommit(std::size_t paneIdx);
   void syncAddressBar(std::size_t paneIdx);
   bool addressBarPaneIndex(HWND ctrl, std::size_t& outIdx) const noexcept;
@@ -182,6 +184,7 @@ class MainWindow {
   std::array<HWND, 2> listViews_{nullptr, nullptr};
   HWND statusBar_ = nullptr;
   std::array<HWND, 2> addressBars_{nullptr, nullptr};
+  std::array<IDropTarget*, 2> dropTargets_{nullptr, nullptr};
   std::unique_ptr<AddressBarPopup> addressBarPopup_;
   std::array<bool, 2> firstBatchSeen_{false, false};
   std::unique_ptr<PaneManager> paneManager_;

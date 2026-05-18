@@ -71,6 +71,10 @@ set(FE_APP_SOURCES
   src/ui/selection-sync.h
   src/ui/shell-context-menu.cpp
   src/ui/shell-context-menu.h
+  src/ui/drop-source.cpp
+  src/ui/drop-source.h
+  src/ui/drop-target.cpp
+  src/ui/drop-target.h
   src/ui/status-text.cpp
   src/ui/status-text.h
   src/ui/stall-probe.cpp
