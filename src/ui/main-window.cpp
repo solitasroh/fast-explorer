@@ -370,12 +370,6 @@ void MainWindow::setActivePane(std::size_t idx) {
     addressBarPopup_->hide();
     addressBarPopup_->setActivePane(idx);
   }
-  if (statusBar_) {
-    const wchar_t* label =
-        idx == 0 ? L"활성: 왼쪽" : L"활성: 오른쪽";
-    SendMessageW(statusBar_, SB_SETTEXTW, 0,
-                 reinterpret_cast<LPARAM>(label));
-  }
   applyActivePaneAppearance();
   syncAddressBar(idx);
 }
@@ -449,7 +443,7 @@ bool MainWindow::openFolder(const std::wstring& path) {
   clearListViewForNavigation(activeIdx);
   syncAddressBar(paneManager_ ? paneManager_->activeIndex() : 0);
   const std::wstring text = loadingStatusText(path);
-  setStatusText(text.c_str());
+  setPaneStatusText(activeIdx, text.c_str());
   return true;
 }
 
@@ -630,11 +624,38 @@ void MainWindow::handleAddressCommit(std::size_t paneIdx) {
   }
 }
 
-void MainWindow::setStatusText(const wchar_t* text) {
-  if (statusBar_ && text) {
-    SendMessageW(statusBar_, SB_SETTEXTW, 0,
-                 reinterpret_cast<LPARAM>(text));
+void MainWindow::setPaneStatusText(std::size_t paneIdx, const wchar_t* text) {
+  if (statusBar_ == nullptr || text == nullptr || paneIdx >= kMaxPanes) {
+    return;
   }
+  // In single mode the status bar has only one part (index 0); a
+  // write to pane 1 would land in a non-existent part and be lost
+  // anyway. Drop it explicitly so a stray dual-mode message in
+  // flight does not paint an out-of-bounds part if the user
+  // collapses to single between the message post and its dispatch.
+  if (paneIdx == 1 && (!paneManager_ || !paneManager_->isDual())) {
+    return;
+  }
+  SendMessageW(statusBar_, SB_SETTEXTW, static_cast<WPARAM>(paneIdx),
+               reinterpret_cast<LPARAM>(text));
+}
+
+void MainWindow::applyStatusParts(int clientWidth) {
+  if (statusBar_ == nullptr) {
+    return;
+  }
+  const std::size_t paneCount = paneManager_ ? paneManager_->count() : 1;
+  const auto layout = statusBarPartLayout(clientWidth, paneCount);
+  // SB_SETPARTS via SendMessageW: synchronous, so the status bar
+  // copies the edges array before this call returns. The kStatus
+  // BarPartExtendsToEdge sentinel in the trailing slot extends the
+  // last part to the right edge of the status bar even on odd-
+  // width windows. Must stay SendMessageW (not PostMessageW) so
+  // the int* into the stack-temporary `layout` is dereferenced
+  // before its lifetime ends.
+  SendMessageW(statusBar_, SB_SETPARTS,
+               static_cast<WPARAM>(layout.count),
+               reinterpret_cast<LPARAM>(layout.edges.data()));
 }
 
 bool MainWindow::create(HINSTANCE instance, int showCommand) {
@@ -877,6 +898,10 @@ LRESULT MainWindow::onSize(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
         addressBars_[0] ? scaleForDpi(28, GetDpiForWindow(hwnd)) : 0;
     const int clientW = client.right - client.left;
     const int clientH = client.bottom - client.top;
+    // Resync status-bar parts every resize: the seam between part 0
+    // and part 1 follows the window width so it always sits at the
+    // 50/50 mark under the panes.
+    applyStatusParts(clientW);
     // Each pane carries its own address bar; sliced out of each
     // pane rect below, so computePaneRects gets zero global top.
     const std::size_t paneCount = paneManager_ ? paneManager_->count() : 1;
@@ -1060,7 +1085,7 @@ LRESULT MainWindow::onEnumBatch(WPARAM wParam, LPARAM lParam) {
   ListView_SetItemCountEx(listViews_[idx], static_cast<int>(count),
                           LVSICF_NOSCROLL);
   const std::wstring text = loadingProgressStatusText(count);
-  setStatusText(text.c_str());
+  setPaneStatusText(idx, text.c_str());
   return 0;
 }
 
@@ -1078,9 +1103,9 @@ LRESULT MainWindow::onEnumComplete(WPARAM wParam) {
   target->reapplyPersistedSort();
   const size_t finalCount = target->store().itemCount();
   fast_explorer::core::recordMemoryProbe(perf_);
-  const std::wstring text = readyStatusText(finalCount);
-  setStatusText(text.c_str());
   const std::size_t idx = paneIndexFromWParam(wParam);
+  const std::wstring text = readyStatusText(finalCount);
+  setPaneStatusText(idx, text.c_str());
   if (idx < listViews_.size() && listViews_[idx] != nullptr) {
     ListView_SetItemCountEx(listViews_[idx], static_cast<int>(finalCount),
                             LVSICF_NOSCROLL);
@@ -1105,7 +1130,7 @@ LRESULT MainWindow::onEnumError(WPARAM wParam, LPARAM lParam) {
   }
   const auto err = static_cast<fast_explorer::core::EnumerationError>(lParam);
   const std::wstring text = errorStatusText(err);
-  setStatusText(text.c_str());
+  setPaneStatusText(paneIndexFromWParam(wParam), text.c_str());
   return 0;
 }
 
@@ -1170,7 +1195,7 @@ LRESULT MainWindow::onOperationResult(WPARAM wParam) {
   // Surface only the latest outcome — repeated rapid operations
   // would otherwise flicker the status bar through every step.
   const std::wstring text = opResultStatusText(results.back());
-  setStatusText(text.c_str());
+  setPaneStatusText(paneIndexFromWParam(wParam), text.c_str());
   return 0;
 }
 

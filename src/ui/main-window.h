@@ -187,7 +187,16 @@ class MainWindow {
   static constexpr int kDefaultWidth = 1280;
   static constexpr int kDefaultHeight = 800;
 
-  void setStatusText(const wchar_t* text);
+  // Writes `text` into the status-bar part owned by `paneIdx`. In
+  // single mode the status bar has one part: writes to pane 0 land
+  // in it, writes to pane 1 are dropped (the second pane does not
+  // exist). In dual mode parts 0 / 1 are the left / right halves.
+  void setPaneStatusText(std::size_t paneIdx, const wchar_t* text);
+
+  // Resyncs the status-bar SB_SETPARTS layout with the current pane
+  // count + client width. Called by onSize so the part edges follow
+  // window resizes in both single and dual mode.
+  void applyStatusParts(int clientWidth);
 
   fast_explorer::core::ProcessMemoryService& memory_;
   fast_explorer::core::PerfTracker& perf_;
