@@ -58,6 +58,8 @@ set(FE_APP_SOURCES
   src/ui/label-edit-controller.h
   src/ui/shell-worker.cpp
   src/ui/shell-worker.h
+  src/ui/filter-pattern.cpp
+  src/ui/filter-pattern.h
   src/ui/pane-controller.cpp
   src/ui/pane-controller.h
   src/ui/pane-layout.cpp
@@ -193,6 +195,7 @@ add_executable(core-tests
   tests/settings-store-tests.cpp
   tests/pane-manager-tests.cpp
   tests/pane-layout-tests.cpp
+  tests/filter-pattern-tests.cpp
   tests/bench-fs-helper.h
   src/ui/messages.h
   src/ui/column-formatter.cpp
@@ -217,6 +220,8 @@ add_executable(core-tests
   src/ui/label-edit-controller.h
   src/ui/shell-worker.cpp
   src/ui/shell-worker.h
+  src/ui/filter-pattern.cpp
+  src/ui/filter-pattern.h
   src/ui/pane-controller.cpp
   src/ui/pane-controller.h
   src/ui/pane-layout.cpp
