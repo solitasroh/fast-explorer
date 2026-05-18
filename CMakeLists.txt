@@ -71,6 +71,8 @@ set(FE_APP_SOURCES
   src/ui/selection-sync.h
   src/ui/shell-context-menu.cpp
   src/ui/shell-context-menu.h
+  src/ui/clipboard-ops.cpp
+  src/ui/clipboard-ops.h
   src/ui/drop-source.cpp
   src/ui/drop-source.h
   src/ui/drop-target.cpp

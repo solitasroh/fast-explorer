@@ -25,6 +25,7 @@
 #include "ui/pane-controller.h"
 #include "ui/pane-layout.h"
 #include "ui/pane-manager.h"
+#include "ui/clipboard-ops.h"
 #include "ui/com-raii.h"
 #include "ui/drop-source.h"
 #include "ui/drop-target.h"
@@ -191,10 +192,15 @@ bool registerClassOnce(HINSTANCE instance, const wchar_t* className, WNDPROC pro
   wc.lpfnWndProc = proc;
   wc.hInstance = instance;
   wc.hCursor = LoadCursor(nullptr, IDC_ARROW);
-  // COLOR_WINDOW + 1 is the documented Win32 idiom for picking the system
-  // window background brush without explicit GetSysColorBrush().
   wc.hbrBackground = reinterpret_cast<HBRUSH>(COLOR_WINDOW + 1);
   wc.lpszClassName = className;
+  // App icon: large for Alt+Tab / taskbar, small for window caption.
+  // MAKEINTRESOURCEW(101) = IDI_APP in resources/resource-ids.h.
+  wc.hIcon = LoadIconW(instance, MAKEINTRESOURCEW(101));
+  wc.hIconSm = static_cast<HICON>(LoadImageW(
+      instance, MAKEINTRESOURCEW(101), IMAGE_ICON,
+      GetSystemMetrics(SM_CXSMICON), GetSystemMetrics(SM_CYSMICON),
+      LR_DEFAULTCOLOR));
   return RegisterClassExW(&wc) != 0;
 }
 
@@ -968,6 +974,15 @@ LRESULT MainWindow::onCommand(HWND hwnd, UINT msg, WPARAM wParam,
           enterDualMode();
         }
         return 0;
+      case kAccelCopy:
+        handleClipboardCopy(false);
+        return 0;
+      case kAccelCut:
+        handleClipboardCopy(true);
+        return 0;
+      case kAccelPaste:
+        handleClipboardPaste();
+        return 0;
       case kAccelPaneSwitch:
         if (paneManager_ && paneManager_->isDual()) {
           const std::size_t next =
@@ -1046,6 +1061,8 @@ LRESULT MainWindow::onEnumComplete(WPARAM wParam) {
   if (idx < selectionSyncs_.size() && selectionSyncs_[idx]) {
     selectionSyncs_[idx]->reapplyFromPane();
   }
+  // Re-stamp LVIS_CUT when navigating back into the cut source folder.
+  applyCutStateToListView(idx);
   if (idx < labelEdits_.size() && labelEdits_[idx]) {
     labelEdits_[idx]->maybeStartPendingEdit();
   }
@@ -1137,6 +1154,87 @@ LRESULT MainWindow::onFsChange(HWND hwnd, WPARAM wParam) {
   const UINT_PTR timerId = kTimerFsCoalesceBase + idx;
   SetTimer(hwnd, timerId, kFsCoalesceMs, nullptr);
   return 0;
+}
+
+namespace {
+
+std::vector<std::wstring> collectSelectedLeaves(HWND lv,
+                                                const PaneController& pane) {
+  std::vector<std::wstring> out;
+  if (lv == nullptr) return out;
+  const auto& store = pane.store();
+  int row = -1;
+  while ((row = ListView_GetNextItem(lv, row, LVNI_SELECTED)) >= 0) {
+    const auto idx = static_cast<std::size_t>(row);
+    if (idx >= store.publishedCount()) continue;
+    const auto& entry = store.visibleAt(idx);
+    out.emplace_back(entry.namePtr, entry.nameLength);
+  }
+  return out;
+}
+
+}  // namespace
+
+void MainWindow::handleClipboardCopy(bool cut) {
+  if (!paneManager_) return;
+  const std::size_t idx = paneManager_->activeIndex();
+  if (idx >= listViews_.size() || listViews_[idx] == nullptr) return;
+  PaneController& pane = paneManager_->at(idx);
+  auto leaves = collectSelectedLeaves(listViews_[idx], pane);
+  if (leaves.empty()) return;
+  if (!ClipboardOps::copy(pane.currentPath(), leaves, cut)) return;
+  clearCutState();
+  if (cut) {
+    cutFolderPath_ = pane.currentPath();
+    cutLeaves_.insert(leaves.begin(), leaves.end());
+    for (std::size_t i = 0; i < listViews_.size(); ++i) {
+      applyCutStateToListView(i);
+    }
+  }
+}
+
+void MainWindow::handleClipboardPaste() {
+  if (!paneManager_) return;
+  const std::size_t idx = paneManager_->activeIndex();
+  if (idx >= listViews_.size() || listViews_[idx] == nullptr) return;
+  PaneController& pane = paneManager_->at(idx);
+  if (pane.currentPath().empty()) return;
+  if (ClipboardOps::paste(pane.currentPath(), listViews_[idx])) {
+    // Shell completed the operation; if it was a move it consumed
+    // the cut data object — drop the ghosted indicator.
+    clearCutState();
+  }
+}
+
+void MainWindow::applyCutStateToListView(std::size_t paneIdx) noexcept {
+  if (paneIdx >= listViews_.size() || listViews_[paneIdx] == nullptr ||
+      !paneManager_ || paneIdx >= paneManager_->count()) {
+    return;
+  }
+  HWND lv = listViews_[paneIdx];
+  ListView_SetItemState(lv, -1, 0, LVIS_CUT);
+  if (cutFolderPath_.empty() || cutLeaves_.empty()) return;
+  PaneController& pane = paneManager_->at(paneIdx);
+  if (pane.currentPath() != cutFolderPath_) return;
+  const auto& store = pane.store();
+  const auto count = store.publishedCount();
+  for (std::size_t row = 0; row < count; ++row) {
+    const auto& entry = store.visibleAt(row);
+    std::wstring leaf(entry.namePtr, entry.nameLength);
+    if (cutLeaves_.count(leaf) > 0) {
+      ListView_SetItemState(lv, static_cast<int>(row), LVIS_CUT, LVIS_CUT);
+    }
+  }
+}
+
+void MainWindow::clearCutState() noexcept {
+  cutFolderPath_.clear();
+  cutLeaves_.clear();
+  for (std::size_t i = 0; i < listViews_.size(); ++i) {
+    if (listViews_[i] != nullptr) {
+      ListView_SetItemState(listViews_[i], -1, 0, LVIS_CUT);
+    }
+  }
 }
 
 void MainWindow::handleBeginDrag(NMHDR* hdr) {

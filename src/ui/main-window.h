@@ -6,6 +6,7 @@
 #include <array>
 #include <memory>
 #include <string>
+#include <unordered_set>
 
 namespace fast_explorer::core {
 class ProcessMemoryService;
@@ -153,6 +154,10 @@ class MainWindow {
   LRESULT handleCustomDraw(NMHDR* hdr);
   void handleListViewRightClick(NMHDR* hdr);
   void handleBeginDrag(NMHDR* hdr);
+  void handleClipboardCopy(bool cut);
+  void handleClipboardPaste();
+  void applyCutStateToListView(std::size_t paneIdx) noexcept;
+  void clearCutState() noexcept;
   void handleAddressCommit(std::size_t paneIdx);
   void syncAddressBar(std::size_t paneIdx);
   bool addressBarPaneIndex(HWND ctrl, std::size_t& outIdx) const noexcept;
@@ -185,6 +190,8 @@ class MainWindow {
   HWND statusBar_ = nullptr;
   std::array<HWND, 2> addressBars_{nullptr, nullptr};
   std::array<IDropTarget*, 2> dropTargets_{nullptr, nullptr};
+  std::wstring cutFolderPath_;
+  std::unordered_set<std::wstring> cutLeaves_;
   std::unique_ptr<AddressBarPopup> addressBarPopup_;
   std::array<bool, 2> firstBatchSeen_{false, false};
   std::unique_ptr<PaneManager> paneManager_;
