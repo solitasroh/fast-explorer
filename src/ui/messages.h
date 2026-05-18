@@ -24,6 +24,13 @@ inline constexpr UINT kWmFeLowMemory       = kWmFeBase + 0x0A;
 inline constexpr UINT kWmFeAddressPopupPick = kWmFeBase + 0x0B;
 inline constexpr UINT kWmFeAddressPopupHide = kWmFeBase + 0x0C;
 inline constexpr UINT kWmFeAddressPopupClick = kWmFeBase + 0x0D;
+// Search popup → MainWindow: every keystroke posts the latest query
+// text. WPARAM = paneIndex captured at popup show time; LPARAM is a
+// `new std::wstring*` the receiver must delete after reading.
+inline constexpr UINT kWmFeFilterQuery       = kWmFeBase + 0x0E;
+// Search popup hide notice (ESC or explicit). WPARAM = paneIndex,
+// LPARAM = 0. Caller clears the active filter.
+inline constexpr UINT kWmFeFilterDismiss     = kWmFeBase + 0x0F;
 
 inline constexpr WORD kAccelFocusAddress = 100;
 inline constexpr WORD kAccelNavBack       = 101;
@@ -44,7 +51,7 @@ inline constexpr WORD kAccelLayoutHorizontalToggle = 115;  // Alt+H
 
 static_assert(kWmFeBase >= WM_APP,
               "WM_FE_* must live in the WM_APP user range");
-static_assert(kWmFeAddressPopupClick <= 0xBFFFu,
+static_assert(kWmFeFilterDismiss <= 0xBFFFu,
               "WM_FE_* must not spill past the WM_APP user range");
 
 // WPARAM packing for multi-pane message routing. The low 32 bits hold

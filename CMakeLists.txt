@@ -60,6 +60,8 @@ set(FE_APP_SOURCES
   src/ui/shell-worker.h
   src/ui/filter-pattern.cpp
   src/ui/filter-pattern.h
+  src/ui/search-popup.cpp
+  src/ui/search-popup.h
   src/ui/pane-controller.cpp
   src/ui/pane-controller.h
   src/ui/pane-layout.cpp
@@ -222,6 +224,8 @@ add_executable(core-tests
   src/ui/shell-worker.h
   src/ui/filter-pattern.cpp
   src/ui/filter-pattern.h
+  src/ui/search-popup.cpp
+  src/ui/search-popup.h
   src/ui/pane-controller.cpp
   src/ui/pane-controller.h
   src/ui/pane-layout.cpp
