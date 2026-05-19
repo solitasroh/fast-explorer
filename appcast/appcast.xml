@@ -1,10 +1,14 @@
-<?xml version="1.0" encoding="utf-8"?>
-<rss version="2.0" xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle">
+<?xml version='1.0' encoding='utf-8'?>
+<rss xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle" version="2.0">
   <channel>
     <title>FastExplorer Updates</title>
     <link>https://solitasroh.github.io/fast-explorer/appcast.xml</link>
     <description>Auto-update feed for FastExplorer</description>
     <language>en</language>
-    <!-- Items are appended by scripts/release-appcast.py during the Release workflow. -->
+    <item>
+      <title>Version 0.1.0</title>
+      <pubDate>Tue, 19 May 2026 06:13:09 +0000</pubDate>
+      <enclosure url="https://github.com/solitasroh/fast-explorer/releases/download/v0.1.0/FastExplorer-0.1.0-win64.zip" sparkle:version="0.1.0" sparkle:edSignature="xF4z8Hxd6S1P3+wyL4ltsVtStxwjnp9Vlp5Gwek/CXIf5S+KlwgtUmj3MHH+CSXf7LrKuTa+29zdiZK5xo6kBQ==" length="1465926" type="application/octet-stream" />
+    </item>
   </channel>
 </rss>
