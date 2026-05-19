@@ -129,8 +129,29 @@ ComPtr<IContextMenu> queryBackgroundMenu(IShellFolder* folder, HWND ownerHwnd) {
   return menu;
 }
 
-void invokeChosenCommand(IContextMenu* menu, UINT cmdId, HWND ownerHwnd,
-                         POINT screenPt, const std::wstring& folderPathW) {
+// Verbs whose shell extensions ignore the multi-PIDL bundle inside
+// a single InvokeCommand call and only act on the first item. For
+// these we fan the invocation out per file the way Explorer does.
+// Compared case-insensitively against the verb-name string the
+// extension reports via GetCommandString(GCS_VERBA). Lower-case
+// because shell verbs are conventionally lower-case but defensive
+// against an extension that reports a capitalized canonical name.
+bool isPerItemFanOutVerb(const char* verbA) noexcept {
+  if (verbA == nullptr || verbA[0] == '\0') return false;
+  static constexpr const char* kPerItemVerbs[] = {
+      "install",          // Fontext.dll font installer
+      "installallusers",  // per-machine font install
+      "print",            // batch print (per-document fan-out)
+      "printto",          // print to specific printer
+  };
+  for (const char* v : kPerItemVerbs) {
+    if (_stricmp(verbA, v) == 0) return true;
+  }
+  return false;
+}
+
+void invokeIdCommand(IContextMenu* menu, UINT cmdId, HWND ownerHwnd,
+                     POINT screenPt, const std::wstring& folderPathW) {
   if (cmdId < kCmdIdMin || cmdId > kCmdIdMax) return;
   CMINVOKECOMMANDINFOEX info{};
   info.cbSize = sizeof(info);
@@ -141,21 +162,39 @@ void invokeChosenCommand(IContextMenu* menu, UINT cmdId, HWND ownerHwnd,
   // IS_INTRESOURCE, which crashes for MAKEINTRESOURCE ids.
   const UINT verbId = cmdId - kCmdIdMin;
   info.lpVerb = MAKEINTRESOURCEA(verbId);
-  // Populate lpDirectoryW for verbs that depend on the working
-  // directory (notably the Fontext "Install" verb — without a
-  // directory, the shell-side code path that batches multiple
-  // PIDLs into a single install operation silently degrades to
-  // processing only the first PIDL). lpDirectory (ANSI) is left
-  // null because wide → narrow conversion would lose any non-ANSI
-  // path; lpVerbW also stays null so we do not trip the
-  // IS_INTRESOURCE dereference bug noted above.
   info.lpDirectoryW = folderPathW.c_str();
   info.nShow = SW_SHOWNORMAL;
   info.ptInvoke = screenPt;
   menu->InvokeCommand(reinterpret_cast<CMINVOKECOMMANDINFO*>(&info));
 }
 
-void runMenuAndInvoke(IContextMenu* menu, HWND ownerHwnd, POINT screenPt,
+// Fan-out: build a fresh single-PIDL IContextMenu per file and
+// invoke the verb by name. Each iteration runs synchronously
+// (no CMIC_MASK_ASYNCOK) so the next install does not race the
+// previous one's shell-extension Initialize() call.
+void invokeVerbPerItem(IShellFolder* folder, HWND ownerHwnd,
+                       const std::vector<std::wstring>& leaves,
+                       const char* verbA,
+                       const std::wstring& folderPathW) {
+  for (const auto& leaf : leaves) {
+    auto child = parseChildren(folder, {leaf});
+    if (child.empty()) continue;
+    auto singleMenu = queryContextMenuFromChildren(folder, ownerHwnd, child);
+    if (!singleMenu) continue;
+    CMINVOKECOMMANDINFOEX info{};
+    info.cbSize = sizeof(info);
+    info.hwnd = ownerHwnd;
+    info.lpVerb = verbA;  // canonical verb name (e.g. "install")
+    info.lpDirectoryW = folderPathW.c_str();
+    info.nShow = SW_SHOWNORMAL;
+    singleMenu->InvokeCommand(
+        reinterpret_cast<CMINVOKECOMMANDINFO*>(&info));
+  }
+}
+
+void runMenuAndInvoke(IContextMenu* menu, IShellFolder* folder,
+                      HWND ownerHwnd, POINT screenPt,
+                      const std::vector<std::wstring>& selectedLeaves,
                       const std::wstring& folderPathW) {
   MenuOwner popup(CreatePopupMenu());
   if (!popup) return;
@@ -182,7 +221,25 @@ void runMenuAndInvoke(IContextMenu* menu, HWND ownerHwnd, POINT screenPt,
       // Subclass must remain installed across InvokeCommand because
       // shell verbs (Open With, Share, ...) pump nested menus that
       // emit WM_INITMENUPOPUP / WM_DRAWITEM / WM_MEASUREITEM.
-      invokeChosenCommand(menu, cmd, ownerHwnd, screenPt, folderPathW);
+      //
+      // Verb-name probe: some extensions (Fontext "install",
+      // PrintTo, ...) ignore the multi-PIDL bundle inside a single
+      // InvokeCommand and process only the first PIDL. We mirror
+      // Explorer's workaround for those verbs by re-querying a
+      // single-PIDL context menu per file and invoking by name.
+      char verbA[64] = {0};
+      const UINT verbId = (cmd >= kCmdIdMin) ? cmd - kCmdIdMin : 0;
+      const bool gotVerb =
+          cmd >= kCmdIdMin &&
+          SUCCEEDED(menu->GetCommandString(verbId, GCS_VERBA, nullptr,
+                                           verbA, sizeof(verbA)));
+      if (gotVerb && selectedLeaves.size() > 1 &&
+          isPerItemFanOutVerb(verbA) && folder != nullptr) {
+        invokeVerbPerItem(folder, ownerHwnd, selectedLeaves, verbA,
+                          folderPathW);
+      } else {
+        invokeIdCommand(menu, cmd, ownerHwnd, screenPt, folderPathW);
+      }
     }
   }
   if (forward.cm3) forward.cm3->Release();
@@ -212,7 +269,8 @@ void ShellContextMenu::show(HWND ownerHwnd, const std::wstring& folderPath,
   }
   if (!menu) return;
 
-  runMenuAndInvoke(menu.get(), ownerHwnd, screenPt, folderPath);
+  runMenuAndInvoke(menu.get(), folder.get(), ownerHwnd, screenPt,
+                   selectedLeaves, folderPath);
 }
 
 }  // namespace fast_explorer::ui
