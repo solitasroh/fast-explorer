@@ -95,6 +95,11 @@ class PaneToolbarRow {
   // Toolbar already has TBSTYLE_TOOLTIPS so the tooltip window is
   // created automatically; this notification just supplies the text.
   void fillToolbarTooltip(LPARAM lParam);
+  // Some tooltip configurations route via TTN_NEEDTEXTW from the
+  // toolbar's internal TOOLTIPS_CLASS (NOT TBN_GETINFOTIP). Handle
+  // both so the tooltip text appears regardless of which channel
+  // the common-controls runtime ends up using.
+  void fillTooltipNeedText(LPARAM lParam);
   // Hamburger isn't on the toolbar, so it needs its own TOOLTIPS_CLASS
   // window registered once via TTM_ADDTOOL.
   bool createHamburgerTooltip(HINSTANCE instance);

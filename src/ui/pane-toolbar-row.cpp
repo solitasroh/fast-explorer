@@ -68,7 +68,7 @@ const wchar_t* pickIconFontFace() noexcept {
 
 // System-shipped icon font, 13pt scaled to row DPI. Both Segoe
 // Fluent Icons (Win11) and Segoe MDL2 Assets (Win10) share the
-// codepoint range we use for nav (E72A/E72B/E70E/E72C); the
+// codepoint range we use for nav (E72A/E72B/E74A/E72C); the
 // hamburger glyph (E712 More) is in both as well.
 HFONT createIconFont(UINT dpi) noexcept {
   LOGFONTW lf{};
@@ -89,7 +89,7 @@ HFONT createIconFont(UINT dpi) noexcept {
 const wchar_t* glyphForButtonId(WORD btnId) noexcept {
   static const wchar_t kBack[]      = {0xE72B, 0};
   static const wchar_t kForward[]   = {0xE72A, 0};
-  static const wchar_t kUp[]        = {0xE70E, 0};
+  static const wchar_t kUp[]        = {0xE74A, 0};
   static const wchar_t kRefresh[]   = {0xE72C, 0};
   static const wchar_t kHamburger[] = {0xE712, 0};
   switch (btnId) {
@@ -445,6 +445,33 @@ void PaneToolbarRow::fillToolbarTooltip(LPARAM lParam) {
   tip->pszText[i] = L'\0';
 }
 
+void PaneToolbarRow::fillTooltipNeedText(LPARAM lParam) {
+  auto* tt = reinterpret_cast<LPNMTTDISPINFOW>(lParam);
+  if (tt == nullptr) return;
+  // For toolbar buttons, idFrom is the packed command id (HIWORD
+  // of MAKELONG, or the lParam's hdr.idFrom holds the raw cmd).
+  // For TTF_IDISHWND tooltips (our hamburger), idFrom is the HWND
+  // we registered; map that to the hamburger command id.
+  WORD btnId = 0;
+  if (tt->hdr.idFrom != 0 &&
+      reinterpret_cast<HWND>(tt->hdr.idFrom) == hamburger_) {
+    btnId = kTbHamburger;
+  } else {
+    btnId = unpackButton(static_cast<WORD>(tt->hdr.idFrom));
+  }
+  const wchar_t* text = tooltipForButtonId(btnId);
+  if (text == nullptr) {
+    tt->szText[0] = L'\0';
+    tt->lpszText = tt->szText;
+    return;
+  }
+  // The tooltip control reads from lpszText. Point it directly at
+  // our static-storage literal so we don't have to worry about
+  // szText's 80-char limit truncating Korean strings.
+  tt->lpszText = const_cast<LPWSTR>(text);
+  tt->hinst = nullptr;
+}
+
 bool PaneToolbarRow::createHamburgerTooltip(HINSTANCE instance) {
   if (hamburger_ == nullptr) return false;
   hamburgerTip_ = CreateWindowExW(
@@ -458,9 +485,15 @@ bool PaneToolbarRow::createHamburgerTooltip(HINSTANCE instance) {
   ti.uFlags = TTF_IDISHWND | TTF_SUBCLASS;
   ti.hwnd = hwnd_;
   ti.uId = reinterpret_cast<UINT_PTR>(hamburger_);
-  ti.lpszText = const_cast<LPWSTR>(tooltipForButtonId(kTbHamburger));
+  // LPSTR_TEXTCALLBACK forces the tooltip to ask for text every
+  // time via TTN_NEEDTEXTW → fillTooltipNeedText. Resolves a class
+  // of cases where the cached lpszText pointer goes stale relative
+  // to localization or theme changes.
+  ti.lpszText = LPSTR_TEXTCALLBACK;
   SendMessageW(hamburgerTip_, TTM_ADDTOOLW, 0,
                reinterpret_cast<LPARAM>(&ti));
+  SendMessageW(hamburgerTip_, TTM_ACTIVATE,
+               static_cast<WPARAM>(TRUE), 0);
   return true;
 }
 
@@ -603,12 +636,22 @@ LRESULT PaneToolbarRow::handleMessage(HWND hwnd, UINT msg, WPARAM wParam,
     // else (TBN_GETINFOTIP, etc.) is forwarded to MainWindow.
     case WM_NOTIFY: {
       auto* hdr = reinterpret_cast<NMHDR*>(lParam);
-      if (hdr != nullptr && hdr->hwndFrom == navToolbar_) {
-        if (hdr->code == NM_CUSTOMDRAW) {
+      if (hdr != nullptr) {
+        if (hdr->hwndFrom == navToolbar_ &&
+            hdr->code == NM_CUSTOMDRAW) {
           return handleNavToolbarCustomDraw(lParam);
         }
         if (hdr->code == TBN_GETINFOTIPW) {
           fillToolbarTooltip(lParam);
+          return 0;
+        }
+        // TTN_NEEDTEXTW: sent by every TOOLTIPS_CLASS instance
+        // when it's about to display. Covers both the toolbar's
+        // internal tooltip (auto-created by TBSTYLE_TOOLTIPS) and
+        // our explicit hamburgerTip_. ANSI variant is unlikely on
+        // Win10+ but handled below for completeness.
+        if (hdr->code == TTN_NEEDTEXTW) {
+          fillTooltipNeedText(lParam);
           return 0;
         }
       }
