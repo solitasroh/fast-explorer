@@ -6,11 +6,6 @@
 
 #include "ui/messages.h"
 
-// Mirror of IDR_ICON_FONT in resources/resource-ids.h. resources/
-// is not on the C++ include path; declaring locally keeps the .rc
-// ↔ C++ contract explicit. Bump in lockstep with the .rc value.
-#define IDR_ICON_FONT 200
-
 namespace fast_explorer::ui {
 
 namespace {
@@ -54,42 +49,12 @@ bool isFontInstalled(const wchar_t* face) noexcept {
   return found;
 }
 
-// Loads the bundled Font Awesome 6 Solid subset (5 glyphs, ~1.6 KB)
-// once per process. Returns true on success — the family name
-// "Font Awesome 7 Free Solid" becomes available to
-// CreateFontIndirectW. The returned HANDLE is intentionally leaked
-// for process lifetime (OS reclaims at exit).
-bool registerFontAwesomeOnce() noexcept {
-  static bool ok = []() {
-    HMODULE mod = GetModuleHandleW(nullptr);
-    HRSRC res = FindResourceW(mod, MAKEINTRESOURCEW(IDR_ICON_FONT),
-                              RT_RCDATA);
-    if (res == nullptr) return false;
-    HGLOBAL g = LoadResource(mod, res);
-    if (g == nullptr) return false;
-    void* data = LockResource(g);
-    DWORD size = SizeofResource(mod, res);
-    if (data == nullptr || size == 0) return false;
-    DWORD count = 0;
-    return AddFontMemResourceEx(data, size, nullptr, &count) != nullptr;
-  }();
-  return ok;
-}
-
-// Picks the icon font face. Preference order:
-//   1. Font Awesome 7 Free Solid — bundled subset, consistent
-//      modern web aesthetic across Windows versions.
-//   2. Segoe Fluent Icons — Win11 system font, fallback when the
-//      subset failed to register (resource missing / corrupted).
-//   3. Segoe MDL2 Assets — Win10 system font, last system fallback.
-//   4. Empty face — CreateFontIndirectW substitutes the default;
-//      glyphs render as missing boxes but buttons still function.
+// Picks Win11's Segoe Fluent Icons (the same font File Explorer's
+// own chrome uses) when available, falls back to Win10's Segoe
+// MDL2 Assets. Matching the OS font is the closest we can get to
+// "looks like native Windows".
 const wchar_t* pickIconFontFace() noexcept {
   static const wchar_t* cached = []() {
-    if (registerFontAwesomeOnce() &&
-        isFontInstalled(L"Font Awesome 7 Free Solid")) {
-      return L"Font Awesome 7 Free Solid";
-    }
     if (isFontInstalled(L"Segoe Fluent Icons")) return L"Segoe Fluent Icons";
     if (isFontInstalled(L"Segoe MDL2 Assets"))  return L"Segoe MDL2 Assets";
     return L"";
@@ -97,11 +62,6 @@ const wchar_t* pickIconFontFace() noexcept {
   return cached;
 }
 
-// Icon font, 13pt scaled to row DPI. Font Awesome's metrics are
-// designed against a 16 px em-square; the same point size that
-// looked good with Fluent looks slightly bigger here because FA's
-// glyphs fill more of the em — a happy coincidence that gives the
-// toolbar visible weight without a separate sizing knob.
 HFONT createIconFont(UINT dpi) noexcept {
   LOGFONTW lf{};
   lf.lfHeight = -MulDiv(13, static_cast<int>(dpi), 96);
@@ -119,18 +79,15 @@ HFONT createIconFont(UINT dpi) noexcept {
 // nullptr for unknown ids (the caller falls back to the default
 // toolbar / button paint).
 const wchar_t* glyphForButtonId(WORD btnId) noexcept {
-  // Font Awesome 7 Solid codepoints (matching the bundled subset).
-  // If FA registration failed and we fell back to Fluent/MDL2, the
-  // glyphs won't be present at these codepoints — the buttons
-  // render as missing-glyph boxes but the SR-visible labels still
-  // work. A future polish could branch on pickIconFontFace().
-  //   F060 arrow-left, F061 arrow-right, F062 arrow-up,
-  //   F2F9 rotate-right, F141 ellipsis (More)
-  static const wchar_t kBack[]      = {0xF060, 0};
-  static const wchar_t kForward[]   = {0xF061, 0};
-  static const wchar_t kUp[]        = {0xF062, 0};
-  static const wchar_t kRefresh[]   = {0xF2F9, 0};
-  static const wchar_t kHamburger[] = {0xF141, 0};
+  // Segoe Fluent Icons / Segoe MDL2 Assets shared codepoints —
+  // the same glyphs Win11's File Explorer command bar uses, so
+  // the toolbar reads as native chrome.
+  //   E72B Back, E72A Forward, E74A Up, E72C Refresh, E712 More
+  static const wchar_t kBack[]      = {0xE72B, 0};
+  static const wchar_t kForward[]   = {0xE72A, 0};
+  static const wchar_t kUp[]        = {0xE74A, 0};
+  static const wchar_t kRefresh[]   = {0xE72C, 0};
+  static const wchar_t kHamburger[] = {0xE712, 0};
   switch (btnId) {
     case kTbBack:      return kBack;
     case kTbForward:   return kForward;
@@ -166,6 +123,27 @@ const wchar_t* tooltipForButtonId(WORD btnId) noexcept {
     case kTbHamburger: return L"메뉴 (Alt+M)";
   }
   return nullptr;
+}
+
+// Undocumented but stable since Windows 10 1809: uxtheme.dll
+// ordinal 135 = SetPreferredAppMode. Telling Windows "AllowDark"
+// here lets the dark-themed classes (DarkMode_CFD for combobox,
+// DarkMode_Explorer for tree/list) actually take effect when we
+// call SetWindowTheme below.
+enum PreferredAppMode { PAM_Default = 0, PAM_AllowDark = 1,
+                       PAM_ForceDark = 2, PAM_ForceLight = 3 };
+using SetPreferredAppMode_t = int (WINAPI*)(PreferredAppMode);
+
+void enableProcessDarkMode() noexcept {
+  static bool tried = false;
+  if (tried) return;
+  tried = true;
+  HMODULE ux = LoadLibraryExW(L"uxtheme.dll", nullptr,
+                              LOAD_LIBRARY_SEARCH_SYSTEM32);
+  if (ux == nullptr) return;
+  auto setMode = reinterpret_cast<SetPreferredAppMode_t>(
+      GetProcAddress(ux, MAKEINTRESOURCEA(135)));
+  if (setMode != nullptr) setMode(PAM_AllowDark);
 }
 
 // System text font applied to the address bar so its visible
@@ -220,6 +198,7 @@ bool PaneToolbarRow::create(HWND parent, HINSTANCE instance,
       WS_CHILD | WS_VISIBLE | WS_CLIPCHILDREN,
       0, 0, 0, 0, parent, nullptr, instance, this);
   if (hwnd_ == nullptr) return false;
+  enableProcessDarkMode();  // one-shot per process; harmless if repeated
   mdl2Font_ = createIconFont(GetDpiForWindow(hwnd_));
   rowFont_ = createRowFont(GetDpiForWindow(hwnd_));
   if (!createNavToolbar(instance)) {
@@ -375,6 +354,13 @@ void PaneToolbarRow::setAddressBar(HWND addressBar) {
   addressBar_ = addressBar;
   if (addressBar != nullptr && hwnd_ != nullptr) {
     SetParent(addressBar, hwnd_);
+    // Dark mode opt-in. "DarkMode_CFD" is the undocumented but
+    // stable theme class Microsoft's own controls use for the
+    // dark-themed combobox frame on Win10 1809+ / Win11. The inner
+    // edit needs the same treatment because it's a separate HWND.
+    // No effect when the system theme is light — Windows transparently
+    // falls back to the standard "ComboBox" / "Edit" classes.
+    SetWindowTheme(addressBar, L"DarkMode_CFD", L"COMBOBOX");
     if (rowFont_ != nullptr) {
       // Apply to the ComboBoxEx itself (propagates to dropdown list)
       // and to the inner edit subcontrol (which is what actually
@@ -386,6 +372,7 @@ void PaneToolbarRow::setAddressBar(HWND addressBar) {
       HWND edit = reinterpret_cast<HWND>(
           SendMessageW(addressBar, CBEM_GETEDITCONTROL, 0, 0));
       if (edit != nullptr) {
+        SetWindowTheme(edit, L"DarkMode_CFD", L"COMBOBOX");
         SendMessageW(edit, WM_SETFONT,
                      reinterpret_cast<WPARAM>(rowFont_), TRUE);
       }
