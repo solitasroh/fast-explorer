@@ -224,6 +224,13 @@ bool registerClassOnce(HINSTANCE instance, const wchar_t* className, WNDPROC pro
   return RegisterClassExW(&wc) != 0;
 }
 
+// Forward decl — implementation lives in the later anonymous
+// namespace alongside systemPrefersDarkMode. Subclass needs to be
+// referenceable from MainWindow::onCreate which sits between the
+// two anonymous-namespace blocks in this file.
+LRESULT CALLBACK statusBarSubclassProc(HWND, UINT, WPARAM, LPARAM,
+                                        UINT_PTR, DWORD_PTR);
+
 // T6 actions — single-shot shell integrations triggered from the
 // hamburger menu and (Copy path / Properties) from accelerators.
 // All return true on best-effort success and false on hard failure;
@@ -1074,6 +1081,12 @@ LRESULT MainWindow::onCreate(HWND hwnd) {
   ListView_SetItemCountEx(listView_, 0, 0);
   listViews_[0] = listView_;
   statusBar_ = createStatusBar(hwnd, instance_);
+  if (statusBar_ != nullptr) {
+    // Subclass takes over WM_PAINT so the status bar tints to dark
+    // mode alongside the title bar + toolbar row. Win32 status bar
+    // has no native dark theme — SetWindowTheme is a no-op for it.
+    SetWindowSubclass(statusBar_, &statusBarSubclassProc, 0, 0);
+  }
   // dropTargets_[0] is registered after paneManager_ exists; see below.
   paneToolbarRows_[0] = std::make_unique<PaneToolbarRow>();
   if (!paneToolbarRows_[0]->create(hwnd, instance_, 0)) {
@@ -1156,6 +1169,67 @@ bool systemPrefersDarkMode() noexcept {
                             reinterpret_cast<BYTE*>(&value), &size);
   RegCloseKey(key);
   return r == ERROR_SUCCESS && value == 0;
+}
+
+// Status bar is a STATUSCLASSNAMEW Win32 control with no native
+// dark-theme support — even SetWindowTheme(L"DarkMode_...") is a
+// no-op for it. To tint it for dark mode we subclass and own the
+// paint, mirroring the colours PaneToolbarRow uses so the bar at
+// the bottom of the window matches the chrome at the top.
+LRESULT CALLBACK statusBarSubclassProc(
+    HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam,
+    UINT_PTR idSubclass, DWORD_PTR /*refData*/) {
+  if (msg == WM_NCDESTROY) {
+    RemoveWindowSubclass(hwnd, &statusBarSubclassProc, idSubclass);
+    return DefSubclassProc(hwnd, msg, wParam, lParam);
+  }
+  if (msg == WM_THEMECHANGED || msg == WM_SYSCOLORCHANGE) {
+    InvalidateRect(hwnd, nullptr, TRUE);
+    return DefSubclassProc(hwnd, msg, wParam, lParam);
+  }
+  if (msg == WM_ERASEBKGND) {
+    return 1;  // WM_PAINT fills the whole client below.
+  }
+  if (msg == WM_PAINT) {
+    const bool dark = systemPrefersDarkMode();
+    const COLORREF bgColor   = dark ? RGB(32, 32, 32) : GetSysColor(COLOR_BTNFACE);
+    const COLORREF textColor = dark ? RGB(241, 241, 241) : GetSysColor(COLOR_BTNTEXT);
+    PAINTSTRUCT ps{};
+    HDC hdc = BeginPaint(hwnd, &ps);
+    RECT client{};
+    GetClientRect(hwnd, &client);
+    HBRUSH bg = CreateSolidBrush(bgColor);
+    FillRect(hdc, &client, bg);
+    DeleteObject(bg);
+    HFONT statusFont = reinterpret_cast<HFONT>(
+        SendMessageW(hwnd, WM_GETFONT, 0, 0));
+    HGDIOBJ oldFont = statusFont ? SelectObject(hdc, statusFont) : nullptr;
+    SetBkMode(hdc, TRANSPARENT);
+    SetTextColor(hdc, textColor);
+    const int parts =
+        static_cast<int>(SendMessageW(hwnd, SB_GETPARTS, 0, 0));
+    for (int i = 0; i < parts; ++i) {
+      RECT partRc{};
+      SendMessageW(hwnd, SB_GETRECT, i,
+                   reinterpret_cast<LPARAM>(&partRc));
+      wchar_t buf[512]{};
+      const LRESULT lr = SendMessageW(hwnd, SB_GETTEXTW, i,
+                                       reinterpret_cast<LPARAM>(buf));
+      const int len = LOWORD(lr);
+      if (len > 0) {
+        buf[len < 511 ? len : 511] = L'\0';
+        RECT textRc = partRc;
+        textRc.left += 6;  // matches the inset Win32 status bar uses
+        DrawTextW(hdc, buf, -1, &textRc,
+                  DT_SINGLELINE | DT_VCENTER | DT_NOPREFIX |
+                      DT_END_ELLIPSIS);
+      }
+    }
+    if (oldFont) SelectObject(hdc, oldFont);
+    EndPaint(hwnd, &ps);
+    return 0;
+  }
+  return DefSubclassProc(hwnd, msg, wParam, lParam);
 }
 }  // namespace
 
