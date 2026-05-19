@@ -80,6 +80,53 @@ HFONT createIconFont(UINT dpi) noexcept {
   }
   return CreateFontIndirectW(&lf);
 }
+// MDL2/Fluent glyph codepoint for a given packed-cmd button id.
+// Returns a 1-char null-terminated wide string ready for DrawTextW;
+// nullptr for unknown ids (the caller falls back to the default
+// toolbar / button paint).
+const wchar_t* glyphForButtonId(WORD btnId) noexcept {
+  static const wchar_t kBack[]      = {0xE72B, 0};
+  static const wchar_t kForward[]   = {0xE72A, 0};
+  static const wchar_t kUp[]        = {0xE70E, 0};
+  static const wchar_t kRefresh[]   = {0xE72C, 0};
+  static const wchar_t kHamburger[] = {0xE712, 0};
+  switch (btnId) {
+    case kTbBack:      return kBack;
+    case kTbForward:   return kForward;
+    case kTbUp:        return kUp;
+    case kTbRefresh:   return kRefresh;
+    case kTbHamburger: return kHamburger;
+  }
+  return nullptr;
+}
+
+// Korean accessible name for the same button ids. Stored in the
+// control's text field so MSAA / UIA / Narrator pick it up.
+const wchar_t* labelForButtonId(WORD btnId) noexcept {
+  switch (btnId) {
+    case kTbBack:      return L"뒤로";
+    case kTbForward:   return L"앞으로";
+    case kTbUp:        return L"위로";
+    case kTbRefresh:   return L"새로 고침";
+    case kTbHamburger: return L"메뉴";
+  }
+  return nullptr;
+}
+
+// "라벨 (단축키)" tooltip text for the given button id. nullptr for
+// unknown ids — the tooltip then renders nothing rather than the
+// raw command number.
+const wchar_t* tooltipForButtonId(WORD btnId) noexcept {
+  switch (btnId) {
+    case kTbBack:      return L"뒤로 (Alt+←)";
+    case kTbForward:   return L"앞으로 (Alt+→)";
+    case kTbUp:        return L"위로 (Alt+↑)";
+    case kTbRefresh:   return L"새로 고침 (F5)";
+    case kTbHamburger: return L"메뉴";  // Alt+M added in A3
+  }
+  return nullptr;
+}
+
 // System text font applied to the address bar so its visible
 // textbox is bigger than the OS default 9pt. 11pt strikes a
 // balance — readable, matches the bumped row height, and keeps
@@ -137,6 +184,10 @@ bool PaneToolbarRow::create(HWND parent, HINSTANCE instance,
   if (!createHamburger(instance)) {
     // Same fallback policy as the nav toolbar.
   }
+  if (!createHamburgerTooltip(instance)) {
+    // Tooltip is non-essential — accessible name + label are already
+    // set, so SR users still hear "메뉴".
+  }
   return true;
 }
 
@@ -147,9 +198,14 @@ bool PaneToolbarRow::createHamburger(HINSTANCE instance) {
   // overflows. The packed command ID lands in WM_COMMAND alongside
   // the nav-toolbar IDs and is routed by MainWindow::onCommand to
   // TrackPopupMenuEx.
+  // WindowText is "메뉴" (Korean accessible name read by Narrator);
+  // BS_OWNERDRAW lets us paint the More glyph ourselves in
+  // drawHamburgerItem so the visual matches the nav toolbar's
+  // custom-drawn glyphs without showing the text.
   hamburger_ = CreateWindowExW(
-      0, L"BUTTON", L"",  // Segoe MDL2/Fluent More (E712)
-      WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON | BS_FLAT, 0, 0, 0, 0, hwnd_,
+      0, L"BUTTON", L"메뉴",
+      WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON | BS_OWNERDRAW, 0, 0, 0, 0,
+      hwnd_,
       reinterpret_cast<HMENU>(static_cast<UINT_PTR>(
           packCmd(kTbHamburger, paneIdx_))),
       instance, nullptr);
@@ -190,25 +246,25 @@ bool PaneToolbarRow::createNavToolbar(HINSTANCE instance) {
   const int btnH = scaleDip(kRowInnerDipH, rowDpi);
   SendMessageW(navToolbar_, TB_SETBUTTONSIZE, 0, MAKELONG(btnW, btnH));
 
-  // Segoe Fluent Icons / Segoe MDL2 Assets codepoints — present in
-  // both fonts at the same code points, so the same source works
-  // on Win10 and Win11. Stored as int literals so the source is
-  // plain ASCII and survives editors that strip PUA characters.
-  //   E72B Back, E72A Forward, E70E ChevronUp, E72C Refresh
-  static const wchar_t kBack[]    = {0xE72B, 0};
-  static const wchar_t kForward[] = {0xE72A, 0};
-  static const wchar_t kUp[]      = {0xE70E, 0};
-  static const wchar_t kRefresh[] = {0xE72C, 0};
-  const wchar_t* labels[kNavButtonCount] = {kBack, kForward, kUp, kRefresh};
+  // iString carries the *accessible name* (Korean label) — MSAA /
+  // UIA pick it up via WindowText, Narrator announces "뒤로" instead
+  // of "Private Use Area E72B". The button's visible glyph is drawn
+  // separately in handleNavToolbarCustomDraw using the icon font
+  // and the codepoint table in glyphForButtonId. Removing
+  // BTNS_SHOWTEXT stops the toolbar from rendering the label
+  // itself; the custom-draw path fills the button content.
+  const WORD ids[kNavButtonCount] = {kTbBack, kTbForward, kTbUp, kTbRefresh};
   INT_PTR strIdx[kNavButtonCount] = {};
   for (int i = 0; i < kNavButtonCount; ++i) {
-    // TB_ADDSTRING wants a double-null-terminated block; pass one
-    // string per call so the indices stay independent of insertion
-    // order. The returned index is what TBBUTTON.iString uses.
-    wchar_t buf[8]{};
+    const wchar_t* label = labelForButtonId(ids[i]);
+    if (label == nullptr) { strIdx[i] = -1; continue; }
+    // TB_ADDSTRING wants a double-null-terminated block; copy the
+    // label into a local buffer so we can stamp the second null
+    // without mutating a string literal.
+    wchar_t buf[24]{};
     int n = 0;
-    while (labels[i][n] != L'\0' && n < 6) {
-      buf[n] = labels[i][n];
+    while (label[n] != L'\0' && n < 22) {
+      buf[n] = label[n];
       ++n;
     }
     buf[n] = L'\0';
@@ -217,13 +273,12 @@ bool PaneToolbarRow::createNavToolbar(HINSTANCE instance) {
                               reinterpret_cast<LPARAM>(buf));
   }
 
-  const WORD ids[kNavButtonCount] = {kTbBack, kTbForward, kTbUp, kTbRefresh};
   TBBUTTON btns[kNavButtonCount]{};
   for (int i = 0; i < kNavButtonCount; ++i) {
     btns[i].iBitmap = I_IMAGENONE;
     btns[i].idCommand = packCmd(ids[i], paneIdx_);
     btns[i].fsState = TBSTATE_ENABLED;
-    btns[i].fsStyle = BTNS_BUTTON | BTNS_AUTOSIZE | BTNS_SHOWTEXT;
+    btns[i].fsStyle = BTNS_BUTTON | BTNS_AUTOSIZE | BTNS_NOPREFIX;
     btns[i].iString = strIdx[i];
   }
   SendMessageW(navToolbar_, TB_ADDBUTTONS,
@@ -242,11 +297,13 @@ bool PaneToolbarRow::createNavToolbar(HINSTANCE instance) {
 }
 
 void PaneToolbarRow::destroy() {
-  // Children (toolbar / hamburger) are owned by the row's HWND
-  // lifetime and torn down by DestroyWindow cascade; explicit
-  // nulling keeps the fields consistent if destroy() runs twice.
+  // Children (toolbar / hamburger / hamburger tooltip) are owned by
+  // the row's HWND lifetime and torn down by DestroyWindow cascade;
+  // explicit nulling keeps the fields consistent if destroy() runs
+  // twice.
   navToolbar_ = nullptr;
   hamburger_ = nullptr;
+  hamburgerTip_ = nullptr;
   if (hwnd_ != nullptr) {
     DestroyWindow(hwnd_);
     hwnd_ = nullptr;
@@ -285,6 +342,115 @@ void PaneToolbarRow::setAddressBar(HWND addressBar) {
     }
   }
   layout();
+}
+
+LRESULT PaneToolbarRow::handleNavToolbarCustomDraw(LPARAM lParam) {
+  auto* cd = reinterpret_cast<LPNMTBCUSTOMDRAW>(lParam);
+  if (cd == nullptr) return CDRF_DODEFAULT;
+  switch (cd->nmcd.dwDrawStage) {
+    case CDDS_PREPAINT:
+      // Ask for per-item callbacks so we can paint each button's
+      // glyph; the toolbar itself still paints the hover/pressed
+      // background frame for us.
+      return CDRF_NOTIFYITEMDRAW;
+    case CDDS_ITEMPREPAINT: {
+      const WORD btnId = unpackButton(
+          static_cast<WORD>(cd->nmcd.dwItemSpec));
+      const wchar_t* glyph = glyphForButtonId(btnId);
+      if (glyph == nullptr || mdl2Font_ == nullptr) {
+        return CDRF_DODEFAULT;
+      }
+      HDC hdc = cd->nmcd.hdc;
+      HGDIOBJ oldFont = SelectObject(hdc, mdl2Font_);
+      const int oldBkMode = SetBkMode(hdc, TRANSPARENT);
+      const COLORREF color = (cd->nmcd.uItemState & CDIS_DISABLED)
+                                 ? GetSysColor(COLOR_GRAYTEXT)
+                                 : GetSysColor(COLOR_BTNTEXT);
+      const COLORREF oldColor = SetTextColor(hdc, color);
+      DrawTextW(hdc, glyph, -1, &cd->nmcd.rc,
+                DT_CENTER | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX);
+      SetTextColor(hdc, oldColor);
+      SetBkMode(hdc, oldBkMode);
+      SelectObject(hdc, oldFont);
+      return CDRF_SKIPDEFAULT;
+    }
+  }
+  return CDRF_DODEFAULT;
+}
+
+void PaneToolbarRow::drawHamburgerItem(LPARAM lParam) {
+  auto* dis = reinterpret_cast<LPDRAWITEMSTRUCT>(lParam);
+  if (dis == nullptr) return;
+  const wchar_t* glyph = glyphForButtonId(kTbHamburger);
+  if (glyph == nullptr) return;
+  HDC hdc = dis->hDC;
+  // Background: respect themed button face + hover/pressed state via
+  // FillRect with the standard BTNFACE brush, then UI cues:
+  //   pressed → mild push tint via FrameRect
+  //   hover   → already implied by the focus brush below
+  FillRect(hdc, &dis->rcItem,
+           reinterpret_cast<HBRUSH>(COLOR_BTNFACE + 1));
+  if (dis->itemState & ODS_SELECTED) {
+    // Subtle inset so a press is visible without a full themed redraw.
+    HBRUSH frame = reinterpret_cast<HBRUSH>(COLOR_BTNSHADOW + 1);
+    FrameRect(hdc, &dis->rcItem, frame);
+  }
+  if (mdl2Font_ != nullptr) {
+    HGDIOBJ oldFont = SelectObject(hdc, mdl2Font_);
+    const int oldBkMode = SetBkMode(hdc, TRANSPARENT);
+    const COLORREF color = (dis->itemState & ODS_DISABLED)
+                               ? GetSysColor(COLOR_GRAYTEXT)
+                               : GetSysColor(COLOR_BTNTEXT);
+    const COLORREF oldColor = SetTextColor(hdc, color);
+    DrawTextW(hdc, glyph, -1, &dis->rcItem,
+              DT_CENTER | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX);
+    SetTextColor(hdc, oldColor);
+    SetBkMode(hdc, oldBkMode);
+    SelectObject(hdc, oldFont);
+  }
+  if (dis->itemState & ODS_FOCUS) {
+    DrawFocusRect(hdc, &dis->rcItem);
+  }
+}
+
+void PaneToolbarRow::fillToolbarTooltip(LPARAM lParam) {
+  auto* tip = reinterpret_cast<LPNMTBGETINFOTIPW>(lParam);
+  if (tip == nullptr || tip->pszText == nullptr || tip->cchTextMax <= 0) {
+    return;
+  }
+  const WORD btnId = unpackButton(static_cast<WORD>(tip->iItem));
+  const wchar_t* text = tooltipForButtonId(btnId);
+  if (text == nullptr) {
+    tip->pszText[0] = L'\0';
+    return;
+  }
+  // Cap copy to cchTextMax - 1 wchars + null term. Tooltips are
+  // single-line, ~1024 chars max from common controls — our strings
+  // are far shorter so a plain copy is fine.
+  int i = 0;
+  for (; text[i] != L'\0' && i < tip->cchTextMax - 1; ++i) {
+    tip->pszText[i] = text[i];
+  }
+  tip->pszText[i] = L'\0';
+}
+
+bool PaneToolbarRow::createHamburgerTooltip(HINSTANCE instance) {
+  if (hamburger_ == nullptr) return false;
+  hamburgerTip_ = CreateWindowExW(
+      WS_EX_TOPMOST, TOOLTIPS_CLASSW, nullptr,
+      WS_POPUP | TTS_ALWAYSTIP | TTS_NOPREFIX,
+      CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT,
+      hwnd_, nullptr, instance, nullptr);
+  if (hamburgerTip_ == nullptr) return false;
+  TOOLINFOW ti{};
+  ti.cbSize = sizeof(ti);
+  ti.uFlags = TTF_IDISHWND | TTF_SUBCLASS;
+  ti.hwnd = hwnd_;
+  ti.uId = reinterpret_cast<UINT_PTR>(hamburger_);
+  ti.lpszText = const_cast<LPWSTR>(tooltipForButtonId(kTbHamburger));
+  SendMessageW(hamburgerTip_, TTM_ADDTOOLW, 0,
+               reinterpret_cast<LPARAM>(&ti));
+  return true;
 }
 
 void PaneToolbarRow::onDpiChanged(UINT newDpi) {
@@ -416,15 +582,48 @@ LRESULT PaneToolbarRow::handleMessage(HWND hwnd, UINT msg, WPARAM wParam,
     case WM_SIZE:
       layout();
       return 0;
-    // Child controls send WM_COMMAND/WM_NOTIFY to their direct parent;
-    // bubble them up to MainWindow so the existing accelerator and
-    // address-bar dropdown routing keeps working unchanged.
+    // WM_NOTIFY from our own nav toolbar: intercept NM_CUSTOMDRAW so
+    // we can paint the icon-font glyph ourselves (visual). Everything
+    // else (TBN_GETINFOTIP, etc.) is forwarded to MainWindow.
+    case WM_NOTIFY: {
+      auto* hdr = reinterpret_cast<NMHDR*>(lParam);
+      if (hdr != nullptr && hdr->hwndFrom == navToolbar_) {
+        if (hdr->code == NM_CUSTOMDRAW) {
+          return handleNavToolbarCustomDraw(lParam);
+        }
+        if (hdr->code == TBN_GETINFOTIPW) {
+          fillToolbarTooltip(lParam);
+          return 0;
+        }
+      }
+      HWND parent = GetParent(hwnd);
+      if (parent != nullptr) {
+        return SendMessageW(parent, msg, wParam, lParam);
+      }
+      break;
+    }
+    // BS_OWNERDRAW hamburger: paint the More glyph + standard
+    // background frame. Other DRAWITEM senders (none today) get
+    // forwarded so future controls don't silently break.
+    case WM_DRAWITEM: {
+      auto* dis = reinterpret_cast<DRAWITEMSTRUCT*>(lParam);
+      if (dis != nullptr && dis->hwndItem == hamburger_) {
+        drawHamburgerItem(lParam);
+        return TRUE;
+      }
+      HWND parent = GetParent(hwnd);
+      if (parent != nullptr) {
+        return SendMessageW(parent, msg, wParam, lParam);
+      }
+      break;
+    }
+    // Child controls send WM_COMMAND / WM_CTLCOLOR* to their direct
+    // parent; bubble them up to MainWindow so the existing
+    // accelerator and address-bar dropdown routing keeps working.
     case WM_COMMAND:
-    case WM_NOTIFY:
     case WM_CTLCOLOREDIT:
     case WM_CTLCOLORSTATIC:
-    case WM_CTLCOLORBTN:
-    case WM_DRAWITEM: {
+    case WM_CTLCOLORBTN: {
       HWND parent = GetParent(hwnd);
       if (parent != nullptr) {
         return SendMessageW(parent, msg, wParam, lParam);

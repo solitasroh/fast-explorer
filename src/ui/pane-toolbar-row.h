@@ -85,6 +85,21 @@ class PaneToolbarRow {
   static bool registerClassOnce(HINSTANCE instance);
   bool createNavToolbar(HINSTANCE instance);
   bool createHamburger(HINSTANCE instance);
+  // A2 custom-draw paths. The visible glyph is painted by us so the
+  // underlying control text (iString for toolbar buttons, WindowText
+  // for the hamburger) can hold the Korean accessible name that
+  // MSAA / UIA picks up.
+  LRESULT handleNavToolbarCustomDraw(LPARAM lParam);
+  void drawHamburgerItem(LPARAM lParam);
+  // A1: fill the toolbar's TBN_GETINFOTIP request with "라벨 (단축키)".
+  // Toolbar already has TBSTYLE_TOOLTIPS so the tooltip window is
+  // created automatically; this notification just supplies the text.
+  void fillToolbarTooltip(LPARAM lParam);
+  // Hamburger isn't on the toolbar, so it needs its own TOOLTIPS_CLASS
+  // window registered once via TTM_ADDTOOL.
+  bool createHamburgerTooltip(HINSTANCE instance);
+
+  HWND hamburgerTip_ = nullptr;
 
   HWND hwnd_ = nullptr;
   HWND addressBar_ = nullptr;
