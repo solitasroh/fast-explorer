@@ -50,6 +50,11 @@ constexpr UINT kFsCoalesceMs = 100;
 // slow enough to absorb every selection burst observed so far.
 constexpr UINT_PTR kTimerSelSummaryBase = kTimerFsCoalesceBase + kMaxPanes;
 constexpr UINT kSelSummaryDebounceMs = 80;
+// Filter debounce timer band: a Spotlight-style search box receives
+// one EN_CHANGE per keystroke; 80 ms collapses the storm so the
+// O(N) match pass over the pane only runs once after typing pauses.
+constexpr UINT_PTR kTimerFilterDebounceBase = kTimerSelSummaryBase + kMaxPanes;
+constexpr UINT kFilterDebounceMs = 80;
 
 struct ColumnSpec {
   const wchar_t* title;
@@ -347,6 +352,7 @@ void MainWindow::enterSingleMode() {
   // event up front keeps the cleanup local).
   KillTimer(hwnd_, kTimerFsCoalesceBase + 1);
   KillTimer(hwnd_, kTimerSelSummaryBase + 1);
+  KillTimer(hwnd_, kTimerFilterDebounceBase + 1);
   // Release per-pane coordinators first so the second pane's worker
   // threads (icon STA, shell STA) join before we tear down the
   // PaneController they reference.
@@ -762,6 +768,34 @@ LRESULT MainWindow::handleMessage(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPa
     case kWmFeLowMemory:      return onLowMemory();
     case kWmFeEnumError:      return onEnumError(wParam, lParam);
     case kWmFeFsChange:       return onFsChange(hwnd, wParam);
+    case kWmFeFilterQuery: {
+      // Free the heap-owned payload regardless of whether we use
+      // it (paneIdx may now be out of range after a collapse).
+      std::unique_ptr<std::wstring> text(
+          reinterpret_cast<std::wstring*>(lParam));
+      const std::size_t idx = static_cast<std::size_t>(wParam);
+      if (idx < kMaxPanes) {
+        SetTimer(hwnd_, kTimerFilterDebounceBase + idx,
+                 kFilterDebounceMs, nullptr);
+      }
+      return 0;
+    }
+    case kWmFeFilterDismiss: {
+      const std::size_t idx = static_cast<std::size_t>(wParam);
+      if (paneManager_ && idx < paneManager_->count()) {
+        paneManager_->at(idx).clearFilter();
+        if (idx < listViews_.size() && listViews_[idx] != nullptr) {
+          const std::size_t shown =
+              paneManager_->at(idx).store().displayedCount();
+          ListView_SetItemCountEx(listViews_[idx],
+                                  static_cast<int>(shown),
+                                  LVSICF_NOSCROLL);
+          InvalidateRect(listViews_[idx], nullptr, TRUE);
+        }
+        refreshSelectionSummary(idx);
+      }
+      return 0;
+    }
     case WM_TIMER:            return onTimer(hwnd, msg, wParam, lParam);
     case WM_DESTROY: {
       // Stop all pending timers before teardown so a queued
@@ -772,6 +806,7 @@ LRESULT MainWindow::handleMessage(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPa
       for (std::size_t i = 0; i < kMaxPanes; ++i) {
         KillTimer(hwnd, kTimerFsCoalesceBase + i);
         KillTimer(hwnd, kTimerSelSummaryBase + i);
+        KillTimer(hwnd, kTimerFilterDebounceBase + i);
       }
       // GetWindowPlacement reports the restored rect even when the
       // window is currently minimized, so a Ctrl+Z-as-minimize-and-
@@ -849,6 +884,7 @@ LRESULT MainWindow::onCreate(HWND hwnd) {
                         static_cast<DWORD_PTR>(0));
     }
     addressBarPopup_ = std::make_unique<AddressBarPopup>(hwnd);
+    searchPopup_ = std::make_unique<SearchPopup>(hwnd);
   }
   paneManager_ = std::make_unique<PaneManager>();
   paneManager_->openInitial(hwnd);
@@ -1028,6 +1064,11 @@ LRESULT MainWindow::onCommand(HWND hwnd, UINT msg, WPARAM wParam,
       case kAccelLayoutDual:
         enterDualMode();
         return 0;
+      case kAccelFilter:
+        if (searchPopup_ && paneManager_) {
+          searchPopup_->show(paneManager_->activeIndex());
+        }
+        return 0;
       case kAccelLayoutVerticalToggle:
       case kAccelLayoutHorizontalToggle: {
         const LayoutOrientation pressed =
@@ -1094,7 +1135,34 @@ LRESULT MainWindow::onTimer(HWND hwnd, UINT msg, WPARAM wParam,
     refreshSelectionSummary(idx);
     return 0;
   }
+  if (wParam >= kTimerFilterDebounceBase &&
+      wParam < kTimerFilterDebounceBase + kMaxPanes) {
+    const std::size_t idx = wParam - kTimerFilterDebounceBase;
+    KillTimer(hwnd, wParam);
+    applyFilterFromPopup(idx);
+    return 0;
+  }
   return DefWindowProcW(hwnd, msg, wParam, lParam);
+}
+
+void MainWindow::applyFilterFromPopup(std::size_t paneIdx) {
+  if (!paneManager_ || paneIdx >= paneManager_->count() || !searchPopup_) {
+    return;
+  }
+  const std::wstring text = searchPopup_->currentText();
+  // F3 ships the Plain mode wiring. Mode toggle + regex-mode error
+  // surfacing lands in F4 — until then the popup typed text is
+  // always interpreted as a case-insensitive substring filter.
+  FilterPattern pattern(text, FilterMode::Plain);
+  PaneController& pane = paneManager_->at(paneIdx);
+  pane.setFilter(pattern);
+  if (paneIdx < listViews_.size() && listViews_[paneIdx] != nullptr) {
+    const std::size_t shown = pane.store().displayedCount();
+    ListView_SetItemCountEx(listViews_[paneIdx], static_cast<int>(shown),
+                            LVSICF_NOSCROLL);
+    InvalidateRect(listViews_[paneIdx], nullptr, TRUE);
+  }
+  refreshSelectionSummary(paneIdx);
 }
 
 void MainWindow::refreshSelectionSummary(std::size_t paneIdx) {

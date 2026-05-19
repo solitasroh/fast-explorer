@@ -48,6 +48,7 @@ inline constexpr WORD kAccelCopy                   = 112;  // Ctrl+C
 inline constexpr WORD kAccelCut                    = 113;  // Ctrl+X
 inline constexpr WORD kAccelPaste                  = 114;  // Ctrl+V
 inline constexpr WORD kAccelLayoutHorizontalToggle = 115;  // Alt+H
+inline constexpr WORD kAccelFilter                 = 116;  // Ctrl+F
 
 static_assert(kWmFeBase >= WM_APP,
               "WM_FE_* must live in the WM_APP user range");

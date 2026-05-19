@@ -13,6 +13,7 @@
 #include "core/file-sort.h"
 #include "core/fs-watcher.h"
 #include "core/win32-fs-backend.h"
+#include "ui/filter-pattern.h"
 #include "ui/pane-sort-coordinator.h"
 #include "ui/shell-worker.h"
 
@@ -144,6 +145,48 @@ class PaneController {
   // Worst case: Ctrl+A on a 100k folder iterates 100k entries once
   // — sub-millisecond in practice, and the caller debounces UI
   // updates so this is invoked at most once per ~100 ms.
+  // Applies (or replaces) the current filter pattern. When pattern
+  // is empty (default-constructed or explicitly empty query) the
+  // store's display subset is cleared and every published row is
+  // exposed again. Otherwise the visibleOrder is walked, each entry
+  // checked against pattern.matches(nameView(e)), and the matching
+  // raw indices are pushed into the store as the new display subset.
+  // Worst case O(N) over publishedCount(); the caller debounces
+  // user input so a Ctrl+A-equivalent of typing does not flood.
+  void setFilter(const FilterPattern& pattern) {
+    if (pattern.isEmpty()) {
+      clearFilter();
+      currentFilter_ = pattern;
+      return;
+    }
+    const auto& view = store_.visibleOrder();
+    const std::size_t bound = store_.publishedCount();
+    std::vector<std::uint32_t> subset;
+    subset.reserve(bound);
+    for (std::size_t i = 0; i < bound; ++i) {
+      const std::uint32_t raw = view[i];
+      const auto& e = store_.entryAt(raw);
+      if (pattern.matches(fast_explorer::core::nameView(e))) {
+        subset.push_back(raw);
+      }
+    }
+    store_.setDisplaySubset(std::move(subset));
+    currentFilter_ = pattern;
+  }
+
+  void clearFilter() noexcept {
+    store_.clearDisplaySubset();
+    currentFilter_ = FilterPattern{};
+  }
+
+  [[nodiscard]] bool hasActiveFilter() const noexcept {
+    return !currentFilter_.isEmpty();
+  }
+
+  [[nodiscard]] const FilterPattern& currentFilter() const noexcept {
+    return currentFilter_;
+  }
+
   SelectionSummary selectionSummary() const noexcept {
     SelectionSummary out;
     out.selectedCount = selectedRaws_.size();
@@ -219,6 +262,7 @@ class PaneController {
   // enumerationActive flag to refuse sorts that would race append.
   std::atomic<bool> workerActive_{false};
   std::unordered_set<std::uint32_t> selectedRaws_;
+  FilterPattern currentFilter_;
   PaneSortCoordinator sortCoord_;
   ShellWorker shellWorker_;
   std::jthread worker_;

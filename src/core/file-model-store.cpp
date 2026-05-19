@@ -22,6 +22,9 @@ void FileModelStore::reset(std::wstring newRoot) {
   workerSize_.store(0, std::memory_order_release);
   publishedCount_.store(0, std::memory_order_release);
   nameArena_.reset();
+  // A reset implies a new folder; any prior filter subset is no
+  // longer meaningful (its raw indices belonged to the old store).
+  displaySubset_.clear();
   ++generation_;
 }
 
@@ -71,6 +74,15 @@ const FileEntry& FileModelStore::entryAt(std::size_t index) const noexcept {
 }
 
 const FileEntry& FileModelStore::visibleAt(std::size_t visibleIndex) const noexcept {
+  // When a filter subset is active, the index addresses the subset's
+  // row, and the raw entry is looked up through the subset; otherwise
+  // the sorted permutation in visibleOrder_ drives the lookup.
+  if (!displaySubset_.empty()) {
+    assert(visibleIndex < displaySubset_.size());
+    const std::uint32_t raw = displaySubset_[visibleIndex];
+    assert(raw < workerSize_.load(std::memory_order_acquire));
+    return entries_[raw];
+  }
   assert(visibleIndex < workerSize_.load(std::memory_order_acquire));
   const std::uint32_t raw = visibleOrder_[visibleIndex];
   assert(raw < workerSize_.load(std::memory_order_acquire));
@@ -102,6 +114,19 @@ void FileModelStore::applySortedOrder(std::vector<std::uint32_t> order) {
   // the kMaxEntries reservation intact. The caller's vector is
   // discarded.
   std::copy(order.begin(), order.end(), visibleOrder_.get());
+}
+
+void FileModelStore::setDisplaySubset(
+    std::vector<std::uint32_t> subset) noexcept {
+  // The caller produced `subset` by walking visibleOrder_ + filter,
+  // so every value is already a valid entry index. Move-assign so
+  // the swap cost stays O(1).
+  displaySubset_ = std::move(subset);
+}
+
+void FileModelStore::clearDisplaySubset() noexcept {
+  displaySubset_.clear();
+  displaySubset_.shrink_to_fit();
 }
 
 }  // namespace fast_explorer::core

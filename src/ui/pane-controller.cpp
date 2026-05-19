@@ -248,6 +248,11 @@ bool PaneController::navigateInternal(const std::wstring& path) {
   // first so the sort sees a coherent snapshot or exits early.
   sortCoord_.cancel();
   selectedRaws_.clear();
+  // A new folder invalidates the prior filter — store.reset() will
+  // wipe the subset bytes anyway, but clearing the cached pattern
+  // here keeps hasActiveFilter() / currentFilter() honest from the
+  // UI's point of view between the navigate start and the enum end.
+  currentFilter_ = FilterPattern{};
   fsWatcher_.stop();
 
   currentPath_ = path;

@@ -9,6 +9,7 @@
 
 #include "ui/cut-state-tracker.h"
 #include "ui/pane-layout.h"
+#include "ui/search-popup.h"
 
 namespace fast_explorer::core {
 class ProcessMemoryService;
@@ -203,6 +204,10 @@ class MainWindow {
   // timer in onTimer so a Ctrl+A storm collapses to a single update.
   void refreshSelectionSummary(std::size_t paneIdx);
 
+  // Reads the current SearchPopup text and applies it as a filter
+  // to the given pane. Called from the debounced filter timer.
+  void applyFilterFromPopup(std::size_t paneIdx);
+
   fast_explorer::core::ProcessMemoryService& memory_;
   fast_explorer::core::PerfTracker& perf_;
   HINSTANCE instance_ = nullptr;
@@ -236,6 +241,7 @@ class MainWindow {
   std::uint64_t qpcFrequencyHz_ = 0;
   std::unique_ptr<fast_explorer::core::SessionState> capturedState_;
   LayoutOrientation orientation_ = LayoutOrientation::Vertical;
+  std::unique_ptr<SearchPopup> searchPopup_;
 };
 
 }  // namespace fast_explorer::ui

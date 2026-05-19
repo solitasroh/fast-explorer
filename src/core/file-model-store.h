@@ -141,6 +141,26 @@ class FileModelStore {
   // values written by appendEntry) will be exposed.
   void applySortedOrder(std::vector<std::uint32_t> order);
 
+  // Restricts the visible rows to a subset of the sorted order. The
+  // values in `subset` must already be raw entry indices (the order
+  // they appear in visibleOrder_ for the current sort). The UI uses
+  // displayedCount() to drive ListView_SetItemCountEx, and visibleAt()
+  // now consults the subset when one is present. Pass an empty vector
+  // (or call clearDisplaySubset) to expose the full visibleOrder.
+  void setDisplaySubset(std::vector<std::uint32_t> subset) noexcept;
+  void clearDisplaySubset() noexcept;
+
+  // True when a display subset is active (filter applied).
+  [[nodiscard]] bool hasDisplaySubset() const noexcept {
+    return !displaySubset_.empty();
+  }
+
+  // Number of rows currently exposed to the UI. With no subset this
+  // matches publishedCount(); with a subset it is the subset size.
+  [[nodiscard]] std::size_t displayedCount() const noexcept {
+    return hasDisplaySubset() ? displaySubset_.size() : publishedCount();
+  }
+
   std::size_t entriesBytes() const noexcept {
     return static_cast<std::size_t>(kMaxEntries) * sizeof(FileEntry);
   }
@@ -160,6 +180,9 @@ class FileModelStore {
   NameArena nameArena_;
   std::unique_ptr<FileEntry[]> entries_;
   std::unique_ptr<std::uint32_t[]> visibleOrder_;
+  // Optional filter subset: empty when no filter is active; otherwise
+  // holds the raw indices to expose to the UI (in visibleOrder).
+  std::vector<std::uint32_t> displaySubset_;
   // workerSize_ is single-writer (the enumeration worker, via
   // appendEntry on its own thread). All readers — including UI-thread
   // accessors — see writes through the acquire/release pair below.
