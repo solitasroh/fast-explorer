@@ -78,6 +78,9 @@ class PaneToolbarRow {
   HWND addressBar_ = nullptr;
   HWND navToolbar_ = nullptr;
   HWND hamburger_ = nullptr;
+  // Segoe MDL2 Assets font (Windows 10+). Owned by the row so it
+  // outlives WM_SETFONT use; destroyed in ~PaneToolbarRow.
+  HFONT mdl2Font_ = nullptr;
   std::size_t paneIdx_ = 0;
 };
 

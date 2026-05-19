@@ -1296,7 +1296,6 @@ LRESULT MainWindow::onCommand(HWND hwnd, UINT msg, WPARAM wParam,
     }
     if (btn == kTbBack || btn == kTbForward || btn == kTbUp ||
         btn == kTbRefresh) {
-      const std::size_t pane = unpackPane(packed);
       if (paneManager_ && pane < paneManager_->count()) {
         // Activate the pane whose toolbar was clicked so subsequent
         // keyboard input lands in its list-view, then run the action.

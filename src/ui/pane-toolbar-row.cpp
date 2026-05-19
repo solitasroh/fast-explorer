@@ -1,5 +1,7 @@
 #include "ui/pane-toolbar-row.h"
 
+#include <iterator>
+
 #include "ui/messages.h"
 
 namespace fast_explorer::ui {
@@ -18,6 +20,25 @@ constexpr int kHamburgerDipW = 28;
 
 int scaleDip(int dip, UINT dpi) noexcept {
   return MulDiv(dip, static_cast<int>(dpi), 96);
+}
+
+// Segoe MDL2 Assets is the modern Windows icon font shipped with
+// every Windows 10+ install (the same one Explorer / Settings draws
+// its chrome glyphs from). Rendering glyphs as text rather than
+// bitmaps avoids shipping a custom icon set, scales naturally per
+// DPI, and stays consistent with the rest of the OS. ~11pt matches
+// the toolbar's native button text size at 96 DPI.
+HFONT createMdl2Font(UINT dpi) noexcept {
+  LOGFONTW lf{};
+  lf.lfHeight = -MulDiv(11, static_cast<int>(dpi), 96);
+  lf.lfWeight = FW_NORMAL;
+  lf.lfCharSet = DEFAULT_CHARSET;
+  lf.lfQuality = CLEARTYPE_QUALITY;
+  const wchar_t kFace[] = L"Segoe MDL2 Assets";
+  for (size_t i = 0; i < std::size(kFace); ++i) {
+    lf.lfFaceName[i] = kFace[i];
+  }
+  return CreateFontIndirectW(&lf);
 }
 }  // namespace
 
@@ -50,6 +71,7 @@ bool PaneToolbarRow::create(HWND parent, HINSTANCE instance,
       WS_CHILD | WS_VISIBLE | WS_CLIPCHILDREN,
       0, 0, 0, 0, parent, nullptr, instance, this);
   if (hwnd_ == nullptr) return false;
+  mdl2Font_ = createMdl2Font(GetDpiForWindow(hwnd_));
   if (!createNavToolbar(instance)) {
     // Toolbar creation is non-fatal; the address bar can still own
     // the full row. Leaves navToolbar_ as nullptr so layout() skips it.
@@ -61,15 +83,21 @@ bool PaneToolbarRow::create(HWND parent, HINSTANCE instance,
 }
 
 bool PaneToolbarRow::createHamburger(HINSTANCE instance) {
-  // Plain push button with a glyph label. The packed command ID lands
-  // in WM_COMMAND alongside the nav-toolbar IDs and is routed by
+  // Plain push button labeled with the MDL2 "GlobalNavButton" glyph
+  // (U+E700) — the same hamburger Microsoft uses in Settings /
+  // Mail / Edge sidebars. The packed command ID lands in WM_COMMAND
+  // alongside the nav-toolbar IDs and is routed by
   // MainWindow::onCommand to TrackPopupMenuEx.
   hamburger_ = CreateWindowExW(
-      0, L"BUTTON", L"≡",  // ≡
+      0, L"BUTTON", L"",  // MDL2 GlobalNavButton
       WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON | BS_FLAT, 0, 0, 0, 0, hwnd_,
       reinterpret_cast<HMENU>(static_cast<UINT_PTR>(
           packCmd(kTbHamburger, paneIdx_))),
       instance, nullptr);
+  if (hamburger_ != nullptr && mdl2Font_ != nullptr) {
+    SendMessageW(hamburger_, WM_SETFONT,
+                 reinterpret_cast<WPARAM>(mdl2Font_), TRUE);
+  }
   return hamburger_ != nullptr;
 }
 
@@ -87,16 +115,16 @@ bool PaneToolbarRow::createNavToolbar(HINSTANCE instance) {
   SendMessageW(navToolbar_, TB_BUTTONSTRUCTSIZE,
                static_cast<WPARAM>(sizeof(TBBUTTON)), 0);
 
-  // Icon strategy: Unicode arrow glyphs as button text rather than
-  // bitmaps. SIID_FOLDERUP/SIID_REFRESH aren't in every SDK, and
-  // shipping a custom icon set would expand v0.2 scope; native font
-  // rendering scales cleanly per-DPI and matches the menu glyphs
-  // we'll use in T4.
+  // Icon strategy: Segoe MDL2 Assets glyphs rendered as button text.
+  // These are the same codepoints Explorer / Settings use for their
+  // chrome on Windows 10+, so the toolbar looks native without
+  // shipping a custom icon set and scales cleanly per-DPI.
+  //   E72B Back, E72A Forward, E110 Up, E72C Refresh
   const wchar_t* labels[kNavButtonCount] = {
-      L"←",  // ← back
-      L"→",  // → forward
-      L"↑",  // ↑ up
-      L"↻",  // ↻ refresh
+      L"",
+      L"",
+      L"",
+      L"",
   };
   INT_PTR strIdx[kNavButtonCount] = {};
   for (int i = 0; i < kNavButtonCount; ++i) {
@@ -127,6 +155,10 @@ bool PaneToolbarRow::createNavToolbar(HINSTANCE instance) {
   SendMessageW(navToolbar_, TB_ADDBUTTONS,
                static_cast<WPARAM>(kNavButtonCount),
                reinterpret_cast<LPARAM>(btns));
+  if (mdl2Font_ != nullptr) {
+    SendMessageW(navToolbar_, WM_SETFONT,
+                 reinterpret_cast<WPARAM>(mdl2Font_), TRUE);
+  }
   SendMessageW(navToolbar_, TB_AUTOSIZE, 0, 0);
   return true;
 }
@@ -140,6 +172,12 @@ void PaneToolbarRow::destroy() {
   if (hwnd_ != nullptr) {
     DestroyWindow(hwnd_);
     hwnd_ = nullptr;
+  }
+  // Destroy the MDL2 font after the children so any WM_SETFONT
+  // handle reference is released first via the cascade above.
+  if (mdl2Font_ != nullptr) {
+    DeleteObject(mdl2Font_);
+    mdl2Font_ = nullptr;
   }
   addressBar_ = nullptr;
 }
