@@ -82,6 +82,20 @@ class FilterPattern {
   std::optional<std::wregex> regex_;
 };
 
+// Heuristic mode picker for the Spotlight popup: the user types a
+// single line, and the popup needs to dispatch it to one of the
+// three matchers without a separate toggle UI.
+//   - prefix "r:"             -> Regex (with the prefix stripped)
+//   - contains '*' or '?'     -> Wildcard
+//   - otherwise               -> Plain
+// The "r:" prefix is checked before the wildcard scan so a regex
+// containing '?' or '*' (e.g. "r:foo.*\.txt") is honored as regex.
+struct DetectedFilter {
+  std::wstring query;
+  FilterMode mode = FilterMode::Plain;
+};
+[[nodiscard]] DetectedFilter detectFilterMode(std::wstring_view raw);
+
 // Returns the raw indices of every entry in `store` (in raw, not
 // visible, order) whose nameView() satisfies `pattern.matches`.
 // When `pattern.isEmpty()` returns true, the returned vector

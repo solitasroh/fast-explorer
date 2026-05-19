@@ -2,6 +2,8 @@
 #include "ui/filter-pattern.h"
 
 using fast_explorer::ui::applyFilter;
+using fast_explorer::ui::detectFilterMode;
+using fast_explorer::ui::DetectedFilter;
 using fast_explorer::ui::FilterMode;
 using fast_explorer::ui::FilterPattern;
 
@@ -99,6 +101,46 @@ FE_TEST_CASE(FilterPattern_Regex_EmptyQuery_AlwaysMatches_RegardlessOfMode) {
   FilterPattern p(L"", FilterMode::Regex);
   FE_ASSERT_TRUE(p.isValid());
   FE_ASSERT_TRUE(p.matches(L"anything.log"));
+}
+
+// --- detectFilterMode ---------------------------------------------
+
+FE_TEST_CASE(DetectFilterMode_EmptyString_PlainEmpty) {
+  const auto d = detectFilterMode(L"");
+  FE_ASSERT_TRUE(d.mode == FilterMode::Plain);
+  FE_ASSERT_TRUE(d.query.empty());
+}
+
+FE_TEST_CASE(DetectFilterMode_PlainText_StaysPlain) {
+  const auto d = detectFilterMode(L"report");
+  FE_ASSERT_TRUE(d.mode == FilterMode::Plain);
+  FE_ASSERT_WSTREQ(d.query, L"report");
+}
+
+FE_TEST_CASE(DetectFilterMode_ContainsStar_RoutesToWildcard) {
+  const auto d = detectFilterMode(L"*.txt");
+  FE_ASSERT_TRUE(d.mode == FilterMode::Wildcard);
+  FE_ASSERT_WSTREQ(d.query, L"*.txt");
+}
+
+FE_TEST_CASE(DetectFilterMode_ContainsQuestionMark_RoutesToWildcard) {
+  const auto d = detectFilterMode(L"???.log");
+  FE_ASSERT_TRUE(d.mode == FilterMode::Wildcard);
+  FE_ASSERT_WSTREQ(d.query, L"???.log");
+}
+
+FE_TEST_CASE(DetectFilterMode_RegexPrefix_RoutesToRegex_StripsPrefix) {
+  const auto d = detectFilterMode(L"r:^[a-z]+$");
+  FE_ASSERT_TRUE(d.mode == FilterMode::Regex);
+  FE_ASSERT_WSTREQ(d.query, L"^[a-z]+$");
+}
+
+FE_TEST_CASE(DetectFilterMode_RegexPrefix_BeatsWildcardWhenBothPresent) {
+  // Deliberate regex containing * or ? must still route to Regex
+  // because the prefix takes precedence over the wildcard scan.
+  const auto d = detectFilterMode(L"r:foo.*\\.txt");
+  FE_ASSERT_TRUE(d.mode == FilterMode::Regex);
+  FE_ASSERT_WSTREQ(d.query, L"foo.*\\.txt");
 }
 
 // --- applyFilter --------------------------------------------------

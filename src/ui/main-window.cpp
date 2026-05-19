@@ -1150,10 +1150,12 @@ void MainWindow::applyFilterFromPopup(std::size_t paneIdx) {
     return;
   }
   const std::wstring text = searchPopup_->currentText();
-  // F3 ships the Plain mode wiring. Mode toggle + regex-mode error
-  // surfacing lands in F4 — until then the popup typed text is
-  // always interpreted as a case-insensitive substring filter.
-  FilterPattern pattern(text, FilterMode::Plain);
+  // Mode picked from the input itself: "r:" prefix routes to Regex,
+  // any other text containing * or ? routes to Wildcard, plain
+  // substring otherwise. Matches the documented detectFilterMode
+  // contract and avoids a separate mode-toggle UI for now.
+  const auto detected = detectFilterMode(text);
+  FilterPattern pattern(detected.query, detected.mode);
   PaneController& pane = paneManager_->at(paneIdx);
   pane.setFilter(pattern);
   if (paneIdx < listViews_.size() && listViews_[paneIdx] != nullptr) {
@@ -1162,7 +1164,15 @@ void MainWindow::applyFilterFromPopup(std::size_t paneIdx) {
                             LVSICF_NOSCROLL);
     InvalidateRect(listViews_[paneIdx], nullptr, TRUE);
   }
-  refreshSelectionSummary(paneIdx);
+  // Surface a regex syntax error directly in the pane's status
+  // part so the user sees "invalid regex" without an extra dialog.
+  // For Plain / Wildcard the pattern is always valid, so the
+  // generic selection-summary line wins.
+  if (detected.mode == FilterMode::Regex && !pattern.isValid()) {
+    setPaneStatusText(paneIdx, L"invalid regex");
+  } else {
+    refreshSelectionSummary(paneIdx);
+  }
 }
 
 void MainWindow::refreshSelectionSummary(std::size_t paneIdx) {

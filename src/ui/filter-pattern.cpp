@@ -141,6 +141,25 @@ bool FilterPattern::matches(std::wstring_view name) const noexcept {
   return false;
 }
 
+DetectedFilter detectFilterMode(std::wstring_view raw) {
+  DetectedFilter out;
+  // Regex prefix takes precedence so a deliberate regex with * or ?
+  // ("r:foo.*\.txt") still routes to the engine.
+  constexpr std::wstring_view kRegexPrefix{L"r:"};
+  if (raw.size() >= kRegexPrefix.size() &&
+      raw.compare(0, kRegexPrefix.size(), kRegexPrefix) == 0) {
+    out.mode = FilterMode::Regex;
+    out.query = std::wstring(raw.substr(kRegexPrefix.size()));
+    return out;
+  }
+  out.query = std::wstring(raw);
+  if (raw.find(L'*') != std::wstring_view::npos ||
+      raw.find(L'?') != std::wstring_view::npos) {
+    out.mode = FilterMode::Wildcard;
+  }
+  return out;
+}
+
 std::vector<std::uint32_t> applyFilter(
     const fast_explorer::core::FileModelStore& store,
     const FilterPattern& pattern) {
