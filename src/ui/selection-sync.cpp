@@ -78,6 +78,49 @@ void SelectionSync::handleItemChanged(NMHDR* hdr) {
   }
 }
 
+void SelectionSync::handleOdStateChanged(NMHDR* hdr) {
+  if (hdr == nullptr || reapplying_) {
+    return;
+  }
+  auto* nm = reinterpret_cast<NMLVODSTATECHANGE*>(hdr);
+  // Walk [iFrom..iTo] (inclusive on both ends per common-controls
+  // docs) and reconcile each row's LVIS_SELECTED against the pane
+  // set. Without this loop, single-click deselections of previously-
+  // selected rows under LVS_OWNERDATA never reach PaneController,
+  // so selectedRaws_ grows on every click.
+  const int from = nm->iFrom;
+  const int to = nm->iTo;
+  if (from < 0 || to < from) {
+    return;
+  }
+  const bool wasSelected = (nm->uOldState & LVIS_SELECTED) != 0;
+  const bool isSelected = (nm->uNewState & LVIS_SELECTED) != 0;
+  if (wasSelected == isSelected) {
+    return;
+  }
+  const auto& store = pane_.store();
+  const std::span<const std::uint32_t> order = store.visibleOrder();
+  const std::size_t published = store.publishedCount();
+  const std::size_t high = static_cast<std::size_t>(to);
+  if (high >= published || high >= order.size()) {
+    return;
+  }
+  try {
+    for (std::size_t row = static_cast<std::size_t>(from);
+         row <= high; ++row) {
+      const std::uint32_t raw = order[row];
+      if (isSelected) {
+        pane_.selectRaw(raw);
+      } else {
+        pane_.deselectRaw(raw);
+      }
+    }
+  } catch (const std::bad_alloc&) {
+    // Same recovery as handleItemChanged — reapplyFromPane() rebuilds
+    // list-view state on the next sort apply.
+  }
+}
+
 void SelectionSync::reapplyFromPane() {
   if (listView_ == nullptr) {
     return;

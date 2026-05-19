@@ -43,18 +43,21 @@ FE_TEST_CASE(StatusText_Ready_FormatsCount) {
   FE_ASSERT_WSTREQ(readyStatusText(100000), L"100000 items");
 }
 
-FE_TEST_CASE(StatusText_Error_Known) {
+FE_TEST_CASE(StatusText_Error_Known_HumanReadableKorean) {
   FE_ASSERT_WSTREQ(errorStatusText(EnumerationError::PathNotFound),
-                   L"Error: PathNotFound");
+                   L"경로를 찾을 수 없습니다");
   FE_ASSERT_WSTREQ(errorStatusText(EnumerationError::AccessDenied),
-                   L"Error: AccessDenied");
-  FE_ASSERT_WSTREQ(errorStatusText(EnumerationError::Canceled),
-                   L"Error: Canceled");
+                   L"접근이 거부되었습니다");
+  FE_ASSERT_WSTREQ(errorStatusText(EnumerationError::SharingViolation),
+                   L"파일이 사용 중입니다");
 }
 
-FE_TEST_CASE(StatusText_Error_NoneIsValidLabel) {
-  FE_ASSERT_WSTREQ(errorStatusText(EnumerationError::None),
-                   L"Error: None");
+FE_TEST_CASE(StatusText_Error_NoneAndCanceledAreSilent) {
+  // None == success path; Canceled fires every typeahead in the
+  // address bar. Both must produce an empty string so the caller's
+  // `if (text.empty())` skip suppresses any status write.
+  FE_ASSERT_WSTREQ(errorStatusText(EnumerationError::None), L"");
+  FE_ASSERT_WSTREQ(errorStatusText(EnumerationError::Canceled), L"");
 }
 
 FE_TEST_CASE(StatusText_OpResult_DeleteSuccess) {
@@ -202,4 +205,82 @@ FE_TEST_CASE(FormatSelectionSummary_SelectionWithZeroBytes_FoldersOnly) {
   // and render "0 B" for the size.
   FE_ASSERT_WSTREQ(formatSelectionSummary(100, 3, 0),
                    L"100 items | 3 selected (0 B)");
+}
+
+// B5: pluralization + multi-delete aggregate + silenced errors.
+
+FE_TEST_CASE(StatusText_ReadyPluralization) {
+  // English plural: "1 item" vs "0 items" / "N items".
+  FE_ASSERT_WSTREQ(readyStatusText(0), L"0 items");
+  FE_ASSERT_WSTREQ(readyStatusText(1), L"1 item");
+  FE_ASSERT_WSTREQ(readyStatusText(2), L"2 items");
+}
+
+FE_TEST_CASE(StatusText_LoadingProgressPluralization) {
+  FE_ASSERT_WSTREQ(loadingProgressStatusText(1),
+                   L"Loading: 1 item");
+  FE_ASSERT_WSTREQ(loadingProgressStatusText(5),
+                   L"Loading: 5 items");
+}
+
+FE_TEST_CASE(StatusText_SelectionSummaryPluralization) {
+  // Total = 1, no selection → "1 item" not "1 items".
+  FE_ASSERT_WSTREQ(formatSelectionSummary(1, 0, 0), L"1 item");
+  // With selection, total is still singular when it's 1.
+  FE_ASSERT_WSTREQ(formatSelectionSummary(1, 1, 0),
+                   L"1 item | 1 selected (0 B)");
+}
+
+FE_TEST_CASE(StatusText_OpResultBatch_EmptyReturnsEmpty) {
+  std::vector<OperationResult> none;
+  FE_ASSERT_WSTREQ(opResultBatchStatusText(none), L"");
+}
+
+FE_TEST_CASE(StatusText_OpResultBatch_SingleEqualsSingleFormatter) {
+  OperationResult r;
+  r.kind = ShellCommandKind::Delete;
+  r.sourcePath = L"C:\tmp\foo.txt";
+  r.success = true;
+  std::vector<OperationResult> one{r};
+  FE_ASSERT_WSTREQ(opResultBatchStatusText(one),
+                   opResultStatusText(r));
+}
+
+FE_TEST_CASE(StatusText_OpResultBatch_MultiDeleteAggregates) {
+  std::vector<OperationResult> three;
+  for (int i = 0; i < 3; ++i) {
+    OperationResult r;
+    r.kind = ShellCommandKind::Delete;
+    r.sourcePath = L"C:\tmp\f.txt";
+    r.success = true;
+    three.push_back(r);
+  }
+  FE_ASSERT_WSTREQ(opResultBatchStatusText(three),
+                   L"Moved 3 items to Recycle Bin");
+}
+
+FE_TEST_CASE(StatusText_OpResultBatch_MultiDeleteMixedSuccess) {
+  std::vector<OperationResult> mixed;
+  for (int i = 0; i < 4; ++i) {
+    OperationResult r;
+    r.kind = ShellCommandKind::Delete;
+    r.sourcePath = L"C:\tmp\f.txt";
+    r.success = (i < 3);  // 3 ok, 1 fail
+    mixed.push_back(r);
+  }
+  FE_ASSERT_WSTREQ(opResultBatchStatusText(mixed),
+                   L"Moved 3 items to Recycle Bin (1 failed)");
+}
+
+FE_TEST_CASE(StatusText_OpResultBatch_AllFailedDelete) {
+  std::vector<OperationResult> failures;
+  for (int i = 0; i < 2; ++i) {
+    OperationResult r;
+    r.kind = ShellCommandKind::Delete;
+    r.sourcePath = L"C:\tmp\f.txt";
+    r.success = false;
+    failures.push_back(r);
+  }
+  FE_ASSERT_WSTREQ(opResultBatchStatusText(failures),
+                   L"Failed to delete 2 items");
 }

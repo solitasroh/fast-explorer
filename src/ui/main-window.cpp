@@ -224,10 +224,29 @@ bool registerClassOnce(HINSTANCE instance, const wchar_t* className, WNDPROC pro
   return RegisterClassExW(&wc) != 0;
 }
 
-// Forward decl — implementation lives in the later anonymous
-// namespace alongside systemPrefersDarkMode. Subclass needs to be
+// Forward decl for the dark-mode-aware status-bar subclass + its
+// state struct. Definitions live in the later anonymous namespace
+// alongside systemPrefersDarkMode; the subclass + state must be
 // referenceable from MainWindow::onCreate which sits between the
-// two anonymous-namespace blocks in this file.
+// two anonymous-namespace blocks. systemPrefersDarkMode itself is
+// also forward-declared so the state struct's refresh() can call
+// it without splitting namespaces.
+bool systemPrefersDarkMode() noexcept;
+struct StatusBarSubclassState {
+  bool dark = false;
+  HBRUSH bgBrush = nullptr;
+  COLORREF bgColor = 0;
+  COLORREF textColor = 0;
+  bool valid = false;
+  void refresh() noexcept {
+    dark = systemPrefersDarkMode();
+    bgColor = dark ? RGB(32, 32, 32) : GetSysColor(COLOR_BTNFACE);
+    textColor = dark ? RGB(241, 241, 241) : GetSysColor(COLOR_BTNTEXT);
+    if (bgBrush != nullptr) DeleteObject(bgBrush);
+    bgBrush = CreateSolidBrush(bgColor);
+    valid = true;
+  }
+};
 LRESULT CALLBACK statusBarSubclassProc(HWND, UINT, WPARAM, LPARAM,
                                         UINT_PTR, DWORD_PTR);
 
@@ -440,6 +459,15 @@ void MainWindow::enterDualMode(const std::wstring& secondPath,
       chooseSecondPaneInitialPath(secondPath, fallback);
   if (!openIn.empty() && paneManager_->at(1).openFolder(openIn)) {
     clearListViewForNavigation(1);
+    if (1 < firstBatchSeen_.size()) {
+      firstBatchSeen_[1] = false;
+    }
+    // Surface a "Loading: …" line for pane 1 immediately, mirroring
+    // MainWindow::openFolder for the active pane. Without this the
+    // pane-1 status part stays blank from dual-mode entry until the
+    // first enum batch arrives (visibly empty seconds on slow paths).
+    const std::wstring text = loadingStatusText(openIn);
+    setPaneStatusText(1, text.c_str());
   }
   // openFolder posts WM_FE_* asynchronously; the address bar text is
   // a pure synchronous read of currentPath() and would otherwise stay
@@ -1085,7 +1113,15 @@ LRESULT MainWindow::onCreate(HWND hwnd) {
     // Subclass takes over WM_PAINT so the status bar tints to dark
     // mode alongside the title bar + toolbar row. Win32 status bar
     // has no native dark theme — SetWindowTheme is a no-op for it.
-    SetWindowSubclass(statusBar_, &statusBarSubclassProc, 0, 0);
+    // refData carries a heap-allocated StatusBarSubclassState that
+    // caches the brush / theme decision so WM_PAINT doesn't hit
+    // the registry or allocate a brush per frame; the subclass
+    // owns the lifetime (deleted in WM_NCDESTROY).
+    auto* state = new (std::nothrow) StatusBarSubclassState{};
+    if (state != nullptr) {
+      SetWindowSubclass(statusBar_, &statusBarSubclassProc, 0,
+                        reinterpret_cast<DWORD_PTR>(state));
+    }
   }
   // dropTargets_[0] is registered after paneManager_ exists; see below.
   paneToolbarRows_[0] = std::make_unique<PaneToolbarRow>();
@@ -1176,51 +1212,65 @@ bool systemPrefersDarkMode() noexcept {
 // no-op for it. To tint it for dark mode we subclass and own the
 // paint, mirroring the colours PaneToolbarRow uses so the bar at
 // the bottom of the window matches the chrome at the top.
+//
+// State (cached brush + theme decision) lives in a heap struct
+// passed via DWORD_PTR refData so neither registry nor GDI brush
+// creation happens on the WM_PAINT hot path during e.g. marquee-
+// select. The StatusBarSubclassState struct itself is declared
+// in the earlier anonymous namespace block (needed by onCreate).
 LRESULT CALLBACK statusBarSubclassProc(
     HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam,
-    UINT_PTR idSubclass, DWORD_PTR /*refData*/) {
+    UINT_PTR idSubclass, DWORD_PTR refData) {
+  auto* state = reinterpret_cast<StatusBarSubclassState*>(refData);
   if (msg == WM_NCDESTROY) {
     RemoveWindowSubclass(hwnd, &statusBarSubclassProc, idSubclass);
+    if (state != nullptr) {
+      if (state->bgBrush != nullptr) DeleteObject(state->bgBrush);
+      delete state;
+    }
     return DefSubclassProc(hwnd, msg, wParam, lParam);
   }
   if (msg == WM_THEMECHANGED || msg == WM_SYSCOLORCHANGE) {
+    if (state != nullptr) state->refresh();
     InvalidateRect(hwnd, nullptr, TRUE);
     return DefSubclassProc(hwnd, msg, wParam, lParam);
   }
   if (msg == WM_ERASEBKGND) {
     return 1;  // WM_PAINT fills the whole client below.
   }
-  if (msg == WM_PAINT) {
-    const bool dark = systemPrefersDarkMode();
-    const COLORREF bgColor   = dark ? RGB(32, 32, 32) : GetSysColor(COLOR_BTNFACE);
-    const COLORREF textColor = dark ? RGB(241, 241, 241) : GetSysColor(COLOR_BTNTEXT);
+  if (msg == WM_PAINT && state != nullptr) {
+    if (!state->valid) state->refresh();
     PAINTSTRUCT ps{};
     HDC hdc = BeginPaint(hwnd, &ps);
     RECT client{};
     GetClientRect(hwnd, &client);
-    HBRUSH bg = CreateSolidBrush(bgColor);
-    FillRect(hdc, &client, bg);
-    DeleteObject(bg);
+    FillRect(hdc, &client, state->bgBrush);
     HFONT statusFont = reinterpret_cast<HFONT>(
         SendMessageW(hwnd, WM_GETFONT, 0, 0));
     HGDIOBJ oldFont = statusFont ? SelectObject(hdc, statusFont) : nullptr;
     SetBkMode(hdc, TRANSPARENT);
-    SetTextColor(hdc, textColor);
+    SetTextColor(hdc, state->textColor);
     const int parts =
         static_cast<int>(SendMessageW(hwnd, SB_GETPARTS, 0, 0));
     for (int i = 0; i < parts; ++i) {
       RECT partRc{};
       SendMessageW(hwnd, SB_GETRECT, i,
                    reinterpret_cast<LPARAM>(&partRc));
-      wchar_t buf[512]{};
-      const LRESULT lr = SendMessageW(hwnd, SB_GETTEXTW, i,
-                                       reinterpret_cast<LPARAM>(buf));
-      const int len = LOWORD(lr);
+      // Dynamic-size text fetch: long paths (\\?\... up to 32767
+      // wchars) would silently truncate inside a fixed buffer.
+      // SB_GETTEXTLENGTHW returns the length without the null
+      // terminator; +2 covers it plus one byte of safety slack.
+      const LRESULT lenLr =
+          SendMessageW(hwnd, SB_GETTEXTLENGTHW, i, 0);
+      const int len = LOWORD(lenLr);
       if (len > 0) {
-        buf[len < 511 ? len : 511] = L'\0';
+        std::wstring buf(static_cast<size_t>(len) + 2, L'\0');
+        SendMessageW(hwnd, SB_GETTEXTW, i,
+                     reinterpret_cast<LPARAM>(buf.data()));
+        buf.resize(static_cast<size_t>(len));
         RECT textRc = partRc;
         textRc.left += 6;  // matches the inset Win32 status bar uses
-        DrawTextW(hdc, buf, -1, &textRc,
+        DrawTextW(hdc, buf.data(), len, &textRc,
                   DT_SINGLELINE | DT_VCENTER | DT_NOPREFIX |
                       DT_END_ELLIPSIS);
       }
@@ -1717,6 +1767,12 @@ LRESULT MainWindow::onEnumError(WPARAM wParam, LPARAM lParam) {
   }
   const auto err = static_cast<fast_explorer::core::EnumerationError>(lParam);
   const std::wstring text = errorStatusText(err);
+  // errorStatusText returns empty for Canceled (fires every
+  // typeahead in the address bar) and None — skip the status
+  // write rather than overwriting whatever is currently shown.
+  if (text.empty()) {
+    return 0;
+  }
   setPaneStatusText(paneIndexFromWParam(wParam), text.c_str());
   return 0;
 }
@@ -1771,6 +1827,12 @@ LRESULT MainWindow::onLowMemory() {
 }
 
 LRESULT MainWindow::onOperationResult(WPARAM wParam) {
+  // Generation gate: a rename completion arriving after the user
+  // navigated the pane elsewhere must not overwrite the new
+  // folder's status text.
+  if (isStaleGeneration(wParam)) {
+    return 0;
+  }
   PaneController* target = paneForWParam(wParam);
   if (target == nullptr) {
     return 0;
@@ -1779,14 +1841,28 @@ LRESULT MainWindow::onOperationResult(WPARAM wParam) {
   if (results.empty()) {
     return 0;
   }
-  // Surface only the latest outcome — repeated rapid operations
-  // would otherwise flicker the status bar through every step.
-  const std::wstring text = opResultStatusText(results.back());
+  // Aggregate batches into a single line ("Moved 12 items to
+  // Recycle Bin") rather than showing only the last filename —
+  // multi-select recycle-bin delete is the common multi-result
+  // case and the prior code silently lost N-1 outcomes.
+  const std::wstring text = opResultBatchStatusText(results);
+  if (text.empty()) {
+    return 0;
+  }
   setPaneStatusText(paneIndexFromWParam(wParam), text.c_str());
   return 0;
 }
 
 LRESULT MainWindow::onFsChange(HWND hwnd, WPARAM wParam) {
+  // Generation gate: an fs-watch event queued for a folder we just
+  // left would otherwise re-arm the debounce timer and trigger a
+  // refresh of the *new* folder using the *old* folder's noise.
+  // It also prevents the timer-leak after enterSingleMode kills
+  // the pane-1 timer band — without the gate, a queued pane-1
+  // event would re-arm a timer for a pane that no longer exists.
+  if (isStaleGeneration(wParam)) {
+    return 0;
+  }
   // Debounce: every event restarts the per-pane timer; the actual
   // refresh fires once after kFsCoalesceMs of quiet. We pack the
   // pane index into the timer id so two panes' debounce windows do
@@ -1971,8 +2047,14 @@ LRESULT MainWindow::handleListViewNotify(NMHDR* hdr) {
         // 100k folder fires ~100k LVN_ITEMCHANGED messages back to
         // back, but we only need one final summary repaint after
         // the storm settles. The timer is reset on every event.
+        // Skip while a navigate is in flight (firstBatchSeen_ is
+        // false from openFolder until the first enum batch) so
+        // selection events from the cleared list-view don't
+        // race the incoming enum's batches.
         const auto* nmlv = reinterpret_cast<const NMLISTVIEW*>(hdr);
-        if (nmlv->uChanged & LVIF_STATE) {
+        const bool enumerating =
+            idx < firstBatchSeen_.size() && !firstBatchSeen_[idx];
+        if (!enumerating && (nmlv->uChanged & LVIF_STATE)) {
           const UINT oldSel = nmlv->uOldState & LVIS_SELECTED;
           const UINT newSel = nmlv->uNewState & LVIS_SELECTED;
           if (oldSel != newSel) {
@@ -2000,8 +2082,26 @@ LRESULT MainWindow::handleListViewNotify(NMHDR* hdr) {
       return labelEdits_[idx]->handleEndEdit(hdr);
     }
     case LVN_ODCACHEHINT:
-    case LVN_ODSTATECHANGED:
       return 0;
+    case LVN_ODSTATECHANGED: {
+      // LVS_OWNERDATA reports batch deselects of previously-selected
+      // rows via this notification, NOT per-row LVN_ITEMCHANGED.
+      // Without routing it through SelectionSync, single-click
+      // selection changes leak: every click adds rows to
+      // PaneController::selectedRaws_ without ever removing the
+      // previous selection.
+      std::size_t idx = 0;
+      if (paneIndexFromListView(hdr->hwndFrom, idx) &&
+          idx < selectionSyncs_.size() && selectionSyncs_[idx]) {
+        selectionSyncs_[idx]->handleOdStateChanged(hdr);
+        // Debounce a summary repaint same as LVN_ITEMCHANGED — a
+        // Ctrl+A reaches us as a single OdStateChanged with
+        // [iFrom..iTo] spanning the whole visible range.
+        SetTimer(hwnd_, kTimerSelSummaryBase + idx,
+                 kSelSummaryDebounceMs, nullptr);
+      }
+      return 0;
+    }
     case LVN_BEGINDRAG:
     case LVN_BEGINRDRAG:
       handleBeginDrag(hdr);

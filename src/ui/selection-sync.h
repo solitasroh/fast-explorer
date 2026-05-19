@@ -22,6 +22,14 @@ class SelectionSync {
   SelectionSync& operator=(SelectionSync&&) = delete;
 
   void handleItemChanged(NMHDR* hdr);
+  // Range deselect/select broadcast specific to LVS_OWNERDATA lists.
+  // When the user clicks row B while row A is selected, comctl32
+  // reports the *deselection* of A via LVN_ODSTATECHANGED (a range
+  // notification), NOT via per-row LVN_ITEMCHANGED. Dropping this
+  // notification leaks selection — the pane set grows monotonically
+  // because deselects never reach selectedRaws_. Routed by
+  // MainWindow's WM_NOTIFY handler.
+  void handleOdStateChanged(NMHDR* hdr);
   void reapplyFromPane();
 
  private:

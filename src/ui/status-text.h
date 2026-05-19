@@ -4,6 +4,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <string>
+#include <vector>
 
 #include "core/fs-backend.h"
 #include "ui/shell-worker.h"
@@ -13,6 +14,11 @@ namespace fast_explorer::ui {
 std::wstring loadingStatusText(const std::wstring& path);
 std::wstring loadingProgressStatusText(uint64_t itemsSoFar);
 std::wstring readyStatusText(size_t itemCount);
+// Returns the empty string for EnumerationError::None (caller skips
+// the status write) and for EnumerationError::Canceled (which fires
+// every time the user types in the address bar fast enough to abort
+// the prior enum — surfacing it as an error is noise, not signal).
+// All other errors map to user-readable Korean text.
 std::wstring errorStatusText(fast_explorer::core::EnumerationError err);
 
 // Compact human-readable byte size: "0 B", "512 B", "1.2 KB",
@@ -41,6 +47,18 @@ std::wstring formatSelectionSummary(std::size_t totalCount,
 //   "Renamed 'before.txt' to 'after.txt'"
 //   "Created folder 'NewFolder'"
 std::wstring opResultStatusText(const OperationResult& result);
+
+// Aggregate variant for batches drained from a single message tick.
+// Single result → equivalent to opResultStatusText(results[0]).
+// Multiple Delete results → "Moved N items to Recycle Bin"
+// (or "Failed to delete N items" / mixed count when some failed).
+// Multiple Rename / CreateFolder → reports the latest with a
+// "(+N more)" suffix, since those are typically per-row UI actions
+// rather than batched.
+// Empty span returns an empty string — caller should skip the
+// status write.
+std::wstring opResultBatchStatusText(
+    const std::vector<OperationResult>& results);
 
 // Sentinel value Win32's SB_SETPARTS uses to mean "extend this part
 // to the right edge of the status bar". Always lives at the trailing
