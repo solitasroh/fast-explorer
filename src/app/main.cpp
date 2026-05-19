@@ -3,6 +3,7 @@
 #include <ole2.h>
 #include <shellapi.h>
 #include <stdio.h>
+#include <winsparkle.h>
 
 #include <iterator>
 #include <string>
@@ -43,6 +44,24 @@ void perfLineToLogger(const wchar_t* line, void* userData) {
   auto* logger = static_cast<fast_explorer::core::RingLogger*>(userData);
   logger->info(L"%ls", line);
 }
+
+// Pairs win_sparkle_init with win_sparkle_cleanup so the helper threads
+// WinSparkle starts are joined deterministically before the COM apartment
+// goes away or the process exits.
+class WinSparkleScope {
+ public:
+  WinSparkleScope() {
+    win_sparkle_set_appcast_url(FE_APPCAST_URL);
+    win_sparkle_set_automatic_check_for_updates(1);
+    if (FE_EDDSA_PUBLIC_KEY[0] != '\0') {
+      win_sparkle_set_eddsa_public_key(FE_EDDSA_PUBLIC_KEY);
+    }
+    win_sparkle_init();
+  }
+  ~WinSparkleScope() { win_sparkle_cleanup(); }
+  WinSparkleScope(const WinSparkleScope&) = delete;
+  WinSparkleScope& operator=(const WinSparkleScope&) = delete;
+};
 
 void logStall(fast_explorer::core::RingLogger& logger,
               fast_explorer::core::PerfTracker& perf,
@@ -179,6 +198,10 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance,
       icc.dwICC = ICC_LISTVIEW_CLASSES | ICC_BAR_CLASSES |
                   ICC_USEREX_CLASSES;
       InitCommonControlsEx(&icc);
+
+      // WinSparkle scope must outlive the message loop; its dtor joins the
+      // background update-check thread before COM teardown.
+      WinSparkleScope sparkle;
 
       const std::wstring settingsPath =
           fast_explorer::core::defaultSettingsPath();

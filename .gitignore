@@ -1,5 +1,6 @@
 .superpowers/
 .rkit/
+.claude/
 
 # Build outputs
 build/
@@ -53,3 +54,5 @@ CMakeUserPresets.json
 # Secrets
 .env
 .env.*
+ed25519_priv.b64
+ed25519_pub.b64

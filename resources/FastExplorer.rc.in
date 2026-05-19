@@ -1,14 +1,14 @@
 #include <winres.h>
-#include "resource-ids.h"
+#include "@CMAKE_CURRENT_SOURCE_DIR@/resources/resource-ids.h"
 
 // CREATEPROCESS_MANIFEST_RESOURCE_ID (1) is required for asInvoker manifests.
-1 24 "FastExplorer.exe.manifest"
+1 24 "@CMAKE_CURRENT_SOURCE_DIR@/resources/FastExplorer.exe.manifest"
 
-IDI_APP ICON "fast_explorer_icon.ico"
+IDI_APP ICON "@CMAKE_CURRENT_SOURCE_DIR@/resources/fast_explorer_icon.ico"
 
 VS_VERSION_INFO VERSIONINFO
- FILEVERSION    0,1,0,0
- PRODUCTVERSION 0,1,0,0
+ FILEVERSION    @FastExplorer_VERSION_MAJOR@,@FastExplorer_VERSION_MINOR@,@FastExplorer_VERSION_PATCH@,0
+ PRODUCTVERSION @FastExplorer_VERSION_MAJOR@,@FastExplorer_VERSION_MINOR@,@FastExplorer_VERSION_PATCH@,0
  FILEFLAGSMASK  VS_FFI_FILEFLAGSMASK
  FILEFLAGS      0
  FILEOS         VOS_NT_WINDOWS32
@@ -21,11 +21,11 @@ BEGIN
         BEGIN
             VALUE "CompanyName",      "Fast Explorer Project"
             VALUE "FileDescription",  "Fast Explorer"
-            VALUE "FileVersion",      "0.1.0.0"
+            VALUE "FileVersion",      "@FastExplorer_VERSION_MAJOR@.@FastExplorer_VERSION_MINOR@.@FastExplorer_VERSION_PATCH@.0"
             VALUE "InternalName",     "FastExplorer"
             VALUE "OriginalFilename", "FastExplorer.exe"
             VALUE "ProductName",      "Fast Explorer"
-            VALUE "ProductVersion",   "0.1.0.0"
+            VALUE "ProductVersion",   "@FastExplorer_VERSION_MAJOR@.@FastExplorer_VERSION_MINOR@.@FastExplorer_VERSION_PATCH@.0"
         END
     END
     BLOCK "VarFileInfo"

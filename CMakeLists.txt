@@ -1,5 +1,8 @@
 cmake_minimum_required(VERSION 3.24)
-project(FastExplorer LANGUAGES CXX)
+project(FastExplorer
+  VERSION 0.1.0
+  LANGUAGES CXX
+)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -122,8 +125,49 @@ set(FE_APP_SOURCES
   src/core/win32-fs-backend.h
 )
 
+# ---------------------------------------------------------------------------
+# WinSparkle — auto-update via appcast.xml + Ed25519 signed releases.
+# Fetched as a prebuilt binary from the official GitHub release; pinned by
+# SHA256 so build is reproducible and tamper-evident. Bump WINSPARKLE_VERSION
+# and WINSPARKLE_URL_HASH together when upgrading.
+# ---------------------------------------------------------------------------
+include(FetchContent)
+set(WINSPARKLE_VERSION "0.9.3")
+set(WINSPARKLE_URL_HASH "SHA256=745985F41D2AB26B2D5A1CF87D76E4ED851039DB19038E50610EB25EA0B73772")
+FetchContent_Declare(winsparkle
+  URL      "https://github.com/vslavik/winsparkle/releases/download/v${WINSPARKLE_VERSION}/WinSparkle-${WINSPARKLE_VERSION}.zip"
+  URL_HASH ${WINSPARKLE_URL_HASH}
+)
+FetchContent_MakeAvailable(winsparkle)
+
+set(WINSPARKLE_INCLUDE_DIR "${winsparkle_SOURCE_DIR}/include")
+set(WINSPARKLE_LIB         "${winsparkle_SOURCE_DIR}/x64/Release/WinSparkle.lib")
+set(WINSPARKLE_DLL         "${winsparkle_SOURCE_DIR}/x64/Release/WinSparkle.dll")
+
+add_library(WinSparkle::WinSparkle SHARED IMPORTED)
+set_target_properties(WinSparkle::WinSparkle PROPERTIES
+  IMPORTED_LOCATION             "${WINSPARKLE_DLL}"
+  IMPORTED_IMPLIB               "${WINSPARKLE_LIB}"
+  INTERFACE_INCLUDE_DIRECTORIES "${WINSPARKLE_INCLUDE_DIR}"
+)
+
+# Appcast feed and EdDSA public key are injected as preprocessor macros so the
+# repository contains no environment-specific URLs and no embedded key (key
+# stays as a release-time/runtime parameter, never committed).
+set(FE_APPCAST_URL "https://solitasroh.github.io/fast-explorer/appcast.xml"
+    CACHE STRING "URL of the WinSparkle appcast.xml feed")
+set(FE_EDDSA_PUBLIC_KEY "IwpcrVIahO+HGUSIdhAHDi7xKN6dydtALIR2hHVONx8="
+    CACHE STRING
+    "Base64-encoded EdDSA (Ed25519) public key used by WinSparkle to verify the appcast — must match the ED25519_PRIVATE_KEY GitHub Secret used at release time. Override locally for forks.")
+
+configure_file(
+  ${CMAKE_CURRENT_SOURCE_DIR}/resources/FastExplorer.rc.in
+  ${CMAKE_CURRENT_BINARY_DIR}/resources/FastExplorer.rc
+  @ONLY
+)
+
 set(FE_RESOURCES
-  resources/FastExplorer.rc
+  ${CMAKE_CURRENT_BINARY_DIR}/resources/FastExplorer.rc
 )
 
 add_executable(FastExplorer WIN32
@@ -132,6 +176,11 @@ add_executable(FastExplorer WIN32
 )
 
 target_include_directories(FastExplorer PRIVATE src)
+
+target_compile_definitions(FastExplorer PRIVATE
+  FE_APPCAST_URL="${FE_APPCAST_URL}"
+  FE_EDDSA_PUBLIC_KEY="${FE_EDDSA_PUBLIC_KEY}"
+)
 
 target_link_libraries(FastExplorer PRIVATE
   comctl32
@@ -144,6 +193,16 @@ target_link_libraries(FastExplorer PRIVATE
   uxtheme
   dbghelp
   propsys
+  WinSparkle::WinSparkle
+)
+
+# Copy WinSparkle.dll next to FastExplorer.exe so the app starts without
+# the user adjusting PATH — also covered by install(FILES ...) below for
+# the packaged ZIP.
+add_custom_command(TARGET FastExplorer POST_BUILD
+  COMMAND ${CMAKE_COMMAND} -E copy_if_different
+          "${WINSPARKLE_DLL}" "$<TARGET_FILE_DIR:FastExplorer>/WinSparkle.dll"
+  COMMENT "Staging WinSparkle.dll next to FastExplorer.exe"
 )
 
 set_target_properties(FastExplorer PROPERTIES
@@ -343,3 +402,24 @@ target_link_libraries(FastExplorerBench PRIVATE
 
 enable_testing()
 add_test(NAME core-tests COMMAND core-tests)
+
+# ---------------------------------------------------------------------------
+# Packaging — install rules + CPack ZIP generator.
+# Build the release ZIP with: cmake --build --preset release --target package
+# Produces: build/FastExplorer-<version>-win64.zip
+# ---------------------------------------------------------------------------
+install(TARGETS FastExplorer
+  RUNTIME DESTINATION .
+)
+install(FILES "${WINSPARKLE_DLL}" DESTINATION .)
+
+set(CPACK_PACKAGE_NAME "FastExplorer")
+set(CPACK_PACKAGE_VENDOR "Fast Explorer Project")
+set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "Fast dual-pane file explorer for Windows")
+set(CPACK_PACKAGE_VERSION_MAJOR "${FastExplorer_VERSION_MAJOR}")
+set(CPACK_PACKAGE_VERSION_MINOR "${FastExplorer_VERSION_MINOR}")
+set(CPACK_PACKAGE_VERSION_PATCH "${FastExplorer_VERSION_PATCH}")
+set(CPACK_PACKAGE_FILE_NAME "FastExplorer-${FastExplorer_VERSION}-win64")
+set(CPACK_GENERATOR "ZIP")
+set(CPACK_INCLUDE_TOPLEVEL_DIRECTORY OFF)
+include(CPack)
