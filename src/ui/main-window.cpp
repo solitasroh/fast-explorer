@@ -1592,15 +1592,60 @@ void MainWindow::handleListViewRightClick(NMHDR* hdr) {
   }
   ClientToScreen(hdr->hwndFrom, &screenPt);
 
-  std::vector<std::wstring> leaves;
-  if (nmia->iItem >= 0) {
-    const auto& store = targetPane.store();
-    const auto row = static_cast<std::size_t>(nmia->iItem);
-    if (row < store.publishedCount()) {
-      const auto& entry = store.visibleAt(row);
-      leaves.emplace_back(entry.namePtr, entry.nameLength);
+  // Walk the list-view's own selection bits so the leaf set matches
+  // exactly what the user sees as selected — this stays correct
+  // regardless of whether a filter is active (displaySubset_ may
+  // remap row indices vs. visibleOrder_, but visibleAt(row) already
+  // knows which side to read).
+  std::vector<int> selectedRows;
+  {
+    int r = -1;
+    while ((r = ListView_GetNextItem(hdr->hwndFrom, r, LVNI_SELECTED)) >= 0) {
+      selectedRows.push_back(r);
     }
   }
+  const int clicked = nmia->iItem;
+  const bool clickedRowSelected =
+      clicked >= 0 &&
+      std::find(selectedRows.begin(), selectedRows.end(), clicked) !=
+          selectedRows.end();
+
+  const auto& store = targetPane.store();
+  const std::size_t shown = store.displayedCount();
+  std::vector<std::wstring> leaves;
+  if (clicked >= 0) {
+    if (clickedRowSelected && selectedRows.size() > 1) {
+      // Multi-selection right-click on one of the selected rows:
+      // address every selected item, matching Explorer's behavior
+      // ("Delete", "Cut", "Properties" all act on the whole group).
+      leaves.reserve(selectedRows.size());
+      for (int row : selectedRows) {
+        if (static_cast<std::size_t>(row) < shown) {
+          const auto& e = store.visibleAt(static_cast<std::size_t>(row));
+          leaves.emplace_back(e.namePtr, e.nameLength);
+        }
+      }
+    } else {
+      // Right-click outside the existing selection (or on a single
+      // selected row): collapse to just the clicked row and
+      // re-stamp the selection so the visual matches the menu
+      // target. Explorer does the same — clicking an unselected
+      // file replaces the selection set with just that file.
+      if (!clickedRowSelected) {
+        ListView_SetItemState(hdr->hwndFrom, -1, 0, LVIS_SELECTED);
+        ListView_SetItemState(hdr->hwndFrom, clicked,
+                              LVIS_SELECTED | LVIS_FOCUSED,
+                              LVIS_SELECTED | LVIS_FOCUSED);
+      }
+      if (static_cast<std::size_t>(clicked) < shown) {
+        const auto& e = store.visibleAt(static_cast<std::size_t>(clicked));
+        leaves.emplace_back(e.namePtr, e.nameLength);
+      }
+    }
+  }
+  // clicked < 0 (empty area) → leaves stays empty so the popup
+  // resolves to the folder's background menu (Open / Paste /
+  // "New" / Properties).
   ShellContextMenu::show(hwnd_, folderPath, leaves, screenPt);
 }
 
