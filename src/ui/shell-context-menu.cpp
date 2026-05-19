@@ -130,7 +130,7 @@ ComPtr<IContextMenu> queryBackgroundMenu(IShellFolder* folder, HWND ownerHwnd) {
 }
 
 void invokeChosenCommand(IContextMenu* menu, UINT cmdId, HWND ownerHwnd,
-                         POINT screenPt) {
+                         POINT screenPt, const std::wstring& folderPathW) {
   if (cmdId < kCmdIdMin || cmdId > kCmdIdMax) return;
   CMINVOKECOMMANDINFOEX info{};
   info.cbSize = sizeof(info);
@@ -141,12 +141,22 @@ void invokeChosenCommand(IContextMenu* menu, UINT cmdId, HWND ownerHwnd,
   // IS_INTRESOURCE, which crashes for MAKEINTRESOURCE ids.
   const UINT verbId = cmdId - kCmdIdMin;
   info.lpVerb = MAKEINTRESOURCEA(verbId);
+  // Populate lpDirectoryW for verbs that depend on the working
+  // directory (notably the Fontext "Install" verb — without a
+  // directory, the shell-side code path that batches multiple
+  // PIDLs into a single install operation silently degrades to
+  // processing only the first PIDL). lpDirectory (ANSI) is left
+  // null because wide → narrow conversion would lose any non-ANSI
+  // path; lpVerbW also stays null so we do not trip the
+  // IS_INTRESOURCE dereference bug noted above.
+  info.lpDirectoryW = folderPathW.c_str();
   info.nShow = SW_SHOWNORMAL;
   info.ptInvoke = screenPt;
   menu->InvokeCommand(reinterpret_cast<CMINVOKECOMMANDINFO*>(&info));
 }
 
-void runMenuAndInvoke(IContextMenu* menu, HWND ownerHwnd, POINT screenPt) {
+void runMenuAndInvoke(IContextMenu* menu, HWND ownerHwnd, POINT screenPt,
+                      const std::wstring& folderPathW) {
   MenuOwner popup(CreatePopupMenu());
   if (!popup) return;
   if (FAILED(menu->QueryContextMenu(popup.get(), 0, kCmdIdMin, kCmdIdMax,
@@ -172,7 +182,7 @@ void runMenuAndInvoke(IContextMenu* menu, HWND ownerHwnd, POINT screenPt) {
       // Subclass must remain installed across InvokeCommand because
       // shell verbs (Open With, Share, ...) pump nested menus that
       // emit WM_INITMENUPOPUP / WM_DRAWITEM / WM_MEASUREITEM.
-      invokeChosenCommand(menu, cmd, ownerHwnd, screenPt);
+      invokeChosenCommand(menu, cmd, ownerHwnd, screenPt, folderPathW);
     }
   }
   if (forward.cm3) forward.cm3->Release();
@@ -202,7 +212,7 @@ void ShellContextMenu::show(HWND ownerHwnd, const std::wstring& folderPath,
   }
   if (!menu) return;
 
-  runMenuAndInvoke(menu.get(), ownerHwnd, screenPt);
+  runMenuAndInvoke(menu.get(), ownerHwnd, screenPt, folderPath);
 }
 
 }  // namespace fast_explorer::ui
