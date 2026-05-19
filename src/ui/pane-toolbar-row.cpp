@@ -1,5 +1,7 @@
 #include "ui/pane-toolbar-row.h"
 
+#include <uxtheme.h>
+
 #include <iterator>
 
 #include "ui/messages.h"
@@ -122,7 +124,7 @@ const wchar_t* tooltipForButtonId(WORD btnId) noexcept {
     case kTbForward:   return L"앞으로 (Alt+→)";
     case kTbUp:        return L"위로 (Alt+↑)";
     case kTbRefresh:   return L"새로 고침 (F5)";
-    case kTbHamburger: return L"메뉴";  // Alt+M added in A3
+    case kTbHamburger: return L"메뉴 (Alt+M)";
   }
   return nullptr;
 }
@@ -170,8 +172,12 @@ bool PaneToolbarRow::create(HWND parent, HINSTANCE instance,
   if (hwnd_ != nullptr) return true;
   if (!registerClassOnce(instance)) return false;
   paneIdx_ = paneIdx;
+  // WS_EX_CONTROLPARENT lets IsDialogMessage recurse into the row,
+  // putting the nav toolbar / address bar / hamburger into the
+  // Tab / Shift+Tab cycle alongside the list view. Without it
+  // keyboard-only users cannot focus the row at all.
   hwnd_ = CreateWindowExW(
-      0, kClassName, L"",
+      WS_EX_CONTROLPARENT, kClassName, L"",
       WS_CHILD | WS_VISIBLE | WS_CLIPCHILDREN,
       0, 0, 0, 0, parent, nullptr, instance, this);
   if (hwnd_ == nullptr) return false;
@@ -204,8 +210,8 @@ bool PaneToolbarRow::createHamburger(HINSTANCE instance) {
   // custom-drawn glyphs without showing the text.
   hamburger_ = CreateWindowExW(
       0, L"BUTTON", L"메뉴",
-      WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON | BS_OWNERDRAW, 0, 0, 0, 0,
-      hwnd_,
+      WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON | BS_OWNERDRAW,
+      0, 0, 0, 0, hwnd_,
       reinterpret_cast<HMENU>(static_cast<UINT_PTR>(
           packCmd(kTbHamburger, paneIdx_))),
       instance, nullptr);
@@ -224,11 +230,16 @@ bool PaneToolbarRow::createNavToolbar(HINSTANCE instance) {
   // button" layout.
   navToolbar_ = CreateWindowExW(
       0, TOOLBARCLASSNAMEW, L"",
-      WS_CHILD | WS_VISIBLE | TBSTYLE_FLAT | TBSTYLE_TRANSPARENT |
-          TBSTYLE_TOOLTIPS | CCS_NORESIZE | CCS_NODIVIDER |
-          CCS_NOPARENTALIGN,
+      WS_CHILD | WS_VISIBLE | WS_TABSTOP | TBSTYLE_FLAT |
+          TBSTYLE_TRANSPARENT | TBSTYLE_TOOLTIPS | CCS_NORESIZE |
+          CCS_NODIVIDER | CCS_NOPARENTALIGN,
       0, 0, 0, 0, hwnd_, nullptr, instance, nullptr);
   if (navToolbar_ == nullptr) return false;
+  // Pick up the shell's themed hot-track / hover treatment instead
+  // of the classic flat-grey Win32 paint. Same trick Explorer uses
+  // on its own command bar — gives buttons a rounded transparent
+  // hover pill on Windows 10 / 11.
+  SetWindowTheme(navToolbar_, L"Explorer", nullptr);
 
   // TB_BUTTONSTRUCTSIZE is required before any TB_ADDBUTTONS so the
   // common-controls v6 size is what the toolbar walks.
@@ -526,8 +537,13 @@ void PaneToolbarRow::layout() {
   }
 
   const int yOff = (h - innerH) / 2;
-  const int hPad = scaleDip(4, dpi);   // left / right outer margin
-  const int gap  = scaleDip(8, dpi);   // between groups
+  // A9: visual review called the 4 DIP outer / 8 DIP intra-group
+  // values "cramped" and "asymmetric" against Win11 File Explorer
+  // / Files app spacing. Bumped to 8 DIP outer / 12 DIP intra-group;
+  // chevron-on-combobox vs hamburger no longer crash together at
+  // the right edge of the row.
+  const int hPad = scaleDip(8, dpi);
+  const int gap  = scaleDip(12, dpi);
 
   const int navW = navToolbar_ != nullptr ? scaleDip(kNavBarDipW, dpi) : 0;
   const int hambW = hamburger_ != nullptr ? scaleDip(kHamburgerDipW, dpi) : 0;

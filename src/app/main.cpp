@@ -254,6 +254,8 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance,
              fast_explorer::ui::kAccelCopyPath},
             {static_cast<BYTE>(FALT | FVIRTKEY), VK_RETURN,
              fast_explorer::ui::kAccelProperties},
+            {static_cast<BYTE>(FALT | FVIRTKEY), L'M',
+             fast_explorer::ui::kAccelToolMenu},
         };
         HACCEL hAccel =
             CreateAcceleratorTableW(accels, static_cast<int>(std::size(accels)));

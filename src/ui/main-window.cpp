@@ -632,25 +632,28 @@ void MainWindow::showToolMenuForPane(std::size_t paneIdx) {
   };
 
   // Group 1 (T5) — accelerator-equivalent folder actions.
-  add(kMenuNewFolder, L"새 폴더\tCtrl+Shift+N");
-  add(kMenuRefresh,   L"새로 고침\tF5");
+  // & mnemonics let the open menu be navigated with single-letter
+  // shortcuts per Windows menu convention; TrackPopupMenuEx honours
+  // them automatically.
+  add(kMenuNewFolder, L"새 폴더(&N)\tCtrl+Shift+N");
+  add(kMenuRefresh,   L"새로 고침(&R)\tF5");
   AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
 
   // Group 2 (T6) — shell integrations scoped to the pane's folder.
-  add(kMenuOpenExplorer, L"탐색기에서 열기");
-  add(kMenuOpenTerminal, L"터미널에서 열기");
-  add(kMenuCopyPath,     L"경로 복사\tCtrl+Shift+C");
-  add(kMenuProperties,   L"폴더 속성\tAlt+Enter");
+  add(kMenuOpenExplorer, L"탐색기에서 열기(&E)");
+  add(kMenuOpenTerminal, L"터미널에서 열기(&T)");
+  add(kMenuCopyPath,     L"경로 복사(&C)\tCtrl+Shift+C");
+  add(kMenuProperties,   L"폴더 속성(&P)\tAlt+Enter");
   AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
 
   // Group 3 (T7) — global view toggles. ✓ mark reflects current state,
   // identical across both panes' hamburgers (D4: scope=global).
   AppendMenuW(menu,
               MF_STRING | (showHidden_ ? MF_CHECKED : MF_UNCHECKED),
-              packCmd(kMenuShowHidden, paneIdx), L"숨김 항목 표시");
+              packCmd(kMenuShowHidden, paneIdx), L"숨김 항목 표시(&H)");
   AppendMenuW(menu,
               MF_STRING | (showExtensions_ ? MF_CHECKED : MF_UNCHECKED),
-              packCmd(kMenuShowExt, paneIdx), L"확장자 표시");
+              packCmd(kMenuShowExt, paneIdx), L"확장자 표시(&X)");
 
   RECT rc{};
   GetWindowRect(anchor, &rc);
@@ -1387,6 +1390,9 @@ LRESULT MainWindow::onCommand(HWND hwnd, UINT msg, WPARAM wParam,
         if (paneManager_ && activeIdx < paneManager_->count()) {
           showFolderProperties(paneManager_->at(activeIdx).currentPath(), hwnd);
         }
+        return 0;
+      case kAccelToolMenu:
+        showToolMenuForPane(activeIdx);
         return 0;
       case kAccelLayoutSingle:
         enterSingleMode();
