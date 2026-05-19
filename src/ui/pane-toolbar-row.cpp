@@ -4,6 +4,11 @@
 
 #include "ui/messages.h"
 
+// Mirror of IDR_LUCIDE_FONT in resources/resource-ids.h. resources/
+// is not on the C++ include path; declaring locally keeps the .rc ->
+// C++ contract explicit. Bump together with the .rc value.
+#define IDR_LUCIDE_FONT 200
+
 namespace fast_explorer::ui {
 
 namespace {
@@ -22,19 +27,39 @@ int scaleDip(int dip, UINT dpi) noexcept {
   return MulDiv(dip, static_cast<int>(dpi), 96);
 }
 
-// Segoe MDL2 Assets is the modern Windows icon font shipped with
-// every Windows 10+ install (the same one Explorer / Settings draws
-// its chrome glyphs from). Rendering glyphs as text rather than
-// bitmaps avoids shipping a custom icon set, scales naturally per
-// DPI, and stays consistent with the rest of the OS. ~11pt matches
-// the toolbar's native button text size at 96 DPI.
-HFONT createMdl2Font(UINT dpi) noexcept {
+// Lucide icon font (ISC license, see third_party/lucide/LICENSE). The
+// TTF is embedded as RT_RCDATA and registered with the process the
+// first time any row is created via AddFontMemResourceEx; "lucide"
+// is the family name reported by the TTF's `name` table.
+//
+// Bundling the font replaces Segoe MDL2 Assets so the toolbar has a
+// consistent modern web aesthetic regardless of Windows version /
+// SKU, at the cost of ~800 KB in the binary.
+HFONT createLucideFont(UINT dpi) noexcept {
+  // Once-flag registration; the returned handle is intentionally
+  // leaked for process lifetime (the OS reclaims on exit).
+  static HANDLE fontHandle = []() -> HANDLE {
+    HMODULE mod = GetModuleHandleW(nullptr);
+    HRSRC res = FindResourceW(mod, MAKEINTRESOURCEW(IDR_LUCIDE_FONT),
+                              RT_RCDATA);
+    if (res == nullptr) return nullptr;
+    HGLOBAL g = LoadResource(mod, res);
+    if (g == nullptr) return nullptr;
+    void* data = LockResource(g);
+    DWORD size = SizeofResource(mod, res);
+    if (data == nullptr || size == 0) return nullptr;
+    DWORD count = 0;
+    return AddFontMemResourceEx(data, size, nullptr, &count);
+  }();
+  (void)fontHandle;  // suppress unused-warning in release
+
   LOGFONTW lf{};
-  lf.lfHeight = -MulDiv(11, static_cast<int>(dpi), 96);
+  // Lucide glyphs render crisply at 13pt against the ~26 px row.
+  lf.lfHeight = -MulDiv(13, static_cast<int>(dpi), 96);
   lf.lfWeight = FW_NORMAL;
   lf.lfCharSet = DEFAULT_CHARSET;
   lf.lfQuality = CLEARTYPE_QUALITY;
-  const wchar_t kFace[] = L"Segoe MDL2 Assets";
+  const wchar_t kFace[] = L"lucide";
   for (size_t i = 0; i < std::size(kFace); ++i) {
     lf.lfFaceName[i] = kFace[i];
   }
@@ -71,7 +96,7 @@ bool PaneToolbarRow::create(HWND parent, HINSTANCE instance,
       WS_CHILD | WS_VISIBLE | WS_CLIPCHILDREN,
       0, 0, 0, 0, parent, nullptr, instance, this);
   if (hwnd_ == nullptr) return false;
-  mdl2Font_ = createMdl2Font(GetDpiForWindow(hwnd_));
+  mdl2Font_ = createLucideFont(GetDpiForWindow(hwnd_));
   if (!createNavToolbar(instance)) {
     // Toolbar creation is non-fatal; the address bar can still own
     // the full row. Leaves navToolbar_ as nullptr so layout() skips it.
@@ -89,7 +114,7 @@ bool PaneToolbarRow::createHamburger(HINSTANCE instance) {
   // alongside the nav-toolbar IDs and is routed by
   // MainWindow::onCommand to TrackPopupMenuEx.
   hamburger_ = CreateWindowExW(
-      0, L"BUTTON", L"",  // MDL2 GlobalNavButton
+      0, L"BUTTON", L"",  // Lucide menu (E115)
       WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON | BS_FLAT, 0, 0, 0, 0, hwnd_,
       reinterpret_cast<HMENU>(static_cast<UINT_PTR>(
           packCmd(kTbHamburger, paneIdx_))),
@@ -120,17 +145,15 @@ bool PaneToolbarRow::createNavToolbar(HINSTANCE instance) {
   SendMessageW(navToolbar_, TB_BUTTONSTRUCTSIZE,
                static_cast<WPARAM>(sizeof(TBBUTTON)), 0);
 
-  // Icon strategy: Segoe MDL2 Assets glyphs rendered as button text.
-  // These are the same codepoints Explorer / Settings use for their
-  // chrome on Windows 10+, so the toolbar looks native without
-  // shipping a custom icon set and scales cleanly per-DPI.
-  //   E72B Back, E72A Forward, E110 Up, E72C Refresh
-  const wchar_t* labels[kNavButtonCount] = {
-      L"",
-      L"",
-      L"",
-      L"",
-  };
+  // Lucide icon font codepoints (from third_party/lucide codepoints.json).
+  // Stored as int literals so the source is plain ASCII and survives
+  // editors that strip PUA characters.
+  //   E048 arrow-left, E049 arrow-right, E04A arrow-up, E145 refresh-cw
+  static const wchar_t kBack[]    = {0xE048, 0};
+  static const wchar_t kForward[] = {0xE049, 0};
+  static const wchar_t kUp[]      = {0xE04A, 0};
+  static const wchar_t kRefresh[] = {0xE145, 0};
+  const wchar_t* labels[kNavButtonCount] = {kBack, kForward, kUp, kRefresh};
   INT_PTR strIdx[kNavButtonCount] = {};
   for (int i = 0; i < kNavButtonCount; ++i) {
     // TB_ADDSTRING wants a double-null-terminated block; pass one
