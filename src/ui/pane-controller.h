@@ -208,6 +208,16 @@ class PaneController {
 
   bool canGoBack() const noexcept { return !backStack_.empty(); }
   bool canGoForward() const noexcept { return !forwardStack_.empty(); }
+  // True when up() would succeed — mirrors the computeParent check in
+  // up() so the toolbar's enabled state matches the actual action.
+  bool canGoUp() const;
+
+  // v0.2 view toggle. When false, FILE_ATTRIBUTE_HIDDEN entries are
+  // dropped during enumeration. Takes effect on the *next* navigate
+  // or refresh; the caller is responsible for triggering refresh()
+  // after flipping the value to surface the change immediately.
+  void setIncludeHidden(bool include) noexcept { includeHidden_ = include; }
+  bool includeHidden() const noexcept { return includeHidden_; }
 
   // Test helper: block until the current worker finishes.  In
   // production the worker's lifecycle is owned by the jthread
@@ -257,6 +267,7 @@ class PaneController {
   fast_explorer::core::FileModelStore store_;
   fast_explorer::core::Win32FsBackend backend_;
   fast_explorer::core::FsWatcher fsWatcher_;
+  bool includeHidden_ = true;  // T8 view toggle, see setIncludeHidden
   // True while the enumeration worker thread is still appending to
   // store_. The sort coordinator reads this through requestSort's
   // enumerationActive flag to refuse sorts that would race append.

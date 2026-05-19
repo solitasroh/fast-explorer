@@ -122,6 +122,9 @@ EnumerationError DirectoryEnumerator::run(IFsBackend& backend,
       flushBatch(store, batch, onBatch);
       return EnumerationError::None;
     }
+    if (!config_.includeHidden && isHidden(*r.value)) {
+      continue;
+    }
     batch.push_back(*r.value);
     if (batch.size() >= config_.batchSize) {
       flushBatch(store, batch, onBatch);

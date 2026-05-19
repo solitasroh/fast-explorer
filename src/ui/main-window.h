@@ -25,6 +25,7 @@ class DispInfoHistogram;
 class LabelEditController;
 class PaneController;
 class PaneManager;
+class PaneToolbarRow;
 class SelectionSync;
 
 class MainWindow {
@@ -177,6 +178,14 @@ class MainWindow {
   bool paneIndexFromListView(HWND lv, std::size_t& outIdx) const noexcept;
   void clearListViewForNavigation(std::size_t paneIdx) noexcept;
   void applyActivePaneAppearance() noexcept;
+  // Pushes the pane's canGoBack/Forward/Up to its toolbar so the
+  // buttons gray out at history boundaries. Cheap (no enum / no
+  // alloc), safe to call from any nav-affecting path.
+  void updateNavButtonStates(std::size_t paneIdx) noexcept;
+  // T4/T5/T6: show the hamburger popup menu for the given pane. The
+  // anchor is the hamburger button HWND so the menu opens flush with
+  // its lower-left corner.
+  void showToolMenuForPane(std::size_t paneIdx);
   // Queues a recycle-bin delete on the focused list-view row, if any.
   // Bound to the Delete accelerator. No-op when the list has no
   // focused item.
@@ -220,6 +229,11 @@ class MainWindow {
   std::array<HWND, 2> listViews_{nullptr, nullptr};
   HWND statusBar_ = nullptr;
   std::array<HWND, 2> addressBars_{nullptr, nullptr};
+  // The toolbar row hosts the nav buttons + address bar + hamburger
+  // for each pane; addressBars_[i] is created as a child of
+  // paneToolbarRows_[i]->handle() so WM_SIZE on the row positions
+  // everything together.
+  std::array<std::unique_ptr<PaneToolbarRow>, 2> paneToolbarRows_;
   std::array<IDropTarget*, 2> dropTargets_{nullptr, nullptr};
   CutStateTracker cutState_;
   std::unique_ptr<AddressBarPopup> addressBarPopup_;
@@ -242,6 +256,13 @@ class MainWindow {
   std::unique_ptr<fast_explorer::core::SessionState> capturedState_;
   LayoutOrientation orientation_ = LayoutOrientation::Vertical;
   std::unique_ptr<SearchPopup> searchPopup_;
+  // v0.2 view toggles. Defaults match SessionState defaults; the real
+  // values are populated by applyInitialState from the loaded settings
+  // file and re-persisted by the WM_CLOSE handler. T8 wires these into
+  // the enumerate + format paths so they actually shape the visible
+  // file list.
+  bool showHidden_ = false;
+  bool showExtensions_ = true;
 };
 
 }  // namespace fast_explorer::ui

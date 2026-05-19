@@ -49,6 +49,32 @@ inline constexpr WORD kAccelCut                    = 113;  // Ctrl+X
 inline constexpr WORD kAccelPaste                  = 114;  // Ctrl+V
 inline constexpr WORD kAccelLayoutHorizontalToggle = 115;  // Alt+H
 inline constexpr WORD kAccelFilter                 = 116;  // Ctrl+F
+inline constexpr WORD kAccelCopyPath               = 117;  // Ctrl+Shift+C
+inline constexpr WORD kAccelProperties             = 118;  // Alt+Enter
+
+// Toolbar button IDs (per-pane nav toolbar — back / forward / up /
+// refresh). The packing rule mirrors the menu-item convention adopted
+// in v0.2: `(buttonId << 8) | paneIdx`. paneIdx 0..255 fits in the low
+// byte, so a click on pane 1's back button arrives as
+// `(kTbBack << 8) | 1` in WM_COMMAND LOWORD(wParam).
+inline constexpr WORD kTbBack    = 200;
+inline constexpr WORD kTbForward = 201;
+inline constexpr WORD kTbUp      = 202;
+inline constexpr WORD kTbRefresh = 203;
+inline constexpr WORD kTbHamburger = 204;  // ≡ button (T4)
+
+// Hamburger popup menu item IDs (T5/T6). Packed the same way as the
+// toolbar buttons so a single onCommand path handles both. Reserve
+// 300..399 for "polished" items so the next batch can grow without
+// colliding with nav buttons above.
+inline constexpr WORD kMenuNewFolder    = 300;  // Ctrl+Shift+N
+inline constexpr WORD kMenuRefresh      = 301;  // F5
+inline constexpr WORD kMenuOpenExplorer = 310;
+inline constexpr WORD kMenuOpenTerminal = 311;
+inline constexpr WORD kMenuCopyPath     = 312;  // Ctrl+Shift+C
+inline constexpr WORD kMenuProperties   = 313;  // Alt+Enter
+inline constexpr WORD kMenuShowHidden   = 320;  // toggle ✓
+inline constexpr WORD kMenuShowExt      = 321;  // toggle ✓
 
 static_assert(kWmFeBase >= WM_APP,
               "WM_FE_* must live in the WM_APP user range");

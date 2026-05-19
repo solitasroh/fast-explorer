@@ -327,3 +327,44 @@ FE_TEST_CASE(directory_enumerator_partial_batch_when_arena_exhausts) {
   FE_ASSERT_TRUE(store.itemCount() < 2000);
   FE_ASSERT_FALSE(batches.empty());
 }
+
+// T9 (v0.2): includeHidden=false drops FILE_ATTRIBUTE_HIDDEN entries
+// before they reach the FileModelStore. Default (includeHidden=true)
+// keeps them, preserving v0.1 behavior.
+FE_TEST_CASE(directory_enumerator_include_hidden_default_keeps_hidden_entries) {
+  MemoryFsBackend backend;
+  backend.addEntry(L"X:\h", L"visible.txt", 1);
+  backend.addEntry(L"X:\h", L"secret.txt", 2,
+                   fast_explorer::core::file_entry_flags::kIsHidden);
+  FileModelStore store(L"X:\h");
+  std::vector<CapturedBatch> batches;
+  DirectoryEnumerator enumerator;  // default: includeHidden=true
+
+  const auto result = enumerator.run(backend, L"X:\h",
+                                     std::stop_token{}, store,
+                                     makeCollector(batches));
+  FE_ASSERT_EQ(static_cast<int>(result),
+               static_cast<int>(EnumerationError::None));
+  FE_ASSERT_EQ(store.itemCount(), static_cast<std::size_t>(2));
+}
+
+FE_TEST_CASE(directory_enumerator_include_hidden_false_filters_hidden_entries) {
+  MemoryFsBackend backend;
+  backend.addEntry(L"X:\h", L"visible.txt", 1);
+  backend.addEntry(L"X:\h", L"secret.txt", 2,
+                   fast_explorer::core::file_entry_flags::kIsHidden);
+  backend.addEntry(L"X:\h", L"another.txt", 3);
+  FileModelStore store(L"X:\h");
+  std::vector<CapturedBatch> batches;
+  DirectoryEnumerator::Config cfg;
+  cfg.includeHidden = false;
+  DirectoryEnumerator enumerator(cfg);
+
+  const auto result = enumerator.run(backend, L"X:\h",
+                                     std::stop_token{}, store,
+                                     makeCollector(batches));
+  FE_ASSERT_EQ(static_cast<int>(result),
+               static_cast<int>(EnumerationError::None));
+  // 3 added, 1 hidden → 2 surviving.
+  FE_ASSERT_EQ(store.itemCount(), static_cast<std::size_t>(2));
+}

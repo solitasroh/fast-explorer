@@ -398,3 +398,47 @@ FE_TEST_CASE(SettingsStore_DefaultSettingsPath_NonEmptyOnTypicalEnv) {
     FE_ASSERT_WSTREQ(tail, L"settings.json");
   }
 }
+
+// T9 (v0.2 schema v4) — view toggles persistence + missing-key
+// migration behaviour. A v3 file (no view_show_* keys) loads with the
+// defaults baked into SessionState (showHidden=false, showExtensions=true).
+FE_TEST_CASE(SettingsStore_RoundTrip_ViewToggles_Persisted) {
+  TempDir tmp(L"settings-view-toggles-roundtrip");
+  const std::wstring path = makeSettingsPath(tmp);
+  SessionState out;
+  out.showHidden = true;
+  out.showExtensions = false;
+  FE_ASSERT_TRUE(saveSessionState(path, out));
+
+  SessionState back;
+  FE_ASSERT_TRUE(loadSessionState(path, back));
+  FE_ASSERT_TRUE(back.showHidden);
+  FE_ASSERT_FALSE(back.showExtensions);
+}
+
+FE_TEST_CASE(SettingsStore_Load_V3FileWithoutViewKeys_UsesV4Defaults) {
+  TempDir tmp(L"settings-v3-to-v4-migration");
+  const std::wstring path = makeSettingsPath(tmp);
+  // saveSessionState creates the (nested) parent dir on demand;
+  // writeRawUtf8 is a raw CreateFileW and does not, so seed first.
+  SessionState seed;
+  FE_ASSERT_TRUE(saveSessionState(path, seed));
+  // v3 representation — only the keys that existed before v0.2; no
+  // view_show_hidden / view_show_extensions. saveSessionState always
+  // writes the v4 keys, so to simulate v3 we hand-build the JSON.
+  FE_ASSERT_TRUE(writeRawUtf8(
+      path,
+      "{\"last_path\":\"C:\\\\demo\","
+      "\"window_x\":100,\"window_y\":100,"
+      "\"window_w\":800,\"window_h\":600,"
+      "\"layout_mode\":\"single\",\"second_path\":\"\","
+      "\"orientation\":\"vertical\"}"));
+
+  SessionState s;
+  FE_ASSERT_TRUE(loadSessionState(path, s));
+  // SessionState defaults survive missing-key loads (forward-compat).
+  FE_ASSERT_FALSE(s.showHidden);
+  FE_ASSERT_TRUE(s.showExtensions);
+  // And the rest of the v3 payload is intact.
+  FE_ASSERT_EQ(s.windowX, 100);
+}

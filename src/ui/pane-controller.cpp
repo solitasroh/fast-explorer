@@ -120,6 +120,10 @@ bool PaneController::up() {
   return openFolder(parent);
 }
 
+bool PaneController::canGoUp() const {
+  return !computeParent(currentPath_).empty();
+}
+
 bool PaneController::refresh() {
   if (currentPath_.empty() || !isPathValid(currentPath_)) {
     return false;
@@ -266,9 +270,14 @@ bool PaneController::navigateInternal(const std::wstring& path) {
   // appending, and the thread must clear it on exit (success, error,
   // or cancellation) so requestSort() can re-arm.
   workerActive_.store(true, std::memory_order_release);
-  worker_ = std::jthread([this, host, gen, paneIdx,
+  // Snapshot the toggle here so the worker uses the value at navigate
+  // start, not whatever the user happens to flip mid-enum.
+  const bool includeHiddenSnapshot = includeHidden_;
+  worker_ = std::jthread([this, host, gen, paneIdx, includeHiddenSnapshot,
                           localPath = std::move(localPath)](std::stop_token tok) {
-    DirectoryEnumerator enumerator;
+    DirectoryEnumerator::Config cfg{};
+    cfg.includeHidden = includeHiddenSnapshot;
+    DirectoryEnumerator enumerator(cfg);
     auto onBatch = [this, host, gen, paneIdx](std::size_t /*start*/,
                                               std::size_t /*count*/) {
       // publish() before PostMessage so the UI thread that processes

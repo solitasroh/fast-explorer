@@ -36,6 +36,11 @@ constexpr std::string_view kKeyWindowH    {"window_h"};
 constexpr std::string_view kKeyLayoutMode {"layout_mode"};
 constexpr std::string_view kKeySecondPath {"second_path"};
 constexpr std::string_view kKeyOrientation{"orientation"};
+// Schema v4 (v0.2): view toggles. Stored as int 0/1 to reuse the
+// existing parseIntInto / appendKeyInt helpers; bool literals are
+// not part of the custom JSON dialect this file supports.
+constexpr std::string_view kKeyShowHidden    {"view_show_hidden"};
+constexpr std::string_view kKeyShowExtensions{"view_show_extensions"};
 constexpr std::string_view kLayoutSingle  {"single"};
 constexpr std::string_view kLayoutDual    {"dual"};
 constexpr std::string_view kOrientVertical  {"vertical"};
@@ -263,6 +268,14 @@ class JsonReader {
           : LayoutOrientation::Vertical;
       return true;
     }
+    if (key == kKeyShowHidden || key == kKeyShowExtensions) {
+      int raw = 0;
+      if (!parseIntInto(raw)) return false;
+      const bool value = raw != 0;
+      if (key == kKeyShowHidden) state.showHidden = value;
+      else                       state.showExtensions = value;
+      return true;
+    }
     int* slot = nullptr;
     if      (key == kKeyWindowX) slot = &state.windowX;
     else if (key == kKeyWindowY) slot = &state.windowY;
@@ -365,6 +378,10 @@ bool saveSessionState(const std::wstring& path, const SessionState& state) {
   appendKeyRawString(out, kKeyLayoutMode,  layoutLabel,       /*first*/ false);
   appendKeyString   (out, kKeySecondPath,  state.secondPath,  /*first*/ false);
   appendKeyRawString(out, kKeyOrientation, orientLabel,       /*first*/ false);
+  appendKeyInt      (out, kKeyShowHidden,
+                     state.showHidden ? 1 : 0,                 /*first*/ false);
+  appendKeyInt      (out, kKeyShowExtensions,
+                     state.showExtensions ? 1 : 0,             /*first*/ false);
   out.append("\n}\n");
 
   const std::wstring temp = path + L".tmp";

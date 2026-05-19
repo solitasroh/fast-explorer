@@ -36,6 +36,8 @@ set(FE_APP_SOURCES
   src/app/app-services.h
   src/ui/address-bar-popup.cpp
   src/ui/address-bar-popup.h
+  src/ui/pane-toolbar-row.cpp
+  src/ui/pane-toolbar-row.h
   src/ui/main-window.cpp
   src/ui/main-window.h
   src/ui/messages.h

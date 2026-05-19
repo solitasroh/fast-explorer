@@ -24,6 +24,12 @@ struct SessionState {
   LayoutMode layoutMode = LayoutMode::Single;
   std::wstring secondPath;
   LayoutOrientation orientation = LayoutOrientation::Vertical;
+  // v0.2 view toggles (schema v4). Both default to the "useful for the
+  // FastExplorer target user" choice rather than the Windows Explorer
+  // default — power users want extensions visible, but hidden items
+  // stay off so the first launch experience matches expectations.
+  bool showHidden = false;
+  bool showExtensions = true;
 };
 
 // Resolves the canonical settings file path:

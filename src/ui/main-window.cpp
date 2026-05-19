@@ -1,6 +1,7 @@
 #include "ui/main-window.h"
 
 #include <commctrl.h>
+#include <shellapi.h>
 #include <uxtheme.h>
 
 #include <algorithm>
@@ -18,6 +19,7 @@
 #include "ui/dpi-scale.h"
 #include "ui/format-cache.h"
 #include "ui/address-bar-popup.h"
+#include "ui/pane-toolbar-row.h"
 #include "ui/icon-cache.h"
 #include "ui/icon-cache-coordinator.h"
 #include "ui/label-edit-controller.h"
@@ -218,6 +220,93 @@ bool registerClassOnce(HINSTANCE instance, const wchar_t* className, WNDPROC pro
   return RegisterClassExW(&wc) != 0;
 }
 
+// T6 actions — single-shot shell integrations triggered from the
+// hamburger menu and (Copy path / Properties) from accelerators.
+// All return true on best-effort success and false on hard failure;
+// callers may flash a status-bar message but should not abort.
+
+void openInExplorer(const std::wstring& path) noexcept {
+  if (path.empty()) return;
+  ShellExecuteW(nullptr, L"open", path.c_str(), nullptr, nullptr,
+                SW_SHOWNORMAL);
+}
+
+bool tryLaunch(HWND owner, const wchar_t* file, const std::wstring& args,
+               const std::wstring& workDir) noexcept {
+  SHELLEXECUTEINFOW info{};
+  info.cbSize = sizeof(info);
+  info.fMask = SEE_MASK_FLAG_NO_UI | SEE_MASK_NOASYNC;
+  info.hwnd = owner;
+  info.lpVerb = L"open";
+  info.lpFile = file;
+  info.lpParameters = args.empty() ? nullptr : args.c_str();
+  info.lpDirectory = workDir.empty() ? nullptr : workDir.c_str();
+  info.nShow = SW_SHOWNORMAL;
+  return ShellExecuteExW(&info) != FALSE;
+}
+
+// D6: wt → pwsh → cmd. wt accepts `-d <dir>`; pwsh accepts
+// `-WorkingDirectory <dir>` (or `-NoExit`); cmd uses `/K cd /D <dir>`.
+// All three are tried via ShellExecuteEx with NO_UI so a missing
+// binary surfaces as a clean false and the next candidate runs.
+void launchTerminalInFolder(const std::wstring& path, HWND owner) noexcept {
+  if (path.empty()) return;
+  const std::wstring quotedPath = L"\"" + path + L"\"";
+  if (tryLaunch(owner, L"wt.exe", L"-d " + quotedPath, path)) return;
+  if (tryLaunch(owner, L"pwsh.exe",
+                L"-NoExit -WorkingDirectory " + quotedPath, path))
+    return;
+  // cmd is part of every Windows install; if even this fails, surface
+  // through the default beep below so the user notices something is
+  // wrong (e.g. group-policy lockout).
+  if (tryLaunch(owner, L"cmd.exe", L"/K cd /D " + quotedPath, path)) return;
+  MessageBeep(MB_ICONWARNING);
+}
+
+bool copyPathToClipboard(const std::wstring& path, HWND owner) noexcept {
+  if (path.empty()) return false;
+  if (!OpenClipboard(owner)) return false;
+  EmptyClipboard();
+  const size_t bytes = (path.size() + 1) * sizeof(wchar_t);
+  HGLOBAL mem = GlobalAlloc(GMEM_MOVEABLE, bytes);
+  if (mem == nullptr) {
+    CloseClipboard();
+    return false;
+  }
+  void* dst = GlobalLock(mem);
+  if (dst == nullptr) {
+    GlobalFree(mem);
+    CloseClipboard();
+    return false;
+  }
+  memcpy(dst, path.c_str(), bytes);
+  GlobalUnlock(mem);
+  if (SetClipboardData(CF_UNICODETEXT, mem) == nullptr) {
+    // SetClipboardData failure leaves ownership with us; otherwise
+    // the system owns mem and we must NOT free it.
+    GlobalFree(mem);
+    CloseClipboard();
+    return false;
+  }
+  CloseClipboard();
+  return true;
+}
+
+void showFolderProperties(const std::wstring& path, HWND owner) noexcept {
+  if (path.empty()) return;
+  SHELLEXECUTEINFOW info{};
+  info.cbSize = sizeof(info);
+  // SEE_MASK_INVOKEIDLIST tells the shell to look up the IDList for
+  // the path and invoke the "properties" verb against it; this is
+  // what surfaces the standard folder properties dialog.
+  info.fMask = SEE_MASK_INVOKEIDLIST | SEE_MASK_FLAG_NO_UI;
+  info.hwnd = owner;
+  info.lpVerb = L"properties";
+  info.lpFile = path.c_str();
+  info.nShow = SW_SHOW;
+  ShellExecuteExW(&info);
+}
+
 }  // namespace
 
 MainWindow::MainWindow(fast_explorer::core::ProcessMemoryService& memory,
@@ -304,8 +393,18 @@ void MainWindow::enterDualMode(const std::wstring& secondPath,
       }
     }
   }
-  addressBars_[1] = createAddressBar(hwnd_, instance_);
+  paneToolbarRows_[1] = std::make_unique<PaneToolbarRow>();
+  if (!paneToolbarRows_[1]->create(hwnd_, instance_, 1)) {
+    paneToolbarRows_[1].reset();
+  }
+  HWND addressParent1 = paneToolbarRows_[1]
+                            ? paneToolbarRows_[1]->handle()
+                            : hwnd_;
+  addressBars_[1] = createAddressBar(addressParent1, instance_);
   if (addressBars_[1]) {
+    if (paneToolbarRows_[1]) {
+      paneToolbarRows_[1]->setAddressBar(addressBars_[1]);
+    }
     HWND innerEdit = reinterpret_cast<HWND>(
         SendMessageW(addressBars_[1], CBEM_GETEDITCONTROL, 0, 0));
     if (innerEdit != nullptr) {
@@ -314,6 +413,9 @@ void MainWindow::enterDualMode(const std::wstring& secondPath,
     }
   }
   paneManager_->openSecond(hwnd_);
+  // Inherit current view toggle into the freshly opened pane so its
+  // first enumerate honours the user's saved/active preference.
+  paneManager_->at(1).setIncludeHidden(showHidden_);
   if (!installPaneCoordinators(1, second)) {
     // Coordinator construction failed mid-flight. Roll back so we do
     // not leave a visible second list-view backed by a partially-
@@ -374,6 +476,10 @@ void MainWindow::enterSingleMode() {
     DestroyWindow(addressBars_[1]);
     addressBars_[1] = nullptr;
   }
+  // Drop the second pane's toolbar row after its hosted address bar
+  // is gone; PaneToolbarRow::destroy is a no-op if the HWND was
+  // already destroyed via the parent-window chain.
+  paneToolbarRows_[1].reset();
   applyActivePaneAppearance();
   relayout();
 }
@@ -426,6 +532,20 @@ void MainWindow::applyInitialState(
   const int h = std::max(state.windowHeight, 240);
   SetWindowPos(hwnd_, nullptr, state.windowX, state.windowY, w, h,
                SWP_NOZORDER | SWP_NOACTIVATE);
+  // v0.2: adopt persisted view toggles. Defaults already match if the
+  // file predates schema v4 (lenient missing-key handling in
+  // loadSessionState). Propagate showHidden_ into every live pane —
+  // the pane is created in onCreate (before this runs) with the C++
+  // default includeHidden=true, so without this push a settings file
+  // with showHidden=false would silently re-show hidden items on the
+  // first openFolder.
+  showHidden_ = state.showHidden;
+  showExtensions_ = state.showExtensions;
+  if (paneManager_) {
+    for (std::size_t i = 0; i < paneManager_->count(); ++i) {
+      paneManager_->at(i).setIncludeHidden(showHidden_);
+    }
+  }
 }
 
 void MainWindow::restoreLayoutFromSession(
@@ -494,6 +614,65 @@ void MainWindow::clearListViewForNavigation(std::size_t paneIdx) noexcept {
   ListView_SetItemState(lv, -1, 0, LVIS_SELECTED | LVIS_FOCUSED);
   ListView_SetItemCountEx(lv, 0, 0);
   InvalidateRect(lv, nullptr, TRUE);
+}
+
+void MainWindow::showToolMenuForPane(std::size_t paneIdx) {
+  if (paneIdx >= paneToolbarRows_.size() || !paneToolbarRows_[paneIdx]) {
+    return;
+  }
+  HWND anchor = paneToolbarRows_[paneIdx]->hamburger();
+  if (anchor == nullptr) return;
+  // Built fresh on each open so toggle ✓ marks reflect current global
+  // state at click time (T7 wires the view toggles into the build).
+  HMENU menu = CreatePopupMenu();
+  if (menu == nullptr) return;
+
+  auto add = [&](WORD id, const wchar_t* label) {
+    AppendMenuW(menu, MF_STRING, packCmd(id, paneIdx), label);
+  };
+
+  // Group 1 (T5) — accelerator-equivalent folder actions.
+  add(kMenuNewFolder, L"새 폴더\tCtrl+Shift+N");
+  add(kMenuRefresh,   L"새로 고침\tF5");
+  AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
+
+  // Group 2 (T6) — shell integrations scoped to the pane's folder.
+  add(kMenuOpenExplorer, L"탐색기에서 열기");
+  add(kMenuOpenTerminal, L"터미널에서 열기");
+  add(kMenuCopyPath,     L"경로 복사\tCtrl+Shift+C");
+  add(kMenuProperties,   L"폴더 속성\tAlt+Enter");
+  AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
+
+  // Group 3 (T7) — global view toggles. ✓ mark reflects current state,
+  // identical across both panes' hamburgers (D4: scope=global).
+  AppendMenuW(menu,
+              MF_STRING | (showHidden_ ? MF_CHECKED : MF_UNCHECKED),
+              packCmd(kMenuShowHidden, paneIdx), L"숨김 항목 표시");
+  AppendMenuW(menu,
+              MF_STRING | (showExtensions_ ? MF_CHECKED : MF_UNCHECKED),
+              packCmd(kMenuShowExt, paneIdx), L"확장자 표시");
+
+  RECT rc{};
+  GetWindowRect(anchor, &rc);
+  // TPM_RETURNCMD would let us read the chosen ID synchronously, but
+  // routing through WM_COMMAND keeps the menu items in the same
+  // packed-ID switch as the toolbar buttons (single source of truth).
+  TrackPopupMenuEx(menu, TPM_LEFTALIGN | TPM_TOPALIGN, rc.left, rc.bottom,
+                   hwnd_, nullptr);
+  DestroyMenu(menu);
+}
+
+void MainWindow::updateNavButtonStates(std::size_t paneIdx) noexcept {
+  if (paneIdx >= paneToolbarRows_.size() || !paneToolbarRows_[paneIdx] ||
+      !paneManager_ || paneIdx >= paneManager_->count()) {
+    return;
+  }
+  const auto& pc = paneManager_->at(paneIdx);
+  auto& row = *paneToolbarRows_[paneIdx];
+  row.setNavButtonEnabled(0, pc.canGoBack());
+  row.setNavButtonEnabled(1, pc.canGoForward());
+  row.setNavButtonEnabled(2, pc.canGoUp());
+  // Refresh (slot 3) stays always-enabled; no setter call needed.
 }
 
 void MainWindow::applyActivePaneAppearance() noexcept {
@@ -833,6 +1012,8 @@ LRESULT MainWindow::handleMessage(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPa
             : std::wstring();
       }
       capturedState_->orientation = orientation_;
+      capturedState_->showHidden = showHidden_;
+      capturedState_->showExtensions = showExtensions_;
       if (addressBarPopup_) {
         addressBarPopup_->hide();
         addressBarPopup_.reset();
@@ -875,8 +1056,18 @@ LRESULT MainWindow::onCreate(HWND hwnd) {
   listViews_[0] = listView_;
   statusBar_ = createStatusBar(hwnd, instance_);
   // dropTargets_[0] is registered after paneManager_ exists; see below.
-  addressBars_[0] = createAddressBar(hwnd, instance_);
+  paneToolbarRows_[0] = std::make_unique<PaneToolbarRow>();
+  if (!paneToolbarRows_[0]->create(hwnd, instance_, 0)) {
+    paneToolbarRows_[0].reset();
+  }
+  HWND addressParent0 = paneToolbarRows_[0]
+                            ? paneToolbarRows_[0]->handle()
+                            : hwnd;
+  addressBars_[0] = createAddressBar(addressParent0, instance_);
   if (addressBars_[0]) {
+    if (paneToolbarRows_[0]) {
+      paneToolbarRows_[0]->setAddressBar(addressBars_[0]);
+    }
     HWND innerEdit = reinterpret_cast<HWND>(
         SendMessageW(addressBars_[0], CBEM_GETEDITCONTROL, 0, 0));
     if (innerEdit != nullptr) {
@@ -971,16 +1162,18 @@ LRESULT MainWindow::onSize(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
       const RECT& r = rects.panes[i];
       const int w = r.right - r.left;
       const int h = r.bottom - r.top;
+      HWND rowHwnd = paneToolbarRows_[i] ? paneToolbarRows_[i]->handle()
+                                          : addressBars_[i];
       if (w <= 0 || h <= 0) {
-        if (addressBars_[i]) ShowWindow(addressBars_[i], SW_HIDE);
+        if (rowHwnd) ShowWindow(rowHwnd, SW_HIDE);
         ShowWindow(listViews_[i], SW_HIDE);
         continue;
       }
-      const int barH = (addressBars_[i] != nullptr) ? addressH : 0;
-      if (addressBars_[i]) {
-        SetWindowPos(addressBars_[i], nullptr, r.left, r.top, w, barH,
+      const int barH = (rowHwnd != nullptr) ? addressH : 0;
+      if (rowHwnd) {
+        SetWindowPos(rowHwnd, nullptr, r.left, r.top, w, barH,
                      SWP_NOZORDER | SWP_NOACTIVATE);
-        ShowWindow(addressBars_[i], SW_SHOW);
+        ShowWindow(rowHwnd, SW_SHOW);
       }
       ShowWindow(listViews_[i], SW_SHOW);
       SetWindowPos(listViews_[i], nullptr, r.left, r.top + barH, w, h - barH,
@@ -1014,6 +1207,120 @@ LRESULT MainWindow::onCommand(HWND hwnd, UINT msg, WPARAM wParam,
       return 0;
     }
   }
+  // Nav toolbar buttons (T2) + hamburger (T4) + menu items (T5/T6/T7).
+  // LOWORD is packed `(id << 8) | pane`; the notification code from a
+  // regular toolbar click, BS_PUSHBUTTON click, or menu selection is
+  // all 0, so the accel handler below (HIWORD == 1) does not collide.
+  if (HIWORD(wParam) == 0) {
+    const WORD packed = LOWORD(wParam);
+    const WORD btn = unpackButton(packed);
+    const std::size_t pane = unpackPane(packed);
+    if (btn == kTbHamburger) {
+      showToolMenuForPane(pane);
+      return 0;
+    }
+    // Menu items dispatch to the same handlers as their accelerator
+    // equivalents, but scoped to the pane whose hamburger opened the
+    // menu (not necessarily the active pane).
+    switch (btn) {
+      case kMenuNewFolder: {
+        if (paneManager_ && pane < paneManager_->count()) {
+          setActivePane(pane);
+          if (auto* le = activeLabelEdit()) {
+            le->beginCreateSubfolder();
+          }
+        }
+        return 0;
+      }
+      case kMenuRefresh: {
+        if (paneManager_ && pane < paneManager_->count() &&
+            paneManager_->at(pane).refresh()) {
+          clearListViewForNavigation(pane);
+          syncAddressBar(pane);
+          updateNavButtonStates(pane);
+        }
+        return 0;
+      }
+      case kMenuOpenExplorer: {
+        if (paneManager_ && pane < paneManager_->count()) {
+          openInExplorer(paneManager_->at(pane).currentPath());
+        }
+        return 0;
+      }
+      case kMenuOpenTerminal: {
+        if (paneManager_ && pane < paneManager_->count()) {
+          launchTerminalInFolder(paneManager_->at(pane).currentPath(), hwnd_);
+        }
+        return 0;
+      }
+      case kMenuCopyPath: {
+        if (paneManager_ && pane < paneManager_->count()) {
+          copyPathToClipboard(paneManager_->at(pane).currentPath(), hwnd_);
+        }
+        return 0;
+      }
+      case kMenuProperties: {
+        if (paneManager_ && pane < paneManager_->count()) {
+          showFolderProperties(paneManager_->at(pane).currentPath(), hwnd_);
+        }
+        return 0;
+      }
+      case kMenuShowHidden: {
+        showHidden_ = !showHidden_;
+        // Propagate to every live pane, then trigger a refresh so the
+        // hidden-attribute filter takes effect against the same path
+        // immediately. The enumerator snapshots the flag at navigate
+        // start, so the order is set → refresh.
+        if (paneManager_) {
+          for (std::size_t i = 0; i < paneManager_->count(); ++i) {
+            paneManager_->at(i).setIncludeHidden(showHidden_);
+            if (paneManager_->at(i).refresh()) {
+              clearListViewForNavigation(i);
+            }
+          }
+        }
+        return 0;
+      }
+      case kMenuShowExt: {
+        showExtensions_ = !showExtensions_;
+        // Extension display is a pure format change — no re-enum
+        // needed (T8 wires it into ColumnFormatter), just invalidate
+        // the visible rows.
+        for (std::size_t i = 0; i < listViews_.size(); ++i) {
+          if (listViews_[i] != nullptr) {
+            InvalidateRect(listViews_[i], nullptr, FALSE);
+          }
+        }
+        return 0;
+      }
+    }
+    if (btn == kTbBack || btn == kTbForward || btn == kTbUp ||
+        btn == kTbRefresh) {
+      const std::size_t pane = unpackPane(packed);
+      if (paneManager_ && pane < paneManager_->count()) {
+        // Activate the pane whose toolbar was clicked so subsequent
+        // keyboard input lands in its list-view, then run the action.
+        setActivePane(pane);
+        auto& pc = paneManager_->at(pane);
+        bool changed = false;
+        switch (btn) {
+          case kTbBack:    changed = pc.back();    break;
+          case kTbForward: changed = pc.forward(); break;
+          case kTbUp:      changed = pc.up();      break;
+          case kTbRefresh: changed = pc.refresh(); break;
+        }
+        if (changed) {
+          clearListViewForNavigation(pane);
+          syncAddressBar(pane);
+        }
+        // Reflect the new history boundary immediately so a rapid
+        // second click sees the correct enabled state without waiting
+        // for the async enum complete.
+        updateNavButtonStates(pane);
+      }
+      return 0;
+    }
+  }
   if (HIWORD(wParam) == 1) {
     const std::size_t activeIdx =
         paneManager_ ? paneManager_->activeIndex() : 0;
@@ -1030,24 +1337,31 @@ LRESULT MainWindow::onCommand(HWND hwnd, UINT msg, WPARAM wParam,
           clearListViewForNavigation(activeIdx);
           syncAddressBar(activeIdx);
         }
+        updateNavButtonStates(activeIdx);
         return 0;
       case kAccelNavForward:
         if (pane_ && pane_->forward()) {
           clearListViewForNavigation(activeIdx);
           syncAddressBar(activeIdx);
         }
+        updateNavButtonStates(activeIdx);
         return 0;
       case kAccelNavUp:
         if (pane_ && pane_->up()) {
           clearListViewForNavigation(activeIdx);
           syncAddressBar(activeIdx);
         }
+        updateNavButtonStates(activeIdx);
         return 0;
       case kAccelRefresh:
         if (pane_ && pane_->refresh()) {
           clearListViewForNavigation(activeIdx);
           syncAddressBar(activeIdx);
         }
+        // Refresh stays enabled; nothing to update for the toolbar,
+        // but back/forward state may shift if refresh actually
+        // re-opens the same folder. Cheap to recompute.
+        updateNavButtonStates(activeIdx);
         return 0;
       case kAccelDelete:
         deleteFocusedItem();
@@ -1057,6 +1371,16 @@ LRESULT MainWindow::onCommand(HWND hwnd, UINT msg, WPARAM wParam,
         return 0;
       case kAccelCreateFolder:
         if (auto* le = activeLabelEdit()) le->beginCreateSubfolder();
+        return 0;
+      case kAccelCopyPath:
+        if (paneManager_ && activeIdx < paneManager_->count()) {
+          copyPathToClipboard(paneManager_->at(activeIdx).currentPath(), hwnd);
+        }
+        return 0;
+      case kAccelProperties:
+        if (paneManager_ && activeIdx < paneManager_->count()) {
+          showFolderProperties(paneManager_->at(activeIdx).currentPath(), hwnd);
+        }
         return 0;
       case kAccelLayoutSingle:
         enterSingleMode();
@@ -1243,6 +1567,7 @@ LRESULT MainWindow::onEnumComplete(WPARAM wParam) {
   if (idx < labelEdits_.size() && labelEdits_[idx]) {
     labelEdits_[idx]->maybeStartPendingEdit();
   }
+  updateNavButtonStates(idx);
   return 0;
 }
 
@@ -1740,7 +2065,16 @@ void MainWindow::handleGetDispInfoBody(NMHDR* hdr) {
   }
   switch (disp->item.iSubItem) {
     case 0: {
-      const auto view = fast_explorer::core::nameView(entry);
+      auto view = fast_explorer::core::nameView(entry);
+      // T8: extension strip for files (directories keep their full
+      // name even when they happen to contain a dot). The stem ends
+      // at extensionOffset, which is kNoExtension for files without
+      // any '.'; in that case the if-guard collapses to a no-op.
+      if (!showExtensions_ && !fast_explorer::core::isDirectory(entry) &&
+          entry.extensionOffset != fast_explorer::core::kNoExtension &&
+          entry.extensionOffset < view.size()) {
+        view = view.substr(0, entry.extensionOffset);
+      }
       writeCellText(*disp, std::wstring(view));
       break;
     }

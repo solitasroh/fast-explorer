@@ -30,6 +30,12 @@ class DirectoryEnumerator {
     std::size_t batchSize = 256;
     int sharingViolationRetryMs = 100;
     int sharingViolationRetries = 1;
+    // When false, entries with FILE_ATTRIBUTE_HIDDEN are dropped
+    // before reaching the FileModelStore (matches Windows Explorer's
+    // default behavior). Defaults to true so existing call sites keep
+    // their previous behavior — only the v0.2 view-toggle wires this
+    // off when the user unchecks "Show hidden items".
+    bool includeHidden = true;
   };
 
   // Reports a freshly committed batch. The range is
