@@ -6,6 +6,10 @@
 
 IDI_APP ICON "@CMAKE_CURRENT_SOURCE_DIR@/resources/fast_explorer_icon.ico"
 
+// Font Awesome 6 Solid subset (5 glyphs only — arrow-left/right/up,
+// rotate-right, ellipsis). See third_party/fontawesome/LICENSE.txt.
+IDR_ICON_FONT RCDATA "@CMAKE_CURRENT_SOURCE_DIR@/third_party/fontawesome/fa-solid-subset.otf"
+
 VS_VERSION_INFO VERSIONINFO
  FILEVERSION    @FastExplorer_VERSION_MAJOR@,@FastExplorer_VERSION_MINOR@,@FastExplorer_VERSION_PATCH@,0
  PRODUCTVERSION @FastExplorer_VERSION_MAJOR@,@FastExplorer_VERSION_MINOR@,@FastExplorer_VERSION_PATCH@,0

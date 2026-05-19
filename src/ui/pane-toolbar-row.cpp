@@ -6,6 +6,11 @@
 
 #include "ui/messages.h"
 
+// Mirror of IDR_ICON_FONT in resources/resource-ids.h. resources/
+// is not on the C++ include path; declaring locally keeps the .rc
+// ↔ C++ contract explicit. Bump in lockstep with the .rc value.
+#define IDR_ICON_FONT 200
+
 namespace fast_explorer::ui {
 
 namespace {
@@ -49,27 +54,54 @@ bool isFontInstalled(const wchar_t* face) noexcept {
   return found;
 }
 
-// Picks the system-shipped icon font with a Windows-version fallback
-// chain: Fluent Icons (Win11) → MDL2 Assets (Win10) → arrow.
-// `outFace` receives the chosen face name so callers (notably the
-// glyph codepoint table) can branch when the older MDL2 codepoints
-// differ from Fluent.
+// Loads the bundled Font Awesome 6 Solid subset (5 glyphs, ~1.6 KB)
+// once per process. Returns true on success — the family name
+// "Font Awesome 7 Free Solid" becomes available to
+// CreateFontIndirectW. The returned HANDLE is intentionally leaked
+// for process lifetime (OS reclaims at exit).
+bool registerFontAwesomeOnce() noexcept {
+  static bool ok = []() {
+    HMODULE mod = GetModuleHandleW(nullptr);
+    HRSRC res = FindResourceW(mod, MAKEINTRESOURCEW(IDR_ICON_FONT),
+                              RT_RCDATA);
+    if (res == nullptr) return false;
+    HGLOBAL g = LoadResource(mod, res);
+    if (g == nullptr) return false;
+    void* data = LockResource(g);
+    DWORD size = SizeofResource(mod, res);
+    if (data == nullptr || size == 0) return false;
+    DWORD count = 0;
+    return AddFontMemResourceEx(data, size, nullptr, &count) != nullptr;
+  }();
+  return ok;
+}
+
+// Picks the icon font face. Preference order:
+//   1. Font Awesome 7 Free Solid — bundled subset, consistent
+//      modern web aesthetic across Windows versions.
+//   2. Segoe Fluent Icons — Win11 system font, fallback when the
+//      subset failed to register (resource missing / corrupted).
+//   3. Segoe MDL2 Assets — Win10 system font, last system fallback.
+//   4. Empty face — CreateFontIndirectW substitutes the default;
+//      glyphs render as missing boxes but buttons still function.
 const wchar_t* pickIconFontFace() noexcept {
   static const wchar_t* cached = []() {
+    if (registerFontAwesomeOnce() &&
+        isFontInstalled(L"Font Awesome 7 Free Solid")) {
+      return L"Font Awesome 7 Free Solid";
+    }
     if (isFontInstalled(L"Segoe Fluent Icons")) return L"Segoe Fluent Icons";
     if (isFontInstalled(L"Segoe MDL2 Assets"))  return L"Segoe MDL2 Assets";
-    // Final fallback: the empty face name lets CreateFontIndirectW
-    // substitute the system default, glyph IDs will render as
-    // missing-glyph boxes but the buttons still function.
     return L"";
   }();
   return cached;
 }
 
-// System-shipped icon font, 13pt scaled to row DPI. Both Segoe
-// Fluent Icons (Win11) and Segoe MDL2 Assets (Win10) share the
-// codepoint range we use for nav (E72A/E72B/E74A/E72C); the
-// hamburger glyph (E712 More) is in both as well.
+// Icon font, 13pt scaled to row DPI. Font Awesome's metrics are
+// designed against a 16 px em-square; the same point size that
+// looked good with Fluent looks slightly bigger here because FA's
+// glyphs fill more of the em — a happy coincidence that gives the
+// toolbar visible weight without a separate sizing knob.
 HFONT createIconFont(UINT dpi) noexcept {
   LOGFONTW lf{};
   lf.lfHeight = -MulDiv(13, static_cast<int>(dpi), 96);
@@ -87,11 +119,18 @@ HFONT createIconFont(UINT dpi) noexcept {
 // nullptr for unknown ids (the caller falls back to the default
 // toolbar / button paint).
 const wchar_t* glyphForButtonId(WORD btnId) noexcept {
-  static const wchar_t kBack[]      = {0xE72B, 0};
-  static const wchar_t kForward[]   = {0xE72A, 0};
-  static const wchar_t kUp[]        = {0xE74A, 0};
-  static const wchar_t kRefresh[]   = {0xE72C, 0};
-  static const wchar_t kHamburger[] = {0xE712, 0};
+  // Font Awesome 7 Solid codepoints (matching the bundled subset).
+  // If FA registration failed and we fell back to Fluent/MDL2, the
+  // glyphs won't be present at these codepoints — the buttons
+  // render as missing-glyph boxes but the SR-visible labels still
+  // work. A future polish could branch on pickIconFontFace().
+  //   F060 arrow-left, F061 arrow-right, F062 arrow-up,
+  //   F2F9 rotate-right, F141 ellipsis (More)
+  static const wchar_t kBack[]      = {0xF060, 0};
+  static const wchar_t kForward[]   = {0xF061, 0};
+  static const wchar_t kUp[]        = {0xF062, 0};
+  static const wchar_t kRefresh[]   = {0xF2F9, 0};
+  static const wchar_t kHamburger[] = {0xF141, 0};
   switch (btnId) {
     case kTbBack:      return kBack;
     case kTbForward:   return kForward;
