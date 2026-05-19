@@ -54,8 +54,11 @@ HFONT createLucideFont(UINT dpi) noexcept {
   (void)fontHandle;  // suppress unused-warning in release
 
   LOGFONTW lf{};
-  // Lucide glyphs render crisply at 13pt against the ~26 px row.
-  lf.lfHeight = -MulDiv(13, static_cast<int>(dpi), 96);
+  // 10pt nominal — leaves ~6 px headroom inside the toolbar's button
+  // box (button is the row height ~28 DIP; a 10pt glyph at 96 DPI is
+  // ~13 px tall plus a couple of px for descender margin). Going
+  // higher (13pt) clipped the bottom of the glyphs at the user's DPI.
+  lf.lfHeight = -MulDiv(10, static_cast<int>(dpi), 96);
   lf.lfWeight = FW_NORMAL;
   lf.lfCharSet = DEFAULT_CHARSET;
   lf.lfQuality = CLEARTYPE_QUALITY;
@@ -144,6 +147,17 @@ bool PaneToolbarRow::createNavToolbar(HINSTANCE instance) {
   // common-controls v6 size is what the toolbar walks.
   SendMessageW(navToolbar_, TB_BUTTONSTRUCTSIZE,
                static_cast<WPARAM>(sizeof(TBBUTTON)), 0);
+  // No image area — buttons are text-only (Lucide glyph as label).
+  // Without this the toolbar reserves space for a default 16x15
+  // bitmap and the buttons end up taller than the row.
+  SendMessageW(navToolbar_, TB_SETBITMAPSIZE, 0, MAKELONG(0, 0));
+  // Pin the button size to the row height so each button fills its
+  // slot vertically (otherwise the toolbar centers smaller buttons
+  // and the glyphs hang below the address bar's baseline).
+  const UINT rowDpi = GetDpiForWindow(hwnd_);
+  const int btnDip = kNavButtonDipW;
+  const int btnPx = scaleDip(btnDip, rowDpi);
+  SendMessageW(navToolbar_, TB_SETBUTTONSIZE, 0, MAKELONG(btnPx, btnPx));
 
   // Lucide icon font codepoints (from third_party/lucide codepoints.json).
   // Stored as int literals so the source is plain ASCII and survives
@@ -187,7 +201,11 @@ bool PaneToolbarRow::createNavToolbar(HINSTANCE instance) {
     SendMessageW(navToolbar_, WM_SETFONT,
                  reinterpret_cast<WPARAM>(mdl2Font_), TRUE);
   }
-  SendMessageW(navToolbar_, TB_AUTOSIZE, 0, 0);
+  // TB_AUTOSIZE intentionally omitted — with CCS_NORESIZE +
+  // explicit TB_SETBUTTONSIZE the toolbar already has all its
+  // sizing pinned by hand. Sending TB_AUTOSIZE here re-measured
+  // against the parent's client size and made the toolbar collapse
+  // out of the row at high DPI in earlier iterations.
   return true;
 }
 
