@@ -1145,7 +1145,7 @@ LRESULT MainWindow::onSize(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
       statusH = sb.bottom - sb.top;
     }
     const int addressH =
-        addressBars_[0] ? scaleForDpi(28, GetDpiForWindow(hwnd)) : 0;
+        addressBars_[0] ? scaleForDpi(36, GetDpiForWindow(hwnd)) : 0;
     const int clientW = client.right - client.left;
     const int clientH = client.bottom - client.top;
     // Resync status-bar parts every resize: the seam between part 0

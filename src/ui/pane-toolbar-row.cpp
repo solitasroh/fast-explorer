@@ -14,14 +14,16 @@ namespace fast_explorer::ui {
 namespace {
 constexpr wchar_t kClassName[] = L"FastExplorer.PaneToolbarRow";
 
-// Width of one nav toolbar button in DIP. Stock icons are 16x16
-// (small) at 96 DPI; the toolbar pads ~6 px on each side for the
-// hot-track frame. 26 px gives a comfortable click target without
-// shrinking the address bar significantly.
-constexpr int kNavButtonDipW = 26;
+// Sizing for the row. kRowInnerDipH is the visual height every
+// interactive child snaps to (toolbar buttons, address-bar textbox,
+// hamburger button) so they share a baseline. The row itself is set
+// from MainWindow::onSize (currently 36 DIP), giving symmetric top
+// and bottom padding = (rowH - kRowInnerDipH) / 2.
+constexpr int kRowInnerDipH  = 28;
+constexpr int kNavButtonDipW = 32;
 constexpr int kNavButtonCount = 4;
 constexpr int kNavBarDipW = kNavButtonDipW * kNavButtonCount;
-constexpr int kHamburgerDipW = 28;
+constexpr int kHamburgerDipW = 32;
 
 int scaleDip(int dip, UINT dpi) noexcept {
   return MulDiv(dip, static_cast<int>(dpi), 96);
@@ -54,11 +56,11 @@ HFONT createLucideFont(UINT dpi) noexcept {
   (void)fontHandle;  // suppress unused-warning in release
 
   LOGFONTW lf{};
-  // 10pt nominal — leaves ~6 px headroom inside the toolbar's button
-  // box (button is the row height ~28 DIP; a 10pt glyph at 96 DPI is
-  // ~13 px tall plus a couple of px for descender margin). Going
-  // higher (13pt) clipped the bottom of the glyphs at the user's DPI.
-  lf.lfHeight = -MulDiv(10, static_cast<int>(dpi), 96);
+  // 13pt against a 28 DIP inner height (~37 px at 96 DPI baseline
+  // after row growth) leaves a couple of px headroom and renders
+  // glyph strokes thick enough to be readable at typical viewing
+  // distance. Clipping behaviour now tracked by TB_SETBUTTONSIZE.
+  lf.lfHeight = -MulDiv(13, static_cast<int>(dpi), 96);
   lf.lfWeight = FW_NORMAL;
   lf.lfCharSet = DEFAULT_CHARSET;
   lf.lfQuality = CLEARTYPE_QUALITY;
@@ -151,13 +153,13 @@ bool PaneToolbarRow::createNavToolbar(HINSTANCE instance) {
   // Without this the toolbar reserves space for a default 16x15
   // bitmap and the buttons end up taller than the row.
   SendMessageW(navToolbar_, TB_SETBITMAPSIZE, 0, MAKELONG(0, 0));
-  // Pin the button size to the row height so each button fills its
-  // slot vertically (otherwise the toolbar centers smaller buttons
-  // and the glyphs hang below the address bar's baseline).
+  // Pin button size to (width=kNavButtonDipW, height=kRowInnerDipH).
+  // Width gives glyph breathing room; height matches the address
+  // bar's textbox so the row reads as one aligned strip.
   const UINT rowDpi = GetDpiForWindow(hwnd_);
-  const int btnDip = kNavButtonDipW;
-  const int btnPx = scaleDip(btnDip, rowDpi);
-  SendMessageW(navToolbar_, TB_SETBUTTONSIZE, 0, MAKELONG(btnPx, btnPx));
+  const int btnW = scaleDip(kNavButtonDipW, rowDpi);
+  const int btnH = scaleDip(kRowInnerDipH, rowDpi);
+  SendMessageW(navToolbar_, TB_SETBUTTONSIZE, 0, MAKELONG(btnW, btnH));
 
   // Lucide icon font codepoints (from third_party/lucide codepoints.json).
   // Stored as int literals so the source is plain ASCII and survives
@@ -253,20 +255,30 @@ void PaneToolbarRow::layout() {
   const int h = rc.bottom - rc.top;
   if (w <= 0 || h <= 0) return;
   const UINT dpi = GetDpiForWindow(hwnd_);
+  // Every interactive child shares the same visual height and the
+  // same vertical center so the row reads as a single aligned
+  // strip — symmetric top/bottom padding falls out of (h - innerH)/2.
+  const int innerH = scaleDip(kRowInnerDipH, dpi);
+  const int yOff = (h - innerH) / 2;
   const int navW = navToolbar_ != nullptr ? scaleDip(kNavBarDipW, dpi) : 0;
   const int hambW = hamburger_ != nullptr ? scaleDip(kHamburgerDipW, dpi) : 0;
   if (navToolbar_ != nullptr) {
-    SetWindowPos(navToolbar_, nullptr, 0, 0, navW, h,
+    SetWindowPos(navToolbar_, nullptr, 0, yOff, navW, innerH,
                  SWP_NOZORDER | SWP_NOACTIVATE);
   }
   const int addrLeft = navW;
   const int addrW = w - addrLeft - hambW;
   if (addressBar_ != nullptr && addrW > 0) {
-    SetWindowPos(addressBar_, nullptr, addrLeft, 0, addrW, h,
+    // ComboBoxEx renders its visible textbox at the top of the
+    // window with height derived from the font; passing innerH for
+    // height keeps the textbox aligned with the toolbar and
+    // hamburger. The native dropdown is suppressed by
+    // AddressBarPopup so the dropdown-list reserve space is unused.
+    SetWindowPos(addressBar_, nullptr, addrLeft, yOff, addrW, innerH,
                  SWP_NOZORDER | SWP_NOACTIVATE);
   }
   if (hamburger_ != nullptr) {
-    SetWindowPos(hamburger_, nullptr, w - hambW, 0, hambW, h,
+    SetWindowPos(hamburger_, nullptr, w - hambW, yOff, hambW, innerH,
                  SWP_NOZORDER | SWP_NOACTIVATE);
   }
 }
