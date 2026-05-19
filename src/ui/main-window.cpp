@@ -1123,10 +1123,17 @@ LRESULT MainWindow::onDpiChanged(HWND hwnd, WPARAM wParam, LPARAM lParam) {
   SetWindowPos(hwnd, nullptr, rect->left, rect->top,
                rect->right - rect->left, rect->bottom - rect->top,
                SWP_NOZORDER | SWP_NOACTIVATE);
+  const UINT newDpi = LOWORD(wParam);
   for (HWND lv : listViews_) {
     if (lv != nullptr) {
-      rescaleColumnWidths(lv, LOWORD(wParam));
+      rescaleColumnWidths(lv, newDpi);
     }
+  }
+  // Forward to each toolbar row so its icon + text fonts get
+  // recreated at the new DPI. Without this the glyphs render at
+  // the old DPI's pixel size and look wrong on the new monitor.
+  for (auto& row : paneToolbarRows_) {
+    if (row) row->onDpiChanged(newDpi);
   }
   return 0;
 }

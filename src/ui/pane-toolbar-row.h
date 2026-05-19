@@ -71,6 +71,14 @@ class PaneToolbarRow {
   // 2=Up. Refresh stays always-enabled so it has no setter.
   void setNavButtonEnabled(int slotIdx, bool enabled);
 
+  // A4 hook: recreate the icon + text fonts at `newDpi`, re-apply
+  // them to every child that owns one, and trigger a layout pass.
+  // Called from MainWindow::onDpiChanged when the row's window
+  // crosses a DPI boundary; without it the fonts stay frozen at
+  // the DPI they were created at and the glyphs render too small
+  // / too large on the new monitor.
+  void onDpiChanged(UINT newDpi);
+
  private:
   static LRESULT CALLBACK wndProc(HWND, UINT, WPARAM, LPARAM);
   LRESULT handleMessage(HWND, UINT, WPARAM, LPARAM);

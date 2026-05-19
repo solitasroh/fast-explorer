@@ -4,11 +4,6 @@
 
 #include "ui/messages.h"
 
-// Mirror of IDR_LUCIDE_FONT in resources/resource-ids.h. resources/
-// is not on the C++ include path; declaring locally keeps the .rc ->
-// C++ contract explicit. Bump together with the .rc value.
-#define IDR_LUCIDE_FONT 200
-
 namespace fast_explorer::ui {
 
 namespace {
@@ -29,44 +24,59 @@ int scaleDip(int dip, UINT dpi) noexcept {
   return MulDiv(dip, static_cast<int>(dpi), 96);
 }
 
-// Lucide icon font (ISC license, see third_party/lucide/LICENSE). The
-// TTF is embedded as RT_RCDATA and registered with the process the
-// first time any row is created via AddFontMemResourceEx; "lucide"
-// is the family name reported by the TTF's `name` table.
-//
-// Bundling the font replaces Segoe MDL2 Assets so the toolbar has a
-// consistent modern web aesthetic regardless of Windows version /
-// SKU, at the cost of ~800 KB in the binary.
-HFONT createLucideFont(UINT dpi) noexcept {
-  // Once-flag registration; the returned handle is intentionally
-  // leaked for process lifetime (the OS reclaims on exit).
-  static HANDLE fontHandle = []() -> HANDLE {
-    HMODULE mod = GetModuleHandleW(nullptr);
-    HRSRC res = FindResourceW(mod, MAKEINTRESOURCEW(IDR_LUCIDE_FONT),
-                              RT_RCDATA);
-    if (res == nullptr) return nullptr;
-    HGLOBAL g = LoadResource(mod, res);
-    if (g == nullptr) return nullptr;
-    void* data = LockResource(g);
-    DWORD size = SizeofResource(mod, res);
-    if (data == nullptr || size == 0) return nullptr;
-    DWORD count = 0;
-    return AddFontMemResourceEx(data, size, nullptr, &count);
-  }();
-  (void)fontHandle;  // suppress unused-warning in release
-
+// True when a font family with `face` is installed system-wide.
+// Used to pick Segoe Fluent Icons (Windows 11) when available and
+// fall back to Segoe MDL2 Assets (Windows 10) when not.
+bool isFontInstalled(const wchar_t* face) noexcept {
+  HDC dc = GetDC(nullptr);
+  if (dc == nullptr) return false;
   LOGFONTW lf{};
-  // 13pt against a 28 DIP inner height (~37 px at 96 DPI baseline
-  // after row growth) leaves a couple of px headroom and renders
-  // glyph strokes thick enough to be readable at typical viewing
-  // distance. Clipping behaviour now tracked by TB_SETBUTTONSIZE.
+  lf.lfCharSet = DEFAULT_CHARSET;
+  for (size_t i = 0; face[i] != L'\0' && i < LF_FACESIZE - 1; ++i) {
+    lf.lfFaceName[i] = face[i];
+  }
+  bool found = false;
+  EnumFontFamiliesExW(
+      dc, &lf,
+      [](const LOGFONTW*, const TEXTMETRICW*, DWORD, LPARAM lParam) -> int {
+        *reinterpret_cast<bool*>(lParam) = true;
+        return 0;  // stop enumeration
+      },
+      reinterpret_cast<LPARAM>(&found), 0);
+  ReleaseDC(nullptr, dc);
+  return found;
+}
+
+// Picks the system-shipped icon font with a Windows-version fallback
+// chain: Fluent Icons (Win11) → MDL2 Assets (Win10) → arrow.
+// `outFace` receives the chosen face name so callers (notably the
+// glyph codepoint table) can branch when the older MDL2 codepoints
+// differ from Fluent.
+const wchar_t* pickIconFontFace() noexcept {
+  static const wchar_t* cached = []() {
+    if (isFontInstalled(L"Segoe Fluent Icons")) return L"Segoe Fluent Icons";
+    if (isFontInstalled(L"Segoe MDL2 Assets"))  return L"Segoe MDL2 Assets";
+    // Final fallback: the empty face name lets CreateFontIndirectW
+    // substitute the system default, glyph IDs will render as
+    // missing-glyph boxes but the buttons still function.
+    return L"";
+  }();
+  return cached;
+}
+
+// System-shipped icon font, 13pt scaled to row DPI. Both Segoe
+// Fluent Icons (Win11) and Segoe MDL2 Assets (Win10) share the
+// codepoint range we use for nav (E72A/E72B/E70E/E72C); the
+// hamburger glyph (E712 More) is in both as well.
+HFONT createIconFont(UINT dpi) noexcept {
+  LOGFONTW lf{};
   lf.lfHeight = -MulDiv(13, static_cast<int>(dpi), 96);
   lf.lfWeight = FW_NORMAL;
   lf.lfCharSet = DEFAULT_CHARSET;
   lf.lfQuality = CLEARTYPE_QUALITY;
-  const wchar_t kFace[] = L"lucide";
-  for (size_t i = 0; i < std::size(kFace); ++i) {
-    lf.lfFaceName[i] = kFace[i];
+  const wchar_t* face = pickIconFontFace();
+  for (size_t i = 0; face[i] != L'\0' && i < LF_FACESIZE - 1; ++i) {
+    lf.lfFaceName[i] = face[i];
   }
   return CreateFontIndirectW(&lf);
 }
@@ -118,7 +128,7 @@ bool PaneToolbarRow::create(HWND parent, HINSTANCE instance,
       WS_CHILD | WS_VISIBLE | WS_CLIPCHILDREN,
       0, 0, 0, 0, parent, nullptr, instance, this);
   if (hwnd_ == nullptr) return false;
-  mdl2Font_ = createLucideFont(GetDpiForWindow(hwnd_));
+  mdl2Font_ = createIconFont(GetDpiForWindow(hwnd_));
   rowFont_ = createRowFont(GetDpiForWindow(hwnd_));
   if (!createNavToolbar(instance)) {
     // Toolbar creation is non-fatal; the address bar can still own
@@ -131,13 +141,14 @@ bool PaneToolbarRow::create(HWND parent, HINSTANCE instance,
 }
 
 bool PaneToolbarRow::createHamburger(HINSTANCE instance) {
-  // Plain push button labeled with the MDL2 "GlobalNavButton" glyph
-  // (U+E700) — the same hamburger Microsoft uses in Settings /
-  // Mail / Edge sidebars. The packed command ID lands in WM_COMMAND
-  // alongside the nav-toolbar IDs and is routed by
-  // MainWindow::onCommand to TrackPopupMenuEx.
+  // Plain push button labeled with the MDL2/Fluent "More" glyph
+  // (U+E712 ⋯) — the per-context action-menu glyph Microsoft uses
+  // in File Explorer / Settings command bars and OneDrive context
+  // overflows. The packed command ID lands in WM_COMMAND alongside
+  // the nav-toolbar IDs and is routed by MainWindow::onCommand to
+  // TrackPopupMenuEx.
   hamburger_ = CreateWindowExW(
-      0, L"BUTTON", L"",  // Lucide menu (E115)
+      0, L"BUTTON", L"",  // Segoe MDL2/Fluent More (E712)
       WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON | BS_FLAT, 0, 0, 0, 0, hwnd_,
       reinterpret_cast<HMENU>(static_cast<UINT_PTR>(
           packCmd(kTbHamburger, paneIdx_))),
@@ -179,14 +190,15 @@ bool PaneToolbarRow::createNavToolbar(HINSTANCE instance) {
   const int btnH = scaleDip(kRowInnerDipH, rowDpi);
   SendMessageW(navToolbar_, TB_SETBUTTONSIZE, 0, MAKELONG(btnW, btnH));
 
-  // Lucide icon font codepoints (from third_party/lucide codepoints.json).
-  // Stored as int literals so the source is plain ASCII and survives
-  // editors that strip PUA characters.
-  //   E048 arrow-left, E049 arrow-right, E04A arrow-up, E145 refresh-cw
-  static const wchar_t kBack[]    = {0xE048, 0};
-  static const wchar_t kForward[] = {0xE049, 0};
-  static const wchar_t kUp[]      = {0xE04A, 0};
-  static const wchar_t kRefresh[] = {0xE145, 0};
+  // Segoe Fluent Icons / Segoe MDL2 Assets codepoints — present in
+  // both fonts at the same code points, so the same source works
+  // on Win10 and Win11. Stored as int literals so the source is
+  // plain ASCII and survives editors that strip PUA characters.
+  //   E72B Back, E72A Forward, E70E ChevronUp, E72C Refresh
+  static const wchar_t kBack[]    = {0xE72B, 0};
+  static const wchar_t kForward[] = {0xE72A, 0};
+  static const wchar_t kUp[]      = {0xE70E, 0};
+  static const wchar_t kRefresh[] = {0xE72C, 0};
   const wchar_t* labels[kNavButtonCount] = {kBack, kForward, kUp, kRefresh};
   INT_PTR strIdx[kNavButtonCount] = {};
   for (int i = 0; i < kNavButtonCount; ++i) {
@@ -272,6 +284,39 @@ void PaneToolbarRow::setAddressBar(HWND addressBar) {
       }
     }
   }
+  layout();
+}
+
+void PaneToolbarRow::onDpiChanged(UINT newDpi) {
+  // Atomic swap: build the new fonts first, then push them, then
+  // free the old. Order matters because WM_SETFONT does not copy
+  // the HFONT — controls hold the raw handle until told otherwise.
+  HFONT newIcon = createIconFont(newDpi);
+  HFONT newText = createRowFont(newDpi);
+  HFONT oldIcon = mdl2Font_;
+  HFONT oldText = rowFont_;
+  mdl2Font_ = newIcon;
+  rowFont_ = newText;
+  if (navToolbar_ != nullptr && newIcon != nullptr) {
+    SendMessageW(navToolbar_, WM_SETFONT,
+                 reinterpret_cast<WPARAM>(newIcon), TRUE);
+  }
+  if (hamburger_ != nullptr && newIcon != nullptr) {
+    SendMessageW(hamburger_, WM_SETFONT,
+                 reinterpret_cast<WPARAM>(newIcon), TRUE);
+  }
+  if (addressBar_ != nullptr && newText != nullptr) {
+    SendMessageW(addressBar_, WM_SETFONT,
+                 reinterpret_cast<WPARAM>(newText), TRUE);
+    HWND edit = reinterpret_cast<HWND>(
+        SendMessageW(addressBar_, CBEM_GETEDITCONTROL, 0, 0));
+    if (edit != nullptr) {
+      SendMessageW(edit, WM_SETFONT,
+                   reinterpret_cast<WPARAM>(newText), TRUE);
+    }
+  }
+  if (oldIcon != nullptr) DeleteObject(oldIcon);
+  if (oldText != nullptr) DeleteObject(oldText);
   layout();
 }
 

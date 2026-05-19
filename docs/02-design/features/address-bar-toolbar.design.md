@@ -4,8 +4,8 @@
 >
 > **Author**: Claude (with user)
 > **Created**: 2026-05-19
-> **Status**: Shipped
-> **Version**: 1.0.1
+> **Status**: Shipped (v0.2 baseline) — v0.2.1 polish in progress
+> **Version**: 1.1.0
 > **Level**: Starter
 
 ---
@@ -17,6 +17,7 @@
 | 0.1.0 | 2026-05-19 | Initial draft. v0.2 스코프: 네비 툴바 + 햄버거 메뉴, 액션 8종, 페인당 인스턴스. 브레드크럼/즐겨찾기/최근경로 명시적 out-of-scope. | Claude |
 | 1.0.0 | 2026-05-19 | Approved. §7 결정사항 사용자 확정: D1/D2=페인당, D5=확장자 표시(true), D4=글로벌 토글, D6=wt→pwsh→cmd. 나머지 D3/D7/D8/D9/D10은 디폴트 유지. T1부터 atom 단위 구현 착수. | Claude (with user) |
 | 1.0.1 | 2026-05-19 | T1~T10 완료. D3 변경: SHGetStockIconInfo의 SIID_FOLDERUP/SIID_REFRESH가 이 SDK enum에 없어 4 버튼 모두 Unicode 텍스트 글리프(←→↑↻)로 대체 (BTNS_SHOWTEXT). 그 외 디폴트 유지. T9 신규 단위 테스트 4개 추가 (DirectoryEnumerator hidden filter ×2, SettingsStore v3→v4 migration ×2). 545/545 통과. T10 acceptance #8 (working-set delta < 1 MB): chrome 추가분 ≪ 100 KB로 산정 (toolbar 2 + 버튼 2 + transient HMENU). T10 acceptance #9 (클릭 stall 50 ms): 신규 클릭이 기존 paneController.back/forward/up/refresh를 그대로 호출하므로 v0.1 StallHistogram 분포와 동등. exe 크기 v0.1 386KB → v0.2 392KB (+6 KB). | Claude (with user) |
+| 1.1.0 | 2026-05-19 | **v0.2.1 polish 계획 lock**. 4명 team review (visual / a11y / Windows / code) 결과 P0~P1 9개 atom 확정: A5 Segoe Fluent Icons(+MDL2 fallback)으로 Lucide 교체, A6 햄버거 글리프 ≡ → ⋯ (More 의미), A4 WM_DPICHANGED 폰트 재생성, A2 MSAA 접근 가능 이름, A1 툴팁(TBN_GETINFOTIP + TOOLTIPS_CLASS), A3 키보드 도달(WS_EX_CONTROLPARENT + Alt+M), A7 SetWindowTheme("Explorer"), A9 spacing 폴리시(margin 4→8, gap 8→12), A8 다크모드 + Mica. 실행 순서: A5 → A6 → A4 → A2 → A1 → A3 → A7 → A9 → A8. | Claude (with user) |
 
 ## Related Documents
 
