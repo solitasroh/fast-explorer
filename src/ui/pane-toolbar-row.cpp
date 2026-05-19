@@ -125,6 +125,50 @@ const wchar_t* tooltipForButtonId(WORD btnId) noexcept {
   return nullptr;
 }
 
+// Reads the Windows "apps use light theme" registry preference.
+// Cached for the call's duration; the row invalidates on
+// WM_SETTINGCHANGE("ImmersiveColorSet") so each repaint after a
+// theme flip re-reads.
+bool isAppInDarkMode() noexcept {
+  HKEY key = nullptr;
+  if (RegOpenKeyExW(HKEY_CURRENT_USER,
+                    L"Software\\Microsoft\\Windows\\CurrentVersion"
+                    L"\\Themes\\Personalize",
+                    0, KEY_READ, &key) != ERROR_SUCCESS) {
+    return false;
+  }
+  DWORD value = 1;
+  DWORD size = sizeof(value);
+  LONG r = RegQueryValueExW(key, L"AppsUseLightTheme", nullptr, nullptr,
+                            reinterpret_cast<BYTE*>(&value), &size);
+  RegCloseKey(key);
+  return r == ERROR_SUCCESS && value == 0;
+}
+
+struct RowTheme {
+  COLORREF background;
+  COLORREF text;
+  COLORREF disabledText;
+};
+
+// Picks the colour set the row + its custom-drawn children use,
+// based on the system theme. Dark values are tuned to roughly
+// match Win11 File Explorer's command-bar tint.
+RowTheme currentRowTheme() noexcept {
+  if (isAppInDarkMode()) {
+    return RowTheme{
+        /*background*/   RGB(32, 32, 32),
+        /*text*/         RGB(241, 241, 241),
+        /*disabledText*/ RGB(120, 120, 120),
+    };
+  }
+  return RowTheme{
+      /*background*/   GetSysColor(COLOR_BTNFACE),
+      /*text*/         GetSysColor(COLOR_BTNTEXT),
+      /*disabledText*/ GetSysColor(COLOR_GRAYTEXT),
+  };
+}
+
 // Undocumented but stable since Windows 10 1809: uxtheme.dll
 // ordinal 135 = SetPreferredAppMode. Telling Windows "AllowDark"
 // here lets the dark-themed classes (DarkMode_CFD for combobox,
@@ -176,9 +220,10 @@ bool PaneToolbarRow::registerClassOnce(HINSTANCE instance) {
   wc.lpfnWndProc = &PaneToolbarRow::wndProc;
   wc.hInstance = instance;
   wc.hCursor = LoadCursorW(nullptr, IDC_ARROW);
-  // No background brush — child controls cover the row entirely once
-  // they are positioned, so a paint here would just flash on resize.
-  wc.hbrBackground = reinterpret_cast<HBRUSH>(COLOR_BTNFACE + 1);
+  // hbrBackground stays null so WM_ERASEBKGND can paint with the
+  // theme-aware colour (light vs dark) instead of the class-fixed
+  // COLOR_BTNFACE — class brushes can't be swapped at runtime.
+  wc.hbrBackground = nullptr;
   wc.lpszClassName = kClassName;
   registered = RegisterClassExW(&wc) != 0;
   return registered;
@@ -354,13 +399,13 @@ void PaneToolbarRow::setAddressBar(HWND addressBar) {
   addressBar_ = addressBar;
   if (addressBar != nullptr && hwnd_ != nullptr) {
     SetParent(addressBar, hwnd_);
-    // Dark mode opt-in. "DarkMode_CFD" is the undocumented but
-    // stable theme class Microsoft's own controls use for the
-    // dark-themed combobox frame on Win10 1809+ / Win11. The inner
-    // edit needs the same treatment because it's a separate HWND.
-    // No effect when the system theme is light — Windows transparently
-    // falls back to the standard "ComboBox" / "Edit" classes.
-    SetWindowTheme(addressBar, L"DarkMode_CFD", L"COMBOBOX");
+    // Note: DarkMode_CFD on ComboBoxEx + inner edit rendered the
+    // textbox with broken text clipping and a hairline white edge
+    // at the top — the private dark theme classes don't fully
+    // support ComboBoxEx. Letting the combo keep its default
+    // (light) theme is uglier in dark mode but actually readable.
+    // The row chrome around it picks up the dark backdrop so the
+    // address bar at least sits on a dark surround.
     if (rowFont_ != nullptr) {
       // Apply to the ComboBoxEx itself (propagates to dropdown list)
       // and to the inner edit subcontrol (which is what actually
@@ -372,7 +417,6 @@ void PaneToolbarRow::setAddressBar(HWND addressBar) {
       HWND edit = reinterpret_cast<HWND>(
           SendMessageW(addressBar, CBEM_GETEDITCONTROL, 0, 0));
       if (edit != nullptr) {
-        SetWindowTheme(edit, L"DarkMode_CFD", L"COMBOBOX");
         SendMessageW(edit, WM_SETFONT,
                      reinterpret_cast<WPARAM>(rowFont_), TRUE);
       }
@@ -400,9 +444,10 @@ LRESULT PaneToolbarRow::handleNavToolbarCustomDraw(LPARAM lParam) {
       HDC hdc = cd->nmcd.hdc;
       HGDIOBJ oldFont = SelectObject(hdc, mdl2Font_);
       const int oldBkMode = SetBkMode(hdc, TRANSPARENT);
+      const RowTheme theme = currentRowTheme();
       const COLORREF color = (cd->nmcd.uItemState & CDIS_DISABLED)
-                                 ? GetSysColor(COLOR_GRAYTEXT)
-                                 : GetSysColor(COLOR_BTNTEXT);
+                                 ? theme.disabledText
+                                 : theme.text;
       const COLORREF oldColor = SetTextColor(hdc, color);
       DrawTextW(hdc, glyph, -1, &cd->nmcd.rc,
                 DT_CENTER | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX);
@@ -421,23 +466,24 @@ void PaneToolbarRow::drawHamburgerItem(LPARAM lParam) {
   const wchar_t* glyph = glyphForButtonId(kTbHamburger);
   if (glyph == nullptr) return;
   HDC hdc = dis->hDC;
-  // Background: respect themed button face + hover/pressed state via
-  // FillRect with the standard BTNFACE brush, then UI cues:
-  //   pressed → mild push tint via FrameRect
-  //   hover   → already implied by the focus brush below
-  FillRect(hdc, &dis->rcItem,
-           reinterpret_cast<HBRUSH>(COLOR_BTNFACE + 1));
+  const RowTheme theme = currentRowTheme();
+  // Background: theme-aware fill. Skips the system-colour brush so
+  // dark mode actually picks up the dark tone (system COLOR_BTNFACE
+  // is light-grey in both themes — it doesn't track Personalize).
+  HBRUSH bgBrush = CreateSolidBrush(theme.background);
+  FillRect(hdc, &dis->rcItem, bgBrush);
+  DeleteObject(bgBrush);
   if (dis->itemState & ODS_SELECTED) {
-    // Subtle inset so a press is visible without a full themed redraw.
-    HBRUSH frame = reinterpret_cast<HBRUSH>(COLOR_BTNSHADOW + 1);
+    HBRUSH frame = CreateSolidBrush(theme.disabledText);
     FrameRect(hdc, &dis->rcItem, frame);
+    DeleteObject(frame);
   }
   if (mdl2Font_ != nullptr) {
     HGDIOBJ oldFont = SelectObject(hdc, mdl2Font_);
     const int oldBkMode = SetBkMode(hdc, TRANSPARENT);
     const COLORREF color = (dis->itemState & ODS_DISABLED)
-                               ? GetSysColor(COLOR_GRAYTEXT)
-                               : GetSysColor(COLOR_BTNTEXT);
+                               ? theme.disabledText
+                               : theme.text;
     const COLORREF oldColor = SetTextColor(hdc, color);
     DrawTextW(hdc, glyph, -1, &dis->rcItem,
               DT_CENTER | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX);
@@ -657,6 +703,24 @@ LRESULT PaneToolbarRow::handleMessage(HWND hwnd, UINT msg, WPARAM wParam,
     case WM_SIZE:
       layout();
       return 0;
+    case WM_ERASEBKGND: {
+      HDC hdc = reinterpret_cast<HDC>(wParam);
+      RECT rc{};
+      GetClientRect(hwnd, &rc);
+      const RowTheme theme = currentRowTheme();
+      HBRUSH br = CreateSolidBrush(theme.background);
+      FillRect(hdc, &rc, br);
+      DeleteObject(br);
+      return 1;
+    }
+    // System theme flipped (light ↔ dark): redraw with the new
+    // RowTheme. MainWindow already calls applySystemTheme on
+    // WM_SETTINGCHANGE("ImmersiveColorSet") for the title bar; the
+    // notification also broadcasts to children, so the row sees it.
+    case WM_THEMECHANGED:
+    case WM_SYSCOLORCHANGE:
+      InvalidateRect(hwnd, nullptr, TRUE);
+      break;
     // WM_NOTIFY from our own nav toolbar: intercept NM_CUSTOMDRAW so
     // we can paint the icon-font glyph ourselves (visual). Everything
     // else (TBN_GETINFOTIP, etc.) is forwarded to MainWindow.
