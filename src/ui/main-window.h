@@ -114,6 +114,11 @@ class MainWindow {
 
   LRESULT onCreate(HWND hwnd);
   LRESULT onDpiChanged(HWND hwnd, WPARAM wParam, LPARAM lParam);
+  // A8: query current system dark-mode setting + apply
+  // DWMWA_USE_IMMERSIVE_DARK_MODE / DWMWA_SYSTEMBACKDROP_TYPE so
+  // the title bar and Mica backdrop track Windows theme. Called
+  // on create and on WM_SETTINGCHANGE("ImmersiveColorSet").
+  void applySystemTheme();
   LRESULT onSize(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam);
   LRESULT onCommand(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam);
   LRESULT onTimer(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam);

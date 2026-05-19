@@ -1,8 +1,12 @@
 #include "ui/main-window.h"
 
 #include <commctrl.h>
+#include <dwmapi.h>
 #include <shellapi.h>
 #include <uxtheme.h>
+
+// dwmapi.lib linkage handled via CMakeLists.txt entry.
+#pragma comment(lib, "dwmapi.lib")
 
 #include <algorithm>
 #include <cstring>
@@ -923,6 +927,18 @@ LRESULT MainWindow::handleMessage(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPa
     case WM_DPICHANGED:       return onDpiChanged(hwnd, wParam, lParam);
     case WM_SIZE:             return onSize(hwnd, msg, wParam, lParam);
     case WM_COMMAND:          return onCommand(hwnd, msg, wParam, lParam);
+    case WM_SETTINGCHANGE: {
+      // Re-apply title-bar dark mode + Mica when the user toggles
+      // the system theme. Broadcast carries the setting name in
+      // lParam; only the "ImmersiveColorSet" notification matters
+      // for app-theme changes.
+      if (lParam != 0 &&
+          lstrcmpiW(reinterpret_cast<const wchar_t*>(lParam),
+                    L"ImmersiveColorSet") == 0) {
+        applySystemTheme();
+      }
+      return 0;
+    }
     case kWmFeAddressCommit:
       handleAddressCommit(static_cast<std::size_t>(wParam));
       return 0;
@@ -1118,7 +1134,45 @@ LRESULT MainWindow::onCreate(HWND hwnd) {
   memory_.setLowMemoryCallback([hwnd]() {
     PostMessageW(hwnd, kWmFeLowMemory, 0, 0);
   });
+  // A8: apply dark-mode title bar + Mica backdrop based on the
+  // current Windows theme. Re-applied later if the user toggles
+  // Settings → Personalization → Colors via WM_SETTINGCHANGE.
+  applySystemTheme();
   return 0;
+}
+
+namespace {
+bool systemPrefersDarkMode() noexcept {
+  HKEY key = nullptr;
+  if (RegOpenKeyExW(HKEY_CURRENT_USER,
+                    L"Software\\Microsoft\\Windows\\CurrentVersion"
+                    L"\\Themes\\Personalize",
+                    0, KEY_READ, &key) != ERROR_SUCCESS) {
+    return false;
+  }
+  DWORD value = 1;  // AppsUseLightTheme: 1 = light (default), 0 = dark
+  DWORD size = sizeof(value);
+  LONG r = RegQueryValueExW(key, L"AppsUseLightTheme", nullptr, nullptr,
+                            reinterpret_cast<BYTE*>(&value), &size);
+  RegCloseKey(key);
+  return r == ERROR_SUCCESS && value == 0;
+}
+}  // namespace
+
+void MainWindow::applySystemTheme() {
+  if (hwnd_ == nullptr) return;
+  // DWMWA_USE_IMMERSIVE_DARK_MODE = 20 on Win10 build 18985+ /
+  // Win11. On earlier Win10 builds the same effect was on attribute
+  // 19; trying both lets the app dark-tone the title bar across
+  // supported targets without a runtime version check.
+  const BOOL dark = systemPrefersDarkMode() ? TRUE : FALSE;
+  DwmSetWindowAttribute(hwnd_, 20, &dark, sizeof(dark));
+  DwmSetWindowAttribute(hwnd_, 19, &dark, sizeof(dark));
+  // DWMWA_SYSTEMBACKDROP_TYPE = 38, DWMSBT_MAINWINDOW = 2 (Mica).
+  // Win11 22H2+; silently no-ops on older builds, so safe to call
+  // unconditionally.
+  const int backdrop = 2;
+  DwmSetWindowAttribute(hwnd_, 38, &backdrop, sizeof(backdrop));
 }
 
 LRESULT MainWindow::onDpiChanged(HWND hwnd, WPARAM wParam, LPARAM lParam) {
