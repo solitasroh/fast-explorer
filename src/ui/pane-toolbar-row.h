@@ -82,9 +82,14 @@ class PaneToolbarRow {
   HWND addressBar_ = nullptr;
   HWND navToolbar_ = nullptr;
   HWND hamburger_ = nullptr;
-  // Segoe MDL2 Assets font (Windows 10+). Owned by the row so it
-  // outlives WM_SETFONT use; destroyed in ~PaneToolbarRow.
+  // mdl2Font_ holds the Lucide icon font (name is historical from
+  // the earlier MDL2 iteration; kept to avoid noise in this commit).
+  // rowFont_ is the system text font applied to the address-bar
+  // ComboBoxEx so its visible textbox is a comfortable size — the
+  // layout() measurement then uses that textbox height as the
+  // common innerH for the rest of the row.
   HFONT mdl2Font_ = nullptr;
+  HFONT rowFont_ = nullptr;
   std::size_t paneIdx_ = 0;
 };
 

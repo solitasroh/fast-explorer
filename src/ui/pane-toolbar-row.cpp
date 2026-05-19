@@ -70,6 +70,23 @@ HFONT createLucideFont(UINT dpi) noexcept {
   }
   return CreateFontIndirectW(&lf);
 }
+// System text font applied to the address bar so its visible
+// textbox is bigger than the OS default 9pt. 11pt strikes a
+// balance — readable, matches the bumped row height, and keeps
+// the address still under the row's vertical budget.
+HFONT createRowFont(UINT dpi) noexcept {
+  LOGFONTW lf{};
+  lf.lfHeight = -MulDiv(11, static_cast<int>(dpi), 96);
+  lf.lfWeight = FW_NORMAL;
+  lf.lfCharSet = DEFAULT_CHARSET;
+  lf.lfQuality = CLEARTYPE_QUALITY;
+  const wchar_t kFace[] = L"Segoe UI";
+  for (size_t i = 0; i < std::size(kFace); ++i) {
+    lf.lfFaceName[i] = kFace[i];
+  }
+  return CreateFontIndirectW(&lf);
+}
+
 }  // namespace
 
 PaneToolbarRow::~PaneToolbarRow() { destroy(); }
@@ -102,6 +119,7 @@ bool PaneToolbarRow::create(HWND parent, HINSTANCE instance,
       0, 0, 0, 0, parent, nullptr, instance, this);
   if (hwnd_ == nullptr) return false;
   mdl2Font_ = createLucideFont(GetDpiForWindow(hwnd_));
+  rowFont_ = createRowFont(GetDpiForWindow(hwnd_));
   if (!createNavToolbar(instance)) {
     // Toolbar creation is non-fatal; the address bar can still own
     // the full row. Leaves navToolbar_ as nullptr so layout() skips it.
@@ -221,11 +239,15 @@ void PaneToolbarRow::destroy() {
     DestroyWindow(hwnd_);
     hwnd_ = nullptr;
   }
-  // Destroy the MDL2 font after the children so any WM_SETFONT
+  // Destroy the fonts after the children so any WM_SETFONT
   // handle reference is released first via the cascade above.
   if (mdl2Font_ != nullptr) {
     DeleteObject(mdl2Font_);
     mdl2Font_ = nullptr;
+  }
+  if (rowFont_ != nullptr) {
+    DeleteObject(rowFont_);
+    rowFont_ = nullptr;
   }
   addressBar_ = nullptr;
 }
@@ -234,6 +256,21 @@ void PaneToolbarRow::setAddressBar(HWND addressBar) {
   addressBar_ = addressBar;
   if (addressBar != nullptr && hwnd_ != nullptr) {
     SetParent(addressBar, hwnd_);
+    if (rowFont_ != nullptr) {
+      // Apply to the ComboBoxEx itself (propagates to dropdown list)
+      // and to the inner edit subcontrol (which is what actually
+      // owns the visible textbox font). Without the explicit
+      // CBEM_GETEDITCONTROL hop the edit keeps using the 9pt
+      // default from window-class registration.
+      SendMessageW(addressBar, WM_SETFONT,
+                   reinterpret_cast<WPARAM>(rowFont_), TRUE);
+      HWND edit = reinterpret_cast<HWND>(
+          SendMessageW(addressBar, CBEM_GETEDITCONTROL, 0, 0));
+      if (edit != nullptr) {
+        SendMessageW(edit, WM_SETFONT,
+                     reinterpret_cast<WPARAM>(rowFont_), TRUE);
+      }
+    }
   }
   layout();
 }
