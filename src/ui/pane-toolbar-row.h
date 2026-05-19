@@ -20,10 +20,14 @@
 namespace fast_explorer::ui {
 
 // Bits used to pack (buttonId, paneIdx) into a single WORD for
-// WM_COMMAND routing. paneIdx fits in the low byte (kPaneIdxMask),
-// the original command ID lives above (>> kPaneIdxBits).
-inline constexpr WORD kPaneIdxBits = 8;
-inline constexpr WORD kPaneIdxMask = 0x00FF;
+// WM_COMMAND routing. WM_COMMAND only carries 16 bits of identifier
+// (LOWORD of wParam), so the split is 12 bits for the original ID
+// and 4 bits for the pane index — up to 16 panes (well past the
+// current cap of 2) and IDs from 0..4095 fit cleanly. The previous
+// 8/8 split silently truncated any ID >= 256, which broke every
+// hamburger-menu item (kMenu* IDs are in the 300 range).
+inline constexpr WORD kPaneIdxBits = 4;
+inline constexpr WORD kPaneIdxMask = 0x000F;
 
 constexpr WORD packCmd(WORD buttonId, std::size_t paneIdx) noexcept {
   return static_cast<WORD>((buttonId << kPaneIdxBits) |

@@ -102,10 +102,15 @@ bool PaneToolbarRow::createHamburger(HINSTANCE instance) {
 }
 
 bool PaneToolbarRow::createNavToolbar(HINSTANCE instance) {
+  // TBSTYLE_LIST puts text to the right of the image; with our
+  // text-only (image-less) buttons it collapses the layout to a
+  // left-anchored text and looks visibly off-center. Dropping it
+  // lets the toolbar fall back to the default "text centered in
+  // button" layout.
   navToolbar_ = CreateWindowExW(
       0, TOOLBARCLASSNAMEW, L"",
       WS_CHILD | WS_VISIBLE | TBSTYLE_FLAT | TBSTYLE_TRANSPARENT |
-          TBSTYLE_TOOLTIPS | TBSTYLE_LIST | CCS_NORESIZE | CCS_NODIVIDER |
+          TBSTYLE_TOOLTIPS | CCS_NORESIZE | CCS_NODIVIDER |
           CCS_NOPARENTALIGN,
       0, 0, 0, 0, hwnd_, nullptr, instance, nullptr);
   if (navToolbar_ == nullptr) return false;
