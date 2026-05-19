@@ -255,30 +255,57 @@ void PaneToolbarRow::layout() {
   const int h = rc.bottom - rc.top;
   if (w <= 0 || h <= 0) return;
   const UINT dpi = GetDpiForWindow(hwnd_);
-  // Every interactive child shares the same visual height and the
-  // same vertical center so the row reads as a single aligned
-  // strip — symmetric top/bottom padding falls out of (h - innerH)/2.
-  const int innerH = scaleDip(kRowInnerDipH, dpi);
+
+  // The address bar's visible textbox is the visual anchor — its
+  // height is derived from the system font, not from anything we
+  // pass to SetWindowPos. Query the inner edit's client rect and
+  // use that as the "common inner height" all other controls match.
+  // Falls back to kRowInnerDipH when the combo isn't ready yet
+  // (first layout before WM_SHOWWINDOW).
+  int innerH = scaleDip(kRowInnerDipH, dpi);
+  if (addressBar_ != nullptr) {
+    HWND comboEdit = reinterpret_cast<HWND>(
+        SendMessageW(addressBar_, CBEM_GETEDITCONTROL, 0, 0));
+    if (comboEdit != nullptr) {
+      RECT editRc{};
+      GetClientRect(comboEdit, &editRc);
+      const int editH = editRc.bottom - editRc.top;
+      // Combobox draws a ~2-px themed border above and below the
+      // edit; add it back so the combobox's visual outer height
+      // matches the toolbar / hamburger button height.
+      if (editH > 0) innerH = editH + scaleDip(4, dpi);
+    }
+  }
+
   const int yOff = (h - innerH) / 2;
+  const int hPad = scaleDip(4, dpi);   // left / right outer margin
+  const int gap  = scaleDip(8, dpi);   // between groups
+
   const int navW = navToolbar_ != nullptr ? scaleDip(kNavBarDipW, dpi) : 0;
   const int hambW = hamburger_ != nullptr ? scaleDip(kHamburgerDipW, dpi) : 0;
+
+  int x = hPad;
   if (navToolbar_ != nullptr) {
-    SetWindowPos(navToolbar_, nullptr, 0, yOff, navW, innerH,
+    // Re-pin the toolbar's button height to the freshly-measured
+    // innerH so the icons sit at the same vertical center as the
+    // address-bar textbox. Width is kept at kNavButtonDipW for
+    // glyph horizontal headroom.
+    const int btnW = scaleDip(kNavButtonDipW, dpi);
+    SendMessageW(navToolbar_, TB_SETBUTTONSIZE, 0,
+                 MAKELONG(btnW, innerH));
+    SetWindowPos(navToolbar_, nullptr, x, yOff, navW, innerH,
                  SWP_NOZORDER | SWP_NOACTIVATE);
+    x += navW + gap;
   }
-  const int addrLeft = navW;
-  const int addrW = w - addrLeft - hambW;
+
+  const int hambX = w - hPad - hambW;
+  const int addrW = hambX - gap - x;
   if (addressBar_ != nullptr && addrW > 0) {
-    // ComboBoxEx renders its visible textbox at the top of the
-    // window with height derived from the font; passing innerH for
-    // height keeps the textbox aligned with the toolbar and
-    // hamburger. The native dropdown is suppressed by
-    // AddressBarPopup so the dropdown-list reserve space is unused.
-    SetWindowPos(addressBar_, nullptr, addrLeft, yOff, addrW, innerH,
+    SetWindowPos(addressBar_, nullptr, x, yOff, addrW, innerH,
                  SWP_NOZORDER | SWP_NOACTIVATE);
   }
   if (hamburger_ != nullptr) {
-    SetWindowPos(hamburger_, nullptr, w - hambW, yOff, hambW, innerH,
+    SetWindowPos(hamburger_, nullptr, hambX, yOff, hambW, innerH,
                  SWP_NOZORDER | SWP_NOACTIVATE);
   }
 }
