@@ -1913,11 +1913,30 @@ LRESULT MainWindow::onCommand(HWND hwnd, UINT msg, WPARAM wParam,
         showToolMenuForPane(activeIdx);
         return 0;
       case kAccelLayoutSingle:
-        enterSingleMode();
+        enterLayout(fast_explorer::core::LayoutPreset::Single);
         return 0;
-      case kAccelLayoutDual:
-        enterDualMode();
+      case kAccelLayoutDual: {
+        using fast_explorer::core::LayoutPreset;
+        if (preset_ == LayoutPreset::Dual_V ||
+            preset_ == LayoutPreset::Dual_H) {
+          // Same-key toggle: dual + matching seam => exit to single.
+          // Alt+V / Alt+H handles the in-place seam flip.
+          enterLayout(LayoutPreset::Single);
+        } else {
+          enterLayout(lastDualPreset_);
+        }
         return 0;
+      }
+      case kAccelLayoutTri: {
+        using fast_explorer::core::nextPresetInCycle;
+        enterLayout(nextPresetInCycle(preset_, 3));
+        return 0;
+      }
+      case kAccelLayoutQuad: {
+        using fast_explorer::core::nextPresetInCycle;
+        enterLayout(nextPresetInCycle(preset_, 4));
+        return 0;
+      }
       case kAccelFilter:
         if (searchPopup_ && paneManager_) {
           searchPopup_->show(paneManager_->activeIndex());
@@ -1925,21 +1944,32 @@ LRESULT MainWindow::onCommand(HWND hwnd, UINT msg, WPARAM wParam,
         return 0;
       case kAccelLayoutVerticalToggle:
       case kAccelLayoutHorizontalToggle: {
+        using fast_explorer::core::LayoutPreset;
+        if (preset_ != LayoutPreset::Dual_V &&
+            preset_ != LayoutPreset::Dual_H) {
+          return 0;  // no-op outside dual
+        }
         const LayoutOrientation pressed =
             LOWORD(wParam) == kAccelLayoutHorizontalToggle
                 ? LayoutOrientation::Horizontal
                 : LayoutOrientation::Vertical;
-        const bool dual = paneManager_ && (paneManager_->count() > 1);
-        const auto t = resolveLayoutToggle(dual, orientation_, pressed);
+        const auto t = resolveLayoutToggle(true, orientation_, pressed);
         switch (t.action) {
           case LayoutAction::EnterDual:
-            enterDualMode({}, t.target);
+            // Already dual; resolveLayoutToggle should not return
+            // EnterDual when `dual=true`, but stay safe and re-enter
+            // the matching seam.
+            enterLayout(pressed == LayoutOrientation::Horizontal
+                            ? LayoutPreset::Dual_H
+                            : LayoutPreset::Dual_V);
             break;
           case LayoutAction::ExitToSingle:
-            enterSingleMode();
+            enterLayout(LayoutPreset::Single);
             break;
           case LayoutAction::SwitchOrientation:
-            setLayoutOrientation(t.target);
+            enterLayout(t.target == LayoutOrientation::Horizontal
+                            ? LayoutPreset::Dual_H
+                            : LayoutPreset::Dual_V);
             break;
           // No default: every enumerator is handled. A future addition
           // to LayoutAction should surface here as a compiler warning
