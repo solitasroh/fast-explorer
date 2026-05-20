@@ -237,19 +237,19 @@ class MainWindow {
   // [1] is created on demand by enterDualMode() and destroyed by
   // enterSingleMode().
   HWND listView_ = nullptr;
-  std::array<HWND, 2> listViews_{nullptr, nullptr};
+  std::array<HWND, 4> listViews_{nullptr, nullptr, nullptr, nullptr};
   HWND statusBar_ = nullptr;
-  std::array<HWND, 2> addressBars_{nullptr, nullptr};
-  std::array<HWND, 2> addressDropdownBtns_{nullptr, nullptr};
+  std::array<HWND, 4> addressBars_{nullptr, nullptr, nullptr, nullptr};
+  std::array<HWND, 4> addressDropdownBtns_{nullptr, nullptr, nullptr, nullptr};
   // The toolbar row hosts the nav buttons + address bar + hamburger
   // for each pane; addressBars_[i] is created as a child of
   // paneToolbarRows_[i]->handle() so WM_SIZE on the row positions
   // everything together.
-  std::array<std::unique_ptr<PaneToolbarRow>, 2> paneToolbarRows_;
-  std::array<IDropTarget*, 2> dropTargets_{nullptr, nullptr};
+  std::array<std::unique_ptr<PaneToolbarRow>, 4> paneToolbarRows_;
+  std::array<IDropTarget*, 4> dropTargets_{nullptr, nullptr, nullptr, nullptr};
   CutStateTracker cutState_;
   std::unique_ptr<AddressBarPopup> addressBarPopup_;
-  std::array<bool, 2> firstBatchSeen_{false, false};
+  std::array<bool, 4> firstBatchSeen_{false, false, false, false};
   std::unique_ptr<PaneManager> paneManager_;
   // Cached pointer to the manager's currently active pane. Refreshed
   // by onCreate (and by the active-pane switch handler in a later M9
@@ -258,11 +258,11 @@ class MainWindow {
   PaneController* pane_ = nullptr;
   std::unique_ptr<class FormatCache> formatCache_;
   // Per-pane coordinators indexed by pane index. Slot 0 is populated
-  // by onCreate; slot 1 stays empty until the active-pane / dual-
-  // mode entry in a later M9 atom creates the second pane.
-  std::array<std::unique_ptr<class IconCacheCoordinator>, 2> iconCoords_;
-  std::array<std::unique_ptr<SelectionSync>, 2> selectionSyncs_;
-  std::array<std::unique_ptr<LabelEditController>, 2> labelEdits_;
+  // by onCreate; slots 1-3 stay empty until the active-pane / multi-
+  // pane entry in a later M9 atom creates additional panes.
+  std::array<std::unique_ptr<class IconCacheCoordinator>, 4> iconCoords_;
+  std::array<std::unique_ptr<SelectionSync>, 4> selectionSyncs_;
+  std::array<std::unique_ptr<LabelEditController>, 4> labelEdits_;
   std::unique_ptr<class DispInfoHistogram> dispInfoHist_;
   std::uint64_t qpcFrequencyHz_ = 0;
   std::unique_ptr<fast_explorer::core::SessionState> capturedState_;
