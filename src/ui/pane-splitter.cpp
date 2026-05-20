@@ -8,6 +8,32 @@ namespace fast_explorer::ui {
 
 namespace {
 
+// XOR-draw a 2-px ghost line on the parent's client DC. Drawing
+// twice at the same position erases (XOR is self-inverse). When
+// pos is negative the call is a no-op so we can pair WM_MOUSEMOVE's
+// erase+draw symmetrically even on the first frame.
+void drawGhost(HWND parent, SplitterOrientation orient, int pos) {
+  if (pos < 0) return;
+  HDC dc = GetDC(parent);
+  if (!dc) return;
+  const int prevRop = SetROP2(dc, R2_NOTXORPEN);
+  HPEN pen = CreatePen(PS_SOLID, 2, RGB(160, 160, 160));
+  HPEN oldPen = static_cast<HPEN>(SelectObject(dc, pen));
+  RECT prc;
+  GetClientRect(parent, &prc);
+  if (orient == SplitterOrientation::Vertical) {
+    MoveToEx(dc, pos, prc.top, nullptr);
+    LineTo(dc, pos, prc.bottom);
+  } else {
+    MoveToEx(dc, prc.left, pos, nullptr);
+    LineTo(dc, prc.right, pos);
+  }
+  SelectObject(dc, oldPen);
+  DeleteObject(pen);
+  SetROP2(dc, prevRop);
+  ReleaseDC(parent, dc);
+}
+
 LRESULT CALLBACK splitterWndProc(HWND hwnd, UINT msg, WPARAM w, LPARAM l) {
   auto* ctx = reinterpret_cast<SplitterContext*>(
       GetWindowLongPtrW(hwnd, GWLP_USERDATA));
@@ -49,6 +75,70 @@ LRESULT CALLBACK splitterWndProc(HWND hwnd, UINT msg, WPARAM w, LPARAM l) {
         FillRect(hdc, &line, brush);
       }
       EndPaint(hwnd, &ps);
+      return 0;
+    }
+    case WM_LBUTTONDOWN: {
+      if (!ctx || !ctx->ratios) return 0;
+      SetCapture(hwnd);
+      ctx->dragging = true;
+      POINT pt = {GET_X_LPARAM(l), GET_Y_LPARAM(l)};
+      ClientToScreen(hwnd, &pt);
+      ctx->dragStartScreen = pt;
+      ctx->ratioAtStart = ctx->ratios->ratios[ctx->ratioId];
+
+      HWND parent = GetParent(hwnd);
+      RECT prc;
+      GetClientRect(parent, &prc);
+      ctx->axisLengthAtStart =
+          (ctx->orient == SplitterOrientation::Vertical)
+              ? (prc.right - prc.left)
+              : (prc.bottom - prc.top);
+
+      POINT pcli = pt;
+      ScreenToClient(parent, &pcli);
+      ctx->lastGhostPos =
+          (ctx->orient == SplitterOrientation::Vertical) ? pcli.x : pcli.y;
+      drawGhost(parent, ctx->orient, ctx->lastGhostPos);
+      return 0;
+    }
+    case WM_MOUSEMOVE: {
+      if (!ctx || !ctx->dragging) return 0;
+      POINT pt = {GET_X_LPARAM(l), GET_Y_LPARAM(l)};
+      ClientToScreen(hwnd, &pt);
+      HWND parent = GetParent(hwnd);
+      POINT pcli = pt;
+      ScreenToClient(parent, &pcli);
+      const int newPos =
+          (ctx->orient == SplitterOrientation::Vertical) ? pcli.x : pcli.y;
+
+      drawGhost(parent, ctx->orient, ctx->lastGhostPos);
+      drawGhost(parent, ctx->orient, newPos);
+      ctx->lastGhostPos = newPos;
+      return 0;
+    }
+    case WM_LBUTTONUP: {
+      if (!ctx || !ctx->dragging) return 0;
+      HWND parent = GetParent(hwnd);
+      drawGhost(parent, ctx->orient, ctx->lastGhostPos);
+      ReleaseCapture();
+      ctx->dragging = false;
+
+      const float newRatio =
+          static_cast<float>(ctx->lastGhostPos) /
+          static_cast<float>(std::max(1, ctx->axisLengthAtStart));
+      const float clamped =
+          newRatio < 0.1f ? 0.1f : (newRatio > 0.9f ? 0.9f : newRatio);
+      ctx->ratios->ratios[ctx->ratioId] = clamped;
+      if (ctx->onCommit) ctx->onCommit();
+      ctx->lastGhostPos = -1;
+      return 0;
+    }
+    case WM_CAPTURECHANGED: {
+      if (ctx && ctx->dragging) {
+        drawGhost(GetParent(hwnd), ctx->orient, ctx->lastGhostPos);
+        ctx->dragging = false;
+        ctx->lastGhostPos = -1;
+      }
       return 0;
     }
   }
