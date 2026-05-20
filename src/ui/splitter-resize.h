@@ -36,7 +36,7 @@ namespace fast_explorer::ui {
     int axisLength,
     float prevRatio,
     float nextRatio,
-    float minGap = 0.001f) noexcept {
+    float minGap = 0.05f) noexcept {
   const float raw = computeNewRatio(startRatio, startMouseAlongAxis,
                                      currentMouseAlongAxis, axisLength,
                                      0.0f, 1.0f);
