@@ -36,6 +36,12 @@ class FormatCache {
 
   std::size_t capacity() const noexcept { return sizeLru_.capacity; }
 
+  // Test-only observers — production code shouldn't depend on these,
+  // but the LRU eviction test needs a deterministic way to verify
+  // that the cache honours its capacity bound (pointer-address
+  // comparison was allocator-dependent and flaked on CI).
+  std::size_t sizeCacheCount() const noexcept { return sizeLru_.size(); }
+
  private:
   template <typename Key>
   struct Lru {

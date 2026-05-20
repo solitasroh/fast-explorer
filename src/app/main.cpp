@@ -82,6 +82,13 @@ class WinSparkleScope {
     // sees it from its first iteration.
     win_sparkle_set_shutdown_request_callback(&winSparkleShutdownRequest);
     win_sparkle_init();
+    // Force a silent check on every launch. The automatic-check path
+    // respects WinSparkle's 24h LastCheckTime debounce — fine for a
+    // background heartbeat, but users expect to see a fresh release
+    // dialog the next time they start the app, not 24h later. The
+    // without_ui variant is silent on "no update", popping only when
+    // a newer version is actually available.
+    win_sparkle_check_update_without_ui();
   }
   ~WinSparkleScope() {
     g_mainWindowHwnd.store(nullptr, std::memory_order_release);
