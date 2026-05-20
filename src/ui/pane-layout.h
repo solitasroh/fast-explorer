@@ -7,6 +7,8 @@
 #include <cstdint>
 
 #include "core/layout-orientation.h"
+#include "core/layout-preset.h"
+#include "ui/splitter-ratios.h"
 
 namespace fast_explorer::ui {
 
@@ -57,6 +59,22 @@ struct PaneLayoutRects {
   std::array<RECT, 2> panes{};
 };
 
+enum class SplitterOrientation : std::uint8_t { Vertical = 0, Horizontal = 1 };
+
+struct SplitterRect {
+  RECT hitRect{};
+  RECT visualRect{};
+  SplitterOrientation orient{SplitterOrientation::Vertical};
+  std::uint8_t ratioId{0};
+};
+
+struct PaneLayoutResult {
+  std::array<RECT, 4> slots{};
+  std::array<SplitterRect, 3> splitters{};
+  std::size_t slotCount{0};
+  std::size_t splitterCount{0};
+};
+
 // Computes pane rects for `paneCount` (1 or 2) inside a client area
 // of (clientWidth, clientHeight), with `addressBarHeight` reserved
 // at the top and `statusBarHeight` at the bottom. For paneCount==2
@@ -75,5 +93,18 @@ struct PaneLayoutRects {
     int statusBarHeight,
     std::size_t paneCount,
     LayoutOrientation orientation = LayoutOrientation::Vertical) noexcept;
+
+// Computes a full layout result (pane slots + splitter descriptors) for
+// the given preset and splitter ratios. reservedTop/reservedBottom are
+// pixel heights excluded from the pane area (address bar / status bar).
+// Tri_* and Quad_* cases are unimplemented and return an empty result
+// until the corresponding later tasks fill them in.
+[[nodiscard]] PaneLayoutResult computePaneLayout(
+    fast_explorer::core::LayoutPreset preset,
+    const SplitterRatios& ratios,
+    int clientWidth,
+    int clientHeight,
+    int reservedTop,
+    int reservedBottom) noexcept;
 
 }  // namespace fast_explorer::ui

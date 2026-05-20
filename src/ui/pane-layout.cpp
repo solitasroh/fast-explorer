@@ -2,6 +2,37 @@
 
 #include <algorithm>
 
+#include "ui/splitter-ratios.h"
+
+namespace {
+
+constexpr int kSplitterThicknessDip = 1;
+constexpr int kSplitterGrabHalfDip  = 2;
+
+fast_explorer::ui::SplitterRect makeVerticalSplitter(int x, int top, int bottom,
+                                                     std::uint8_t ratioId) noexcept {
+  fast_explorer::ui::SplitterRect s;
+  s.orient = fast_explorer::ui::SplitterOrientation::Vertical;
+  s.ratioId = ratioId;
+  s.hitRect = {x - kSplitterGrabHalfDip, top,
+               x + kSplitterGrabHalfDip + kSplitterThicknessDip, bottom};
+  s.visualRect = {x, top, x + kSplitterThicknessDip, bottom};
+  return s;
+}
+
+fast_explorer::ui::SplitterRect makeHorizontalSplitter(int y, int left, int right,
+                                                       std::uint8_t ratioId) noexcept {
+  fast_explorer::ui::SplitterRect s;
+  s.orient = fast_explorer::ui::SplitterOrientation::Horizontal;
+  s.ratioId = ratioId;
+  s.hitRect = {left, y - kSplitterGrabHalfDip,
+               right, y + kSplitterGrabHalfDip + kSplitterThicknessDip};
+  s.visualRect = {left, y, right, y + kSplitterThicknessDip};
+  return s;
+}
+
+}  // namespace
+
 namespace fast_explorer::ui {
 
 PaneLayoutRects computePaneRects(int clientWidth,
@@ -34,6 +65,53 @@ PaneLayoutRects computePaneRects(int clientWidth,
   out.panes[0] = {0,    topY, midX,        bottomY};
   out.panes[1] = {midX, topY, clientWidth, bottomY};
   return out;
+}
+
+PaneLayoutResult computePaneLayout(fast_explorer::core::LayoutPreset preset,
+                                   const SplitterRatios& ratios,
+                                   int clientWidth,
+                                   int clientHeight,
+                                   int reservedTop,
+                                   int reservedBottom) noexcept {
+  using P = fast_explorer::core::LayoutPreset;
+  PaneLayoutResult out{};
+
+  const int top = reservedTop;
+  const int bot = clientHeight - reservedBottom;
+  if (clientWidth <= 0 || bot <= top) return out;
+  const int W = clientWidth;
+  const int totalH = bot - top;
+  (void)totalH;
+
+  switch (preset) {
+    case P::Single: {
+      out.slots[0] = {0, top, W, bot};
+      out.slotCount = 1;
+      return out;
+    }
+    case P::Dual_V: {
+      const int x = static_cast<int>(static_cast<float>(W) * ratios.ratios[0]);
+      out.slots[0] = {0, top, x, bot};
+      out.slots[1] = {x, top, W, bot};
+      out.splitters[0] = makeVerticalSplitter(x, top, bot, 0);
+      out.slotCount = 2;
+      out.splitterCount = 1;
+      return out;
+    }
+    case P::Dual_H: {
+      const int y = top + static_cast<int>(static_cast<float>(totalH) *
+                                            ratios.ratios[0]);
+      out.slots[0] = {0, top, W, y};
+      out.slots[1] = {0, y,   W, bot};
+      out.splitters[0] = makeHorizontalSplitter(y, 0, W, 0);
+      out.slotCount = 2;
+      out.splitterCount = 1;
+      return out;
+    }
+    default:
+      // Tri_* / Quad_* implemented in later tasks.
+      return out;
+  }
 }
 
 }  // namespace fast_explorer::ui

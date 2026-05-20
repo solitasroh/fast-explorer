@@ -2,12 +2,19 @@
 
 #include "test-harness.h"
 #include "ui/pane-layout.h"
+#include "ui/splitter-ratios.h"
 
 using fast_explorer::ui::computePaneRects;
 using fast_explorer::ui::LayoutAction;
 using fast_explorer::ui::LayoutOrientation;
 using fast_explorer::ui::PaneLayoutRects;
 using fast_explorer::ui::resolveLayoutToggle;
+
+using fast_explorer::core::LayoutPreset;
+using fast_explorer::ui::computePaneLayout;
+using fast_explorer::ui::defaultRatiosFor;
+using fast_explorer::ui::PaneLayoutResult;
+using fast_explorer::ui::SplitterOrientation;
 
 namespace {
 
@@ -189,4 +196,36 @@ FE_TEST_CASE(LayoutToggle_DualHorizontalSameSeam_ExitsToSingle) {
   const auto t = resolveLayoutToggle(true, LayoutOrientation::Horizontal,
                                      LayoutOrientation::Horizontal);
   FE_ASSERT_TRUE(t.action == LayoutAction::ExitToSingle);
+}
+
+FE_TEST_CASE(ComputePaneLayout_Single_FullArea) {
+  const auto out = computePaneLayout(LayoutPreset::Single,
+                                     defaultRatiosFor(LayoutPreset::Single),
+                                     1280, 800, /*top*/ 0, /*bottom*/ 22);
+  FE_ASSERT_EQ(out.slotCount, std::size_t{1});
+  FE_ASSERT_EQ(out.splitterCount, std::size_t{0});
+  FE_ASSERT_TRUE(rectEquals(out.slots[0], 0, 0, 1280, 778));
+}
+
+FE_TEST_CASE(ComputePaneLayout_DualV_HalfSplit_OneVerticalSplitter) {
+  const auto out = computePaneLayout(LayoutPreset::Dual_V,
+                                     defaultRatiosFor(LayoutPreset::Dual_V),
+                                     1280, 800, 0, 22);
+  FE_ASSERT_EQ(out.slotCount, std::size_t{2});
+  FE_ASSERT_EQ(out.splitterCount, std::size_t{1});
+  FE_ASSERT_TRUE(rectEquals(out.slots[0], 0,   0, 640, 778));
+  FE_ASSERT_TRUE(rectEquals(out.slots[1], 640, 0, 1280, 778));
+  FE_ASSERT_EQ(out.splitters[0].orient, SplitterOrientation::Vertical);
+  FE_ASSERT_EQ(out.splitters[0].ratioId, std::uint8_t{0});
+}
+
+FE_TEST_CASE(ComputePaneLayout_DualH_HalfSplit_OneHorizontalSplitter) {
+  const auto out = computePaneLayout(LayoutPreset::Dual_H,
+                                     defaultRatiosFor(LayoutPreset::Dual_H),
+                                     1280, 800, 0, 22);
+  FE_ASSERT_EQ(out.slotCount, std::size_t{2});
+  FE_ASSERT_EQ(out.splitterCount, std::size_t{1});
+  FE_ASSERT_TRUE(rectEquals(out.slots[0], 0, 0,   1280, 389));
+  FE_ASSERT_TRUE(rectEquals(out.slots[1], 0, 389, 1280, 778));
+  FE_ASSERT_EQ(out.splitters[0].orient, SplitterOrientation::Horizontal);
 }
