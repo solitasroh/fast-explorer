@@ -96,6 +96,57 @@ FE_TEST_CASE(PaneManager_SetActive_DualMode_SwitchesBetweenPanes) {
   FE_ASSERT_EQ(pm.activeIndex(), static_cast<std::size_t>(0));
 }
 
+FE_TEST_CASE(PaneManager_OpenPane_AppendsUpToFour) {
+  PaneManager mgr;
+  mgr.openInitial(nullptr);
+  FE_ASSERT_EQ(mgr.count(), std::size_t{1});
+
+  FE_ASSERT_EQ(mgr.openPane(nullptr, L""), std::size_t{1});
+  FE_ASSERT_EQ(mgr.count(), std::size_t{2});
+
+  FE_ASSERT_EQ(mgr.openPane(nullptr, L""), std::size_t{2});
+  FE_ASSERT_EQ(mgr.count(), std::size_t{3});
+
+  FE_ASSERT_EQ(mgr.openPane(nullptr, L""), std::size_t{3});
+  FE_ASSERT_EQ(mgr.count(), std::size_t{4});
+
+  // 5th openPane is a no-op + returns count().
+  FE_ASSERT_EQ(mgr.openPane(nullptr, L""), std::size_t{4});
+  FE_ASSERT_EQ(mgr.count(), std::size_t{4});
+}
+
+FE_TEST_CASE(PaneManager_ClosePane_PopsLast_NeverDropsBelowOne) {
+  PaneManager mgr;
+  mgr.openInitial(nullptr);
+  mgr.openPane(nullptr, L"");
+  mgr.openPane(nullptr, L"");
+  FE_ASSERT_EQ(mgr.count(), std::size_t{3});
+
+  mgr.closePane();
+  FE_ASSERT_EQ(mgr.count(), std::size_t{2});
+
+  mgr.closePane();
+  FE_ASSERT_EQ(mgr.count(), std::size_t{1});
+
+  mgr.closePane();  // no-op
+  FE_ASSERT_EQ(mgr.count(), std::size_t{1});
+}
+
+FE_TEST_CASE(PaneManager_ClosePane_ClampsActiveIndex) {
+  PaneManager mgr;
+  mgr.openInitial(nullptr);
+  mgr.openPane(nullptr, L"");
+  mgr.openPane(nullptr, L"");
+  mgr.openPane(nullptr, L"");
+  FE_ASSERT_TRUE(mgr.setActive(3));
+  FE_ASSERT_EQ(mgr.activeIndex(), std::size_t{3});
+
+  mgr.closePane();
+  FE_ASSERT_EQ(mgr.activeIndex(), std::size_t{2});
+  mgr.closePane();
+  FE_ASSERT_EQ(mgr.activeIndex(), std::size_t{1});
+}
+
 FE_TEST_CASE(ChooseSecondPaneInitialPath_RequestedNonEmpty_TakesPrecedence) {
   const std::wstring requested = L"D:\\saved";
   const std::wstring fallback  = L"C:\\active";
