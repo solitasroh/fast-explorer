@@ -244,3 +244,18 @@ FE_TEST_CASE(ComputePaneLayout_TriA_LeftFull_RightStacked_TwoSplitters) {
   FE_ASSERT_EQ(out.splitters[1].orient, SplitterOrientation::Horizontal);
   FE_ASSERT_EQ(out.splitters[1].ratioId, std::uint8_t{1});
 }
+
+FE_TEST_CASE(ComputePaneLayout_TriB_TopFull_BottomSplit_TwoSplitters) {
+  const auto out = computePaneLayout(LayoutPreset::Tri_B,
+                                     defaultRatiosFor(LayoutPreset::Tri_B),
+                                     1280, 800, 0, 22);
+  FE_ASSERT_EQ(out.slotCount, std::size_t{3});
+  FE_ASSERT_EQ(out.splitterCount, std::size_t{2});
+  FE_ASSERT_TRUE(rectEquals(out.slots[0],   0,   0, 1280, 311));
+  FE_ASSERT_TRUE(rectEquals(out.slots[1],   0, 311,  640, 778));
+  FE_ASSERT_TRUE(rectEquals(out.slots[2], 640, 311, 1280, 778));
+  FE_ASSERT_EQ(out.splitters[0].orient, SplitterOrientation::Horizontal);
+  FE_ASSERT_EQ(out.splitters[0].ratioId, std::uint8_t{0});
+  FE_ASSERT_EQ(out.splitters[1].orient, SplitterOrientation::Vertical);
+  FE_ASSERT_EQ(out.splitters[1].ratioId, std::uint8_t{1});
+}
