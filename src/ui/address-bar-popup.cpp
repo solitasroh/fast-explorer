@@ -267,6 +267,7 @@ void AddressBarPopup::ensurePopupCreated() {
 void AddressBarPopup::showFor(HWND anchor, const std::wstring& currentPath) {
   ensurePopupCreated();
   if (!popup_) return;
+  anchor_ = anchor;
   // Re-apply theme on each open so a runtime light↔dark flip is
   // reflected without restarting; cheap (RegQueryValue + two
   // SendMessageW). The class hbrBackground is fixed at RegisterClass
@@ -365,6 +366,49 @@ void AddressBarPopup::populateRoots() {
       }
     }
   }
+
+  // Force-insert the Network root unconditionally. Desktop EnumObjects
+  // skips it on many configs (network discovery off, policy-locked
+  // shells, non-default layouts), and even when it's enumerated it
+  // arrives with a relative PIDL that doesn't ILIsEqual against the
+  // known-folder absolute PIDL — so duplicate detection is brittle.
+  // Inserting it as a separate top-level node guarantees the user
+  // can browse \\server hosts from the popup the same way Win
+  // Explorer does. A possible duplicate is a much smaller paper cut
+  // than a missing root.
+  // Force-insert the Network root at the TOP of the tree (hInsertAfter
+  // = TVI_FIRST) so it's the first thing the user sees when the popup
+  // opens — even if showFor() auto-scrolls to a deeply-nested current
+  // path, the Network root stays in the upper visible portion. Desktop
+  // EnumObjects sometimes skips it on machines with discovery off, so
+  // we add it unconditionally; a possible duplicate is a smaller
+  // paper-cut than a missing root.
+  PidlOwner networkAbs = knownFolderPidl(FOLDERID_NetworkFolder);
+  if (networkAbs) {
+    STRRET sr{};
+    std::wstring name = L"네트워크";
+    if (SUCCEEDED(desktop->GetDisplayNameOf(networkAbs.get(),
+                                             SHGDN_NORMAL, &sr))) {
+      std::wstring shellName = strRetToString(sr, networkAbs.get());
+      if (!shellName.empty()) name = std::move(shellName);
+    }
+    const int icon = systemIconIndexForPidl(networkAbs.get());
+    TVINSERTSTRUCTW ins{};
+    ins.hParent = TVI_ROOT;
+    ins.hInsertAfter = TVI_FIRST;
+    ins.item.mask = TVIF_TEXT | TVIF_PARAM |
+                    ((icon >= 0) ? (TVIF_IMAGE | TVIF_SELECTEDIMAGE) : 0);
+    ins.item.pszText = const_cast<wchar_t*>(name.c_str());
+    ins.item.cchTextMax = static_cast<int>(name.size());
+    ins.item.iImage = icon;
+    ins.item.iSelectedImage = icon;
+    ins.item.lParam = reinterpret_cast<LPARAM>(networkAbs.get());
+    HTREEITEM node = TreeView_InsertItem(tree_, &ins);
+    if (node != nullptr) {
+      (void)networkAbs.release();
+      insertDummyChild(tree_, node);
+    }
+  }
 }
 
 void AddressBarPopup::expandNode(HTREEITEM node) {
@@ -381,8 +425,33 @@ void AddressBarPopup::expandNode(HTREEITEM node) {
     return;
   }
 
+  // Detect Network folder expansion. Its children (computers
+  // discovered via the browser service) have SFGAO bits that don't
+  // match an ordinary filesystem folder, so the standard
+  // isRealDirectory gate would drop them — relax it for the
+  // network branch. Local-folder expansion stays strict.
+  //
+  // Note: in practice EnumObjects on the Network folder returns 0
+  // items on many configs because shell network discovery is async
+  // and frequently unresponsive — this matches what Win Explorer's
+  // own Network sidebar shows on the same machine. Users navigate
+  // UNC paths by typing `\\server` directly in the address bar,
+  // which Win32FsBackend's server-only UNC branch (WNetEnumResource)
+  // resolves to the share list correctly.
+  bool isNetworkExpansion = false;
+  {
+    PidlOwner netPidl = knownFolderPidl(FOLDERID_NetworkFolder);
+    if (netPidl && ILIsEqual(abs, netPidl.get())) {
+      isNetworkExpansion = true;
+    }
+  }
+
   ComPtr<IEnumIDList> en;
-  if (FAILED(folder->EnumObjects(nullptr, SHCONTF_FOLDERS, en.put())) ||
+  const SHCONTF enumFlags = isNetworkExpansion
+      ? static_cast<SHCONTF>(SHCONTF_FOLDERS | SHCONTF_NONFOLDERS |
+                              SHCONTF_INCLUDEHIDDEN)
+      : SHCONTF_FOLDERS;
+  if (FAILED(folder->EnumObjects(nullptr, enumFlags, en.put())) ||
       !en) {
     HTREEITEM child = TreeView_GetChild(tree_, node);
     if (child) TreeView_DeleteItem(tree_, child);
@@ -405,7 +474,16 @@ void AddressBarPopup::expandNode(HTREEITEM node) {
   while (en->Next(1, &relative, &fetched) == S_OK && fetched == 1 &&
          inserted < kMaxChildrenPerExpand) {
     PidlOwner relOwner(relative);
-    if (!isRealDirectory(folder.get(), relOwner.get())) continue;
+    if (isNetworkExpansion) {
+      // Just require FOLDER bit; ignore STREAM. Network entries are
+      // containers that the user navigates into for shares.
+      LPCITEMIDLIST relRaw = relOwner.get();
+      SFGAOF attrs = SFGAO_FOLDER;
+      if (FAILED(folder->GetAttributesOf(1, &relRaw, &attrs))) continue;
+      if ((attrs & SFGAO_FOLDER) == 0) continue;
+    } else if (!isRealDirectory(folder.get(), relOwner.get())) {
+      continue;
+    }
     STRRET sr{};
     if (FAILED(folder->GetDisplayNameOf(relOwner.get(), SHGDN_NORMAL,
                                         &sr))) {
@@ -533,7 +611,18 @@ LRESULT CALLBACK AddressBarPopup::mouseHookProc(int nCode, WPARAM wParam,
     if (self && mouse && self->popup_ && IsWindowVisible(self->popup_)) {
       if (wParam == WM_LBUTTONDOWN || wParam == WM_RBUTTONDOWN ||
           wParam == WM_NCLBUTTONDOWN) {
-        if (!self->containsScreenPoint(mouse->pt)) {
+        // Skip the auto-hide if the click lands on the anchor (the
+        // address-bar Edit that opened us). Otherwise click-to-toggle
+        // in the Edit subclass would hide → my onCommand handler
+        // would immediately reshow, defeating the toggle.
+        bool onAnchor = false;
+        if (self->anchor_ != nullptr && IsWindow(self->anchor_)) {
+          RECT a{};
+          GetWindowRect(self->anchor_, &a);
+          onAnchor = mouse->pt.x >= a.left && mouse->pt.x < a.right &&
+                     mouse->pt.y >= a.top && mouse->pt.y < a.bottom;
+        }
+        if (!onAnchor && !self->containsScreenPoint(mouse->pt)) {
           PostMessageW(self->popup_, kWmFeAddressPopupHide, 0, 0);
         }
       }

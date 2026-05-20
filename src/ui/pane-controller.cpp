@@ -47,7 +47,7 @@ std::wstring computeParent(const std::wstring& path) {
     return std::wstring();
   }
   // Normalize away the \\?\ extended-length prefix so the separator
-  // walk below sees a plain "X:\..." form.
+  // walk below sees a plain "X:\..." or "\\server\share\..." form.
   std::wstring p = fast_explorer::core::toDisplay(path);
   // Trim trailing separators except when we are already at the drive
   // root form "X:\".
@@ -58,6 +58,23 @@ std::wstring computeParent(const std::wstring& path) {
   }
   if (p.size() <= 3) {
     return std::wstring();
+  }
+  // UNC root detection: "\\server\share" has its share-separator at
+  // the position of the third backslash counted from the start. If
+  // there's no fourth separator, we're at the UNC root and going
+  // "up" would land on "\\server" which the OS can't enumerate.
+  if (p.size() >= 2 && (p[0] == L'\\' || p[0] == L'/') &&
+      (p[1] == L'\\' || p[1] == L'/')) {
+    const size_t shareSep = p.find_first_of(L"\\/", 2);
+    if (shareSep == std::wstring::npos) {
+      // "\\server" only — not a real folder.
+      return std::wstring();
+    }
+    const size_t fourth = p.find_first_of(L"\\/", shareSep + 1);
+    if (fourth == std::wstring::npos) {
+      // "\\server\share" with no trailing folder — this is the UNC root.
+      return std::wstring();
+    }
   }
   const size_t lastSep = p.find_last_of(L"\\/");
   if (lastSep == std::wstring::npos) {

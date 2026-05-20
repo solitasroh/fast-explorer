@@ -30,8 +30,8 @@ bool resolveAppDataSubdir(const wchar_t* sub, std::wstring& out);
 enum class PathConvertError {
   None = 0,
   Empty,                // input was nullptr / empty
-  RelativeUnsupported,  // no drive letter, no \\?\ prefix
-  UncUnsupported,       // UNC paths are not handled
+  RelativeUnsupported,  // no drive letter, no \\?\ prefix, not UNC
+  UncUnsupported,       // (legacy, no longer returned — UNC is now accepted)
   InvalidSyntax,        // contains characters that cannot appear in a path
 };
 

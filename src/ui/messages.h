@@ -63,6 +63,7 @@ inline constexpr WORD kTbForward = 201;
 inline constexpr WORD kTbUp      = 202;
 inline constexpr WORD kTbRefresh = 203;
 inline constexpr WORD kTbHamburger = 204;  // ≡ button (T4)
+inline constexpr WORD kTbAddressDropdown = 205;  // ˅ next to address bar
 
 // Hamburger popup menu item IDs (T5/T6). Packed the same way as the
 // toolbar buttons so a single onCommand path handles both. Reserve

@@ -86,11 +86,49 @@ HWND createStatusBar(HWND parent, HINSTANCE instance) {
 }
 
 HWND createAddressBar(HWND parent, HINSTANCE instance) {
-  return CreateWindowExW(
-      0, WC_COMBOBOXEXW, L"",
+  // Plain Edit, not ComboBoxEx. v0.2.8 through v0.2.12 tried every
+  // theme-strip + CTLCOLOR + WM_ERASEBKGND hack at the ComboBoxEx
+  // and its inner ComboBox / Edit to dark-mode the textbox — each
+  // attempt left the focused-state textbox white because the
+  // ComboBox's themed renderer owns the focused-bg paint and
+  // ignores CTLCOLOR / theme strip there. Plain Edit's bg comes
+  // straight from WM_CTLCOLOREDIT sent to its parent (the row),
+  // which the row handles directly. The dropdown ˅ that used to
+  // live on ComboBoxEx is now a separate BS_OWNERDRAW button (see
+  // createAddressDropdownBtn) — Windows Explorer's own dark
+  // address bar is built the same way.
+  HWND edit = CreateWindowExW(
+      0, WC_EDITW, L"",
       WS_CHILD | WS_VISIBLE | WS_TABSTOP |
-          CBS_DROPDOWN | CBS_AUTOHSCROLL,
+          ES_AUTOHSCROLL | ES_LEFT,
       0, 0, 0, 0, parent, nullptr, instance, nullptr);
+  if (edit != nullptr) {
+    // Strip the theme so CTLCOLOREDIT actually drives the bg when
+    // focused; themed Edits paint their own light bg in the focused
+    // state and ignore the returned brush, same root cause as the
+    // ComboBoxEx v0.2.12 ship that ate the original dark mode hacks.
+    SetWindowTheme(edit, L"", L"");
+    // No EM_SETMARGINS or WS_BORDER here — the NC padding subclass
+    // (installed by PaneToolbarRow::setAddressBar) owns both the
+    // horizontal margin and the 1-px border so they stay in sync
+    // with the vertical-centring padding it computes.
+  }
+  return edit;
+}
+
+HWND createAddressDropdownBtn(HWND parent, HINSTANCE instance,
+                               std::size_t paneIdx) {
+  // BS_OWNERDRAW so PaneToolbarRow can paint the ˅ chevron itself
+  // and override the button's bg for dark mode. The HMENU param
+  // packs the kTbAddressDropdown + paneIdx the same way nav-bar
+  // buttons do, so WM_COMMAND lands in the existing routing.
+  return CreateWindowExW(
+      0, WC_BUTTONW, L"",
+      WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON | BS_OWNERDRAW,
+      0, 0, 0, 0, parent,
+      reinterpret_cast<HMENU>(
+          static_cast<INT_PTR>(packCmd(kTbAddressDropdown, paneIdx))),
+      instance, nullptr);
 }
 
 HWND createListView(HWND parent, HINSTANCE instance) {
@@ -274,32 +312,6 @@ struct HeaderDarkState {
 LRESULT CALLBACK listViewHeaderColorSubclass(HWND, UINT, WPARAM, LPARAM,
                                               UINT_PTR, DWORD_PTR);
 
-// ComboBoxEx wraps a plain ComboBox which in turn owns the inner Edit
-// and dropdown listbox. WM_CTLCOLOREDIT / WM_CTLCOLORLISTBOX are sent
-// to the immediate parent of each control — that's the inner ComboBox,
-// not ComboBoxEx itself — so this subclass attaches there.
-//
-// SetWindowTheme(L"DarkMode_CFD") on the ComboBoxEx was tried first
-// (cleaner) but broke text clipping and left a hairline white seam at
-// the top of the textbox. The CTLCOLOR override gets us dark colours
-// without touching the layout the existing theme produces.
-struct AddressBarDarkState {
-  HBRUSH bgBrush = nullptr;
-  COLORREF bgColor = 0;
-  COLORREF textColor = 0;
-  bool valid = false;
-  void refresh() noexcept {
-    bgColor   = RGB(40, 40, 40);     // matches Explorer's address bar
-    textColor = RGB(241, 241, 241);
-    if (bgBrush != nullptr) DeleteObject(bgBrush);
-    bgBrush = CreateSolidBrush(bgColor);
-    valid = true;
-  }
-};
-LRESULT CALLBACK addressBarColorSubclassProc(HWND, UINT, WPARAM, LPARAM,
-                                              UINT_PTR, DWORD_PTR);
-void installAddressBarColorSubclass(HWND addressBar) noexcept;
-
 // T6 actions — single-shot shell integrations triggered from the
 // hamburger menu and (Copy path / Properties) from accelerators.
 // All return true on best-effort success and false on hard failure;
@@ -481,17 +493,14 @@ void MainWindow::enterDualMode(const std::wstring& secondPath,
                             ? paneToolbarRows_[1]->handle()
                             : hwnd_;
   addressBars_[1] = createAddressBar(addressParent1, instance_);
+  addressDropdownBtns_[1] = createAddressDropdownBtn(addressParent1, instance_, 1);
   if (addressBars_[1]) {
     if (paneToolbarRows_[1]) {
       paneToolbarRows_[1]->setAddressBar(addressBars_[1]);
+      paneToolbarRows_[1]->setAddressDropdownBtn(addressDropdownBtns_[1]);
     }
-    HWND innerEdit = reinterpret_cast<HWND>(
-        SendMessageW(addressBars_[1], CBEM_GETEDITCONTROL, 0, 0));
-    if (innerEdit != nullptr) {
-      SetWindowSubclass(innerEdit, &MainWindow::addressBarSubclassProc, 0,
-                        static_cast<DWORD_PTR>(1));
-    }
-    installAddressBarColorSubclass(addressBars_[1]);
+    SetWindowSubclass(addressBars_[1], &MainWindow::addressBarSubclassProc, 0,
+                      static_cast<DWORD_PTR>(1));
   }
   paneManager_->openSecond(hwnd_);
   // Inherit current view toggle into the freshly opened pane so its
@@ -861,15 +870,7 @@ bool MainWindow::addressBarPaneIndex(HWND ctrl,
                                      std::size_t& outIdx) const noexcept {
   if (ctrl == nullptr) return false;
   for (std::size_t i = 0; i < addressBars_.size(); ++i) {
-    HWND bar = addressBars_[i];
-    if (bar == nullptr) continue;
-    if (bar == ctrl) {
-      outIdx = i;
-      return true;
-    }
-    HWND innerEdit = reinterpret_cast<HWND>(
-        SendMessageW(bar, CBEM_GETEDITCONTROL, 0, 0));
-    if (innerEdit != nullptr && innerEdit == ctrl) {
+    if (addressBars_[i] != nullptr && addressBars_[i] == ctrl) {
       outIdx = i;
       return true;
     }
@@ -926,6 +927,20 @@ LRESULT CALLBACK MainWindow::addressBarSubclassProc(
   }
   if (msg == WM_CHAR && wParam == VK_RETURN) {
     return 0;
+  }
+  // Click on the address bar → trigger the same dropdown popup the
+  // ˅ button would. Posts WM_COMMAND with the kTbAddressDropdown
+  // packed id so MainWindow::onCommand's existing handler routes it
+  // (no new code path). Fired on WM_LBUTTONDOWN; we still forward
+  // to DefSubclassProc so the click positions the caret normally.
+  if (msg == WM_LBUTTONDOWN) {
+    HWND root = GetAncestor(hwnd, GA_ROOT);
+    if (root != nullptr) {
+      const WPARAM cmdW = MAKEWPARAM(
+          packCmd(kTbAddressDropdown, static_cast<std::size_t>(dwRefData)),
+          0);
+      PostMessageW(root, WM_COMMAND, cmdW, 0);
+    }
   }
   return DefSubclassProc(hwnd, msg, wParam, lParam);
 }
@@ -1071,6 +1086,27 @@ LRESULT MainWindow::handleMessage(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPa
     case WM_DPICHANGED:       return onDpiChanged(hwnd, wParam, lParam);
     case WM_SIZE:             return onSize(hwnd, msg, wParam, lParam);
     case WM_COMMAND:          return onCommand(hwnd, msg, wParam, lParam);
+    case WM_APPCOMMAND: {
+      // 5-button mice send WM_APPCOMMAND with BROWSER_BACKWARD /
+      // FORWARD for the side thumb buttons. Route them to the
+      // active pane's history the same way the toolbar buttons
+      // do — synthesize a WM_COMMAND so all the
+      // setActivePane / clearListViewForNavigation / address-bar
+      // refresh + nav-state-update steps run via the existing
+      // packed-id path. Must return TRUE so Windows knows the
+      // command was handled (default would forward to parent).
+      const WORD cmd = GET_APPCOMMAND_LPARAM(lParam);
+      WORD btn = 0;
+      if (cmd == APPCOMMAND_BROWSER_BACKWARD) btn = kTbBack;
+      else if (cmd == APPCOMMAND_BROWSER_FORWARD) btn = kTbForward;
+      if (btn != 0 && paneManager_) {
+        const std::size_t active = paneManager_->activeIndex();
+        SendMessageW(hwnd, WM_COMMAND,
+                     MAKEWPARAM(packCmd(btn, active), 0), 0);
+        return TRUE;
+      }
+      return DefWindowProcW(hwnd, msg, wParam, lParam);
+    }
     case WM_SETTINGCHANGE: {
       // Re-apply title-bar dark mode + Mica when the user toggles
       // the system theme. Broadcast carries the setting name in
@@ -1245,17 +1281,14 @@ LRESULT MainWindow::onCreate(HWND hwnd) {
                             ? paneToolbarRows_[0]->handle()
                             : hwnd;
   addressBars_[0] = createAddressBar(addressParent0, instance_);
+  addressDropdownBtns_[0] = createAddressDropdownBtn(addressParent0, instance_, 0);
   if (addressBars_[0]) {
     if (paneToolbarRows_[0]) {
       paneToolbarRows_[0]->setAddressBar(addressBars_[0]);
+      paneToolbarRows_[0]->setAddressDropdownBtn(addressDropdownBtns_[0]);
     }
-    HWND innerEdit = reinterpret_cast<HWND>(
-        SendMessageW(addressBars_[0], CBEM_GETEDITCONTROL, 0, 0));
-    if (innerEdit != nullptr) {
-      SetWindowSubclass(innerEdit, &MainWindow::addressBarSubclassProc, 0,
-                        static_cast<DWORD_PTR>(0));
-    }
-    installAddressBarColorSubclass(addressBars_[0]);
+    SetWindowSubclass(addressBars_[0], &MainWindow::addressBarSubclassProc, 0,
+                      static_cast<DWORD_PTR>(0));
     addressBarPopup_ = std::make_unique<AddressBarPopup>(hwnd);
     searchPopup_ = std::make_unique<SearchPopup>(hwnd);
   }
@@ -1466,74 +1499,6 @@ LRESULT CALLBACK listViewHeaderColorSubclass(
   return DefSubclassProc(hwnd, msg, wParam, lParam);
 }
 
-LRESULT CALLBACK addressBarColorSubclassProc(
-    HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam,
-    UINT_PTR idSubclass, DWORD_PTR refData) {
-  auto* state = reinterpret_cast<AddressBarDarkState*>(refData);
-  if (msg == WM_NCDESTROY) {
-    RemoveWindowSubclass(hwnd, &addressBarColorSubclassProc, idSubclass);
-    if (state != nullptr) {
-      if (state->bgBrush != nullptr) DeleteObject(state->bgBrush);
-      delete state;
-    }
-    return DefSubclassProc(hwnd, msg, wParam, lParam);
-  }
-  if ((msg == WM_THEMECHANGED || msg == WM_SYSCOLORCHANGE) &&
-      state != nullptr) {
-    state->valid = false;
-    InvalidateRect(hwnd, nullptr, TRUE);
-  }
-  if ((msg == WM_CTLCOLOREDIT || msg == WM_CTLCOLORLISTBOX) &&
-      state != nullptr && systemPrefersDarkMode()) {
-    if (!state->valid) state->refresh();
-    HDC hdc = reinterpret_cast<HDC>(wParam);
-    SetTextColor(hdc, state->textColor);
-    SetBkColor(hdc, state->bgColor);
-    SetBkMode(hdc, OPAQUE);
-    return reinterpret_cast<LRESULT>(state->bgBrush);
-  }
-  return DefSubclassProc(hwnd, msg, wParam, lParam);
-}
-
-// Install the colour subclass on the ComboBoxEx's inner ComboBox (the
-// actual parent of the Edit / dropdown listbox). Idempotent — repeated
-// calls bind the same (hwnd, proc, id) without leaking. State is
-// allocated once and freed by the subclass proc on WM_NCDESTROY.
-//
-// Also strips the visual-style theme from the inner Edit. Themed Edit
-// controls bypass WM_CTLCOLOREDIT for their background fill — they
-// use DrawThemeBackground with the theme's own colour — so without
-// SetWindowTheme(L" ", L" ") the dark brush we return below is
-// ignored and the textbox renders pure white in dark mode (which the
-// v0.2.8 ship hit). The empty-class form falls back to the classic
-// (non-themed) Edit renderer that fully honours CTLCOLOR. Visual
-// difference vs themed light mode: square corners and a classic
-// 1px border — same as Win Explorer's own dark address bar.
-void installAddressBarColorSubclass(HWND addressBar) noexcept {
-  if (addressBar == nullptr) return;
-  HWND innerCombo = reinterpret_cast<HWND>(
-      SendMessageW(addressBar, CBEM_GETCOMBOCONTROL, 0, 0));
-  HWND innerEdit = reinterpret_cast<HWND>(
-      SendMessageW(addressBar, CBEM_GETEDITCONTROL, 0, 0));
-  if (innerEdit != nullptr) {
-    SetWindowTheme(innerEdit, L" ", L" ");
-  }
-  if (innerCombo == nullptr) return;
-  constexpr UINT_PTR kAddrColorSubclassId = 0xFE10B0u;
-  DWORD_PTR refData = 0;
-  if (GetWindowSubclass(innerCombo, &addressBarColorSubclassProc,
-                        kAddrColorSubclassId, &refData)) {
-    if (auto* s = reinterpret_cast<AddressBarDarkState*>(refData)) {
-      s->refresh();
-    }
-    return;
-  }
-  auto* state = new AddressBarDarkState();
-  state->refresh();
-  SetWindowSubclass(innerCombo, &addressBarColorSubclassProc,
-                    kAddrColorSubclassId,
-                    reinterpret_cast<DWORD_PTR>(state));
-}
 }  // namespace
 
 void MainWindow::applySystemTheme() {
@@ -1631,23 +1596,6 @@ LRESULT MainWindow::onSize(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 
 LRESULT MainWindow::onCommand(HWND hwnd, UINT msg, WPARAM wParam,
                               LPARAM lParam) {
-  const HWND srcCtrl = reinterpret_cast<HWND>(lParam);
-  std::size_t srcPaneIdx = 0;
-  const bool fromAddressBar = addressBarPaneIndex(srcCtrl, srcPaneIdx);
-  if (fromAddressBar) {
-    const WORD notif = HIWORD(wParam);
-    if (notif == CBN_DROPDOWN) {
-      HWND bar = addressBars_[srcPaneIdx];
-      SendMessageW(bar, CB_SHOWDROPDOWN, FALSE, 0);
-      if (addressBarPopup_ && paneManager_ &&
-          srcPaneIdx < paneManager_->count()) {
-        addressBarPopup_->setActivePane(srcPaneIdx);
-        addressBarPopup_->showFor(
-            bar, paneManager_->at(srcPaneIdx).currentPath());
-      }
-      return 0;
-    }
-  }
   // Nav toolbar buttons (T2) + hamburger (T4) + menu items (T5/T6/T7).
   // LOWORD is packed `(id << 8) | pane`; the notification code from a
   // regular toolbar click, BS_PUSHBUTTON click, or menu selection is
@@ -1658,6 +1606,25 @@ LRESULT MainWindow::onCommand(HWND hwnd, UINT msg, WPARAM wParam,
     const std::size_t pane = unpackPane(packed);
     if (btn == kTbHamburger) {
       showToolMenuForPane(pane);
+      return 0;
+    }
+    if (btn == kTbAddressDropdown) {
+      if (addressBarPopup_ && paneManager_ &&
+          pane < paneManager_->count() &&
+          pane < addressBars_.size() && addressBars_[pane] != nullptr) {
+        // Toggle — second click on the same address bar / ˅ button
+        // dismisses the popup instead of redundantly showing it.
+        // Mouse hook excludes the anchor from auto-hide so this
+        // path is the only thing that decides visibility on anchor
+        // clicks.
+        if (addressBarPopup_->isVisible()) {
+          addressBarPopup_->hide();
+        } else {
+          addressBarPopup_->setActivePane(pane);
+          addressBarPopup_->showFor(addressBars_[pane],
+                                     paneManager_->at(pane).currentPath());
+        }
+      }
       return 0;
     }
     // Menu items dispatch to the same handlers as their accelerator

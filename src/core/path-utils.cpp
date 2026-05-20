@@ -169,10 +169,54 @@ PathConvertError toInternal(std::wstring_view displayPath, std::wstring& out) {
     return PathConvertError::Empty;
   }
   // UNC detection must happen before separator normalization so that both
-  // \\server\share and //server/share are caught here instead of falling
-  // through to the relative-path branch.
+  // \\server\share and //server/share are caught here. The local-path
+  // branch below would otherwise mis-classify them as relative because
+  // they have no drive letter.
+  //
+  // Performance note: the local-path branch is unaffected — this is a
+  // single substring compare that short-circuits on the first byte for
+  // ordinary "C:\..." inputs.
   if (isUncPath(displayPath)) {
-    return PathConvertError::UncUnsupported;
+    out.assign(displayPath);
+    normalizeSeparators(out);
+    // A UNC path body needs at least a server name. With just a
+    // server ("\\server") the OS can enumerate the shares via
+    // NetShareEnum — Windows Explorer treats it as a navigable
+    // "folder" of shares, and Win32FsBackend mirrors that. Reject
+    // only fully-empty bodies and trailing-separator-only inputs
+    // like "\\" or "\\\\" that don't even name a server.
+    auto validateUncBody = [](std::wstring_view body) -> bool {
+      if (body.empty() || containsInvalidPathChar(body)) return false;
+      // Find first non-separator — that's the start of the server name.
+      size_t i = 0;
+      while (i < body.size() && body[i] == L'\\') ++i;
+      if (i >= body.size()) return false;  // separators only
+      const size_t serverStart = i;
+      while (i < body.size() && body[i] != L'\\') ++i;
+      if (i == serverStart) return false;  // empty server
+      return true;
+    };
+    if (startsWith(out, kDosUncPrefix)) {
+      std::wstring_view body(out.data() + kDosUncPrefix.size(),
+                             out.size() - kDosUncPrefix.size());
+      if (!validateUncBody(body)) {
+        return PathConvertError::InvalidSyntax;
+      }
+      return PathConvertError::None;
+    }
+    // \\server\share\... → \\?\UNC\server\share\... Strip the leading
+    // double-backslash and prepend the UNC prefix.
+    std::wstring_view body(out);
+    body.remove_prefix(2);
+    if (!validateUncBody(body)) {
+      return PathConvertError::InvalidSyntax;
+    }
+    std::wstring prefixed;
+    prefixed.reserve(kDosUncPrefix.size() + body.size());
+    prefixed.append(kDosUncPrefix);
+    prefixed.append(body);
+    out.swap(prefixed);
+    return PathConvertError::None;
   }
 
   out.assign(displayPath);

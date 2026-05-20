@@ -240,6 +240,7 @@ class MainWindow {
   std::array<HWND, 2> listViews_{nullptr, nullptr};
   HWND statusBar_ = nullptr;
   std::array<HWND, 2> addressBars_{nullptr, nullptr};
+  std::array<HWND, 2> addressDropdownBtns_{nullptr, nullptr};
   // The toolbar row hosts the nav buttons + address bar + hamburger
   // for each pane; addressBars_[i] is created as a child of
   // paneToolbarRows_[i]->handle() so WM_SIZE on the row positions

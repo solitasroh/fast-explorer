@@ -146,10 +146,36 @@ FE_TEST_CASE(toInternal_idempotent_on_already_prefixed) {
   FE_ASSERT_WSTREQ(out, L"\\\\?\\C:\\Users\\me");
 }
 
-FE_TEST_CASE(toInternal_rejects_unc) {
+FE_TEST_CASE(toInternal_accepts_unc_and_prepends_dos_prefix) {
   std::wstring out;
-  FE_ASSERT_EQ(toInternal(L"\\\\server\\share", out), PathConvertError::UncUnsupported);
-  FE_ASSERT_EQ(toInternal(L"\\\\?\\UNC\\server\\share", out), PathConvertError::UncUnsupported);
+  FE_ASSERT_EQ(toInternal(L"\\\\server\\share", out), PathConvertError::None);
+  FE_ASSERT_WSTREQ(out, L"\\\\?\\UNC\\server\\share");
+  FE_ASSERT_EQ(toInternal(L"\\\\server\\share\\folder\\file.txt", out),
+               PathConvertError::None);
+  FE_ASSERT_WSTREQ(out, L"\\\\?\\UNC\\server\\share\\folder\\file.txt");
+}
+
+FE_TEST_CASE(toInternal_accepts_already_prefixed_unc) {
+  std::wstring out;
+  FE_ASSERT_EQ(toInternal(L"\\\\?\\UNC\\server\\share", out),
+               PathConvertError::None);
+  FE_ASSERT_WSTREQ(out, L"\\\\?\\UNC\\server\\share");
+}
+
+FE_TEST_CASE(toInternal_rejects_empty_unc) {
+  std::wstring out;
+  FE_ASSERT_EQ(toInternal(L"\\\\", out), PathConvertError::InvalidSyntax);
+}
+
+FE_TEST_CASE(toInternal_accepts_server_only_unc) {
+  // "\\server" without a share is valid — Win32FsBackend uses
+  // NetShareEnum to list the shares as if they were folders, matching
+  // Windows Explorer's behaviour.
+  std::wstring out;
+  FE_ASSERT_EQ(toInternal(L"\\\\server", out), PathConvertError::None);
+  FE_ASSERT_WSTREQ(out, L"\\\\?\\UNC\\server");
+  FE_ASSERT_EQ(toInternal(L"\\\\10.10.10.23", out), PathConvertError::None);
+  FE_ASSERT_WSTREQ(out, L"\\\\?\\UNC\\10.10.10.23");
 }
 
 FE_TEST_CASE(toInternal_rejects_empty) {
@@ -198,10 +224,12 @@ FE_TEST_CASE(isUncPath_rejects_plain_drive) {
   FE_ASSERT_FALSE(isUncPath(L"C:\\Users\\me"));
 }
 
-// Regression: forward-slash UNC must be classified as UNC, not Relative.
-FE_TEST_CASE(toInternal_rejects_forward_slash_unc) {
+// Regression: forward-slash UNC must be classified as UNC, not Relative,
+// and must normalize to backslashes in the internal form.
+FE_TEST_CASE(toInternal_normalizes_forward_slash_unc) {
   std::wstring out;
-  FE_ASSERT_EQ(toInternal(L"//server/share", out), PathConvertError::UncUnsupported);
+  FE_ASSERT_EQ(toInternal(L"//server/share", out), PathConvertError::None);
+  FE_ASSERT_WSTREQ(out, L"\\\\?\\UNC\\server\\share");
 }
 
 FE_TEST_CASE(isUncPath_detects_forward_slash) {

@@ -73,6 +73,11 @@ class AddressBarPopup {
   HWND popup_ = nullptr;
   HWND tree_ = nullptr;
   HHOOK mouseHook_ = nullptr;
+  // Anchor (= address-bar Edit) of the most recent showFor call.
+  // The mouse hook uses it to skip the auto-hide when the click
+  // lands on the anchor itself — otherwise click-to-toggle would
+  // hide-then-immediately-reshow on every press.
+  HWND anchor_ = nullptr;
   std::wstring pendingPath_;
   bool rootsLoaded_ = false;
   std::size_t activePaneIdx_ = 0;

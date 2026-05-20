@@ -49,10 +49,13 @@ FE_TEST_CASE(PaneController_OpenFolder_RelativePath_Rejected) {
   FE_ASSERT_TRUE(pc.currentPath().empty());
 }
 
-FE_TEST_CASE(PaneController_OpenFolder_UncPath_Rejected) {
+FE_TEST_CASE(PaneController_OpenFolder_UncPath_Accepted) {
+  // UNC paths are valid; openFolder converts to \\?\UNC\... internally
+  // and stores the display form for currentPath(). No I/O is reached
+  // here (no hostWindow), but the path-validation gate must accept it.
   PaneController pc(nullptr);
-  FE_ASSERT_FALSE(pc.openFolder(L"\\\\server\\share"));
-  FE_ASSERT_TRUE(pc.currentPath().empty());
+  FE_ASSERT_TRUE(pc.openFolder(L"\\\\server\\share"));
+  FE_ASSERT_WSTREQ(pc.currentPath(), L"\\\\server\\share");
 }
 
 FE_TEST_CASE(PaneController_OpenFolder_Twice_BumpsGenerationEachTime) {

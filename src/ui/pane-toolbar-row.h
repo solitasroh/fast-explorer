@@ -60,6 +60,13 @@ class PaneToolbarRow {
   void setAddressBar(HWND addressBar);
   HWND addressBar() const noexcept { return addressBar_; }
 
+  // Adopts the ˅ button that sits next to the address bar. Owner-
+  // drawn so we can paint a dark chevron in dark mode; click is
+  // routed to MainWindow via the packed kTbAddressDropdown id and
+  // pops the AddressBarPopup TreeView.
+  void setAddressDropdownBtn(HWND btn);
+  HWND addressDropdownBtn() const noexcept { return addressDropdownBtn_; }
+
   HWND navToolbar() const noexcept { return navToolbar_; }
   HWND hamburger() const noexcept { return hamburger_; }
 
@@ -108,6 +115,7 @@ class PaneToolbarRow {
 
   HWND hwnd_ = nullptr;
   HWND addressBar_ = nullptr;
+  HWND addressDropdownBtn_ = nullptr;
   HWND navToolbar_ = nullptr;
   HWND hamburger_ = nullptr;
   // mdl2Font_ holds the Lucide icon font (name is historical from

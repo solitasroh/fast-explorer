@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.24)
 project(FastExplorer
-  VERSION 0.2.9
+  VERSION 0.3.0
   LANGUAGES CXX
 )
 
@@ -195,6 +195,7 @@ target_link_libraries(FastExplorer PRIVATE
   uxtheme
   dbghelp
   propsys
+  mpr       # WNetEnumResource for \\server share listing (matches `net view`)
   WinSparkle::WinSparkle
 )
 
@@ -350,6 +351,7 @@ target_link_libraries(core-tests PRIVATE
   ole32
   user32
   psapi
+  mpr       # WNetEnumResource for share-enum tests
 )
 
 # ---------------------------------------------------------------------------
@@ -400,6 +402,7 @@ target_link_libraries(FastExplorerBench PRIVATE
   shell32
   ole32
   psapi
+  mpr  # win32-fs-backend share-enum path
 )
 
 enable_testing()

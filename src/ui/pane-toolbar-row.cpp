@@ -2,6 +2,7 @@
 
 #include <uxtheme.h>
 
+#include <algorithm>
 #include <iterator>
 
 #include "ui/messages.h"
@@ -82,18 +83,21 @@ const wchar_t* glyphForButtonId(WORD btnId) noexcept {
   // Segoe Fluent Icons / Segoe MDL2 Assets shared codepoints —
   // the same glyphs Win11's File Explorer command bar uses, so
   // the toolbar reads as native chrome.
-  //   E72B Back, E72A Forward, E74A Up, E72C Refresh, E712 More
+  //   E72B Back, E72A Forward, E74A Up, E72C Refresh, E712 More,
+  //   E70D ChevronDown
   static const wchar_t kBack[]      = {0xE72B, 0};
   static const wchar_t kForward[]   = {0xE72A, 0};
   static const wchar_t kUp[]        = {0xE74A, 0};
   static const wchar_t kRefresh[]   = {0xE72C, 0};
   static const wchar_t kHamburger[] = {0xE712, 0};
+  static const wchar_t kChevronDn[] = {0xE70D, 0};
   switch (btnId) {
-    case kTbBack:      return kBack;
-    case kTbForward:   return kForward;
-    case kTbUp:        return kUp;
-    case kTbRefresh:   return kRefresh;
-    case kTbHamburger: return kHamburger;
+    case kTbBack:             return kBack;
+    case kTbForward:          return kForward;
+    case kTbUp:               return kUp;
+    case kTbRefresh:          return kRefresh;
+    case kTbHamburger:        return kHamburger;
+    case kTbAddressDropdown:  return kChevronDn;
   }
   return nullptr;
 }
@@ -169,6 +173,113 @@ RowTheme currentRowTheme() noexcept {
   };
 }
 
+// Subclass on the address-bar Edit that expands the non-client area
+// on top + bottom (and left + right) so the Edit's client centres a
+// single line of text with visual padding. Single-line Edits ignore
+// EM_SETRECT/NP, so the only Win32 path to "padding around text" is
+// to lie to the Edit about how big its client area is via
+// WM_NCCALCSIZE. We then own WM_NCPAINT for the expanded NC strip
+// so the dark / light row colour fills the padding seamlessly.
+struct AddressEditPadState {
+  bool valid = false;
+  int vertPad = 0;
+  int horizPad = 0;
+};
+
+LRESULT CALLBACK addressEditNcPaddingSubclass(
+    HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam,
+    UINT_PTR idSubclass, DWORD_PTR refData) {
+  auto* state = reinterpret_cast<AddressEditPadState*>(refData);
+  if (msg == WM_NCDESTROY) {
+    RemoveWindowSubclass(hwnd, &addressEditNcPaddingSubclass, idSubclass);
+    delete state;
+    return DefSubclassProc(hwnd, msg, wParam, lParam);
+  }
+  if (msg == WM_NCCALCSIZE && wParam == TRUE && state != nullptr) {
+    auto* p = reinterpret_cast<NCCALCSIZE_PARAMS*>(lParam);
+    HFONT fnt = reinterpret_cast<HFONT>(
+        SendMessageW(hwnd, WM_GETFONT, 0, 0));
+    int textH = 14;
+    if (fnt != nullptr) {
+      HDC dc = GetDC(hwnd);
+      if (dc != nullptr) {
+        HGDIOBJ oldFnt = SelectObject(dc, fnt);
+        TEXTMETRICW tm{};
+        if (GetTextMetricsW(dc, &tm)) textH = tm.tmHeight;
+        if (oldFnt != nullptr) SelectObject(dc, oldFnt);
+        ReleaseDC(hwnd, dc);
+      }
+    }
+    const int outerH = p->rgrc[0].bottom - p->rgrc[0].top;
+    const int totalPad = outerH - textH;
+    int topPad = totalPad > 0 ? totalPad / 2 : 0;
+    int botPad = totalPad > 0 ? totalPad - topPad : 0;
+    const UINT dpi = GetDpiForWindow(hwnd);
+    const int padX = MulDiv(8, static_cast<int>(dpi), 96);
+    p->rgrc[0].top    += topPad;
+    p->rgrc[0].bottom -= botPad;
+    p->rgrc[0].left   += padX;
+    p->rgrc[0].right  -= padX;
+    state->valid = true;
+    state->vertPad = topPad;
+    state->horizPad = padX;
+    return 0;
+  }
+  if (msg == WM_NCPAINT) {
+    HDC dc = GetWindowDC(hwnd);
+    if (dc != nullptr) {
+      RECT wr{};
+      GetWindowRect(hwnd, &wr);
+      const int w = wr.right - wr.left;
+      const int h = wr.bottom - wr.top;
+      RECT outer = {0, 0, w, h};
+      // Match the Edit's CTLCOLOREDIT fill so the padding ring is
+      // visually contiguous with the text bg. PaneToolbarRow's
+      // WM_CTLCOLOREDIT returns RGB(40,40,40) in dark mode and
+      // system COLOR_WINDOW in light.
+      const bool dark = []() {
+        HKEY key = nullptr;
+        if (RegOpenKeyExW(HKEY_CURRENT_USER,
+                          L"Software\\Microsoft\\Windows\\CurrentVersion\\"
+                          L"Themes\\Personalize",
+                          0, KEY_READ, &key) != ERROR_SUCCESS) return false;
+        DWORD v = 1, sz = sizeof(v);
+        LONG r = RegQueryValueExW(key, L"AppsUseLightTheme", nullptr, nullptr,
+                                  reinterpret_cast<BYTE*>(&v), &sz);
+        RegCloseKey(key);
+        return r == ERROR_SUCCESS && v == 0;
+      }();
+      HBRUSH bg = CreateSolidBrush(
+          dark ? RGB(40, 40, 40) : GetSysColor(COLOR_WINDOW));
+      FillRect(dc, &outer, bg);
+      // Subtle 1px border. Slightly lighter than the bg in dark
+      // mode so the textbox edge reads, softer system colour in
+      // light mode.
+      HBRUSH borderBr = CreateSolidBrush(
+          dark ? RGB(80, 80, 80) : RGB(180, 180, 180));
+      FrameRect(dc, &outer, borderBr);
+      DeleteObject(borderBr);
+      DeleteObject(bg);
+      ReleaseDC(hwnd, dc);
+    }
+    return 0;
+  }
+  return DefSubclassProc(hwnd, msg, wParam, lParam);
+}
+
+void installAddressEditNcPadding(HWND edit) noexcept {
+  if (edit == nullptr) return;
+  constexpr UINT_PTR kSubclassId = 0xFE10D0u;
+  DWORD_PTR refData = 0;
+  if (GetWindowSubclass(edit, &addressEditNcPaddingSubclass, kSubclassId,
+                         &refData)) {
+    return;
+  }
+  auto* state = new AddressEditPadState();
+  SetWindowSubclass(edit, &addressEditNcPaddingSubclass, kSubclassId,
+                    reinterpret_cast<DWORD_PTR>(state));
+}
+
 // Undocumented but stable since Windows 10 1809: uxtheme.dll
 // ordinal 135 = SetPreferredAppMode. Telling Windows "AllowDark"
 // here lets the dark-themed classes (DarkMode_CFD for combobox,
@@ -200,7 +311,12 @@ HFONT createRowFont(UINT dpi) noexcept {
   lf.lfWeight = FW_NORMAL;
   lf.lfCharSet = DEFAULT_CHARSET;
   lf.lfQuality = CLEARTYPE_QUALITY;
-  const wchar_t kFace[] = L"Segoe UI";
+  // Segoe UI Variable Display is the Win11 default for shell chrome
+  // — slightly more refined letterforms than plain Segoe UI. Falls
+  // back automatically to Segoe UI on Win10 where the variable
+  // family isn't installed (CreateFontIndirect substitutes via
+  // GDI font mapper).
+  const wchar_t kFace[] = L"Segoe UI Variable Display";
   for (size_t i = 0; i < std::size(kFace); ++i) {
     lf.lfFaceName[i] = kFace[i];
   }
@@ -399,28 +515,19 @@ void PaneToolbarRow::setAddressBar(HWND addressBar) {
   addressBar_ = addressBar;
   if (addressBar != nullptr && hwnd_ != nullptr) {
     SetParent(addressBar, hwnd_);
-    // Note: DarkMode_CFD on ComboBoxEx + inner edit rendered the
-    // textbox with broken text clipping and a hairline white edge
-    // at the top — the private dark theme classes don't fully
-    // support ComboBoxEx. Letting the combo keep its default
-    // (light) theme is uglier in dark mode but actually readable.
-    // The row chrome around it picks up the dark backdrop so the
-    // address bar at least sits on a dark surround.
     if (rowFont_ != nullptr) {
-      // Apply to the ComboBoxEx itself (propagates to dropdown list)
-      // and to the inner edit subcontrol (which is what actually
-      // owns the visible textbox font). Without the explicit
-      // CBEM_GETEDITCONTROL hop the edit keeps using the 9pt
-      // default from window-class registration.
       SendMessageW(addressBar, WM_SETFONT,
                    reinterpret_cast<WPARAM>(rowFont_), TRUE);
-      HWND edit = reinterpret_cast<HWND>(
-          SendMessageW(addressBar, CBEM_GETEDITCONTROL, 0, 0));
-      if (edit != nullptr) {
-        SendMessageW(edit, WM_SETFONT,
-                     reinterpret_cast<WPARAM>(rowFont_), TRUE);
-      }
     }
+    installAddressEditNcPadding(addressBar);
+  }
+  layout();
+}
+
+void PaneToolbarRow::setAddressDropdownBtn(HWND btn) {
+  addressDropdownBtn_ = btn;
+  if (btn != nullptr && hwnd_ != nullptr) {
+    SetParent(btn, hwnd_);
   }
   layout();
 }
@@ -590,12 +697,6 @@ void PaneToolbarRow::onDpiChanged(UINT newDpi) {
   if (addressBar_ != nullptr && newText != nullptr) {
     SendMessageW(addressBar_, WM_SETFONT,
                  reinterpret_cast<WPARAM>(newText), TRUE);
-    HWND edit = reinterpret_cast<HWND>(
-        SendMessageW(addressBar_, CBEM_GETEDITCONTROL, 0, 0));
-    if (edit != nullptr) {
-      SendMessageW(edit, WM_SETFONT,
-                   reinterpret_cast<WPARAM>(newText), TRUE);
-    }
   }
   if (oldIcon != nullptr) DeleteObject(oldIcon);
   if (oldText != nullptr) DeleteObject(oldText);
@@ -620,24 +721,24 @@ void PaneToolbarRow::layout() {
   if (w <= 0 || h <= 0) return;
   const UINT dpi = GetDpiForWindow(hwnd_);
 
-  // The address bar's visible textbox is the visual anchor — its
-  // height is derived from the system font, not from anything we
-  // pass to SetWindowPos. Query the inner edit's client rect and
-  // use that as the "common inner height" all other controls match.
-  // Falls back to kRowInnerDipH when the combo isn't ready yet
-  // (first layout before WM_SHOWWINDOW).
+  // Font-derived inner height so the row stays a stable size across
+  // layout calls (an earlier version measured the Edit's own client
+  // and added back the border, which feedback-grew the row by 2px
+  // per WM_SIZE). 6 DIP of padding around the cap-height gives the
+  // textbox the right breathing room without overshooting other
+  // children.
   int innerH = scaleDip(kRowInnerDipH, dpi);
-  if (addressBar_ != nullptr) {
-    HWND comboEdit = reinterpret_cast<HWND>(
-        SendMessageW(addressBar_, CBEM_GETEDITCONTROL, 0, 0));
-    if (comboEdit != nullptr) {
-      RECT editRc{};
-      GetClientRect(comboEdit, &editRc);
-      const int editH = editRc.bottom - editRc.top;
-      // Combobox draws a ~2-px themed border above and below the
-      // edit; add it back so the combobox's visual outer height
-      // matches the toolbar / hamburger button height.
-      if (editH > 0) innerH = editH + scaleDip(4, dpi);
+  if (rowFont_ != nullptr) {
+    HDC dc = GetDC(hwnd_);
+    if (dc != nullptr) {
+      HGDIOBJ oldFnt = SelectObject(dc, rowFont_);
+      TEXTMETRICW tm{};
+      if (GetTextMetricsW(dc, &tm)) {
+        const int desired = tm.tmHeight + scaleDip(8, dpi);
+        if (desired > innerH) innerH = desired;
+      }
+      if (oldFnt != nullptr) SelectObject(dc, oldFnt);
+      ReleaseDC(hwnd_, dc);
     }
   }
 
@@ -667,10 +768,24 @@ void PaneToolbarRow::layout() {
     x += navW + gap;
   }
 
+  // Dropdown ˅ button sits between the address bar and the hamburger.
+  // 22 DIP wide is just enough room for the glyph + 2px padding either
+  // side, matches Win11 Explorer's chevron button proportion.
+  const int dropW = addressDropdownBtn_ != nullptr ? scaleDip(22, dpi) : 0;
   const int hambX = w - hPad - hambW;
-  const int addrW = hambX - gap - x;
+  const int dropX = hambX - gap - dropW;
+  const int addrW = (dropW > 0 ? dropX : hambX) - gap - x;
   if (addressBar_ != nullptr && addrW > 0) {
+    // Full-height Edit; the NC subclass (installed at setAddressBar)
+    // expands the non-client area on top + bottom so the Edit's
+    // internal client centres the text vertically + leaves visual
+    // breathing room above and below. EM_SETRECT/NP would have been
+    // cleaner but it's a no-op for single-line edits.
     SetWindowPos(addressBar_, nullptr, x, yOff, addrW, innerH,
+                 SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED);
+  }
+  if (addressDropdownBtn_ != nullptr) {
+    SetWindowPos(addressDropdownBtn_, nullptr, dropX, yOff, dropW, innerH,
                  SWP_NOZORDER | SWP_NOACTIVATE);
   }
   if (hamburger_ != nullptr) {
@@ -751,13 +866,41 @@ LRESULT PaneToolbarRow::handleMessage(HWND hwnd, UINT msg, WPARAM wParam,
       }
       break;
     }
-    // BS_OWNERDRAW hamburger: paint the More glyph + standard
-    // background frame. Other DRAWITEM senders (none today) get
-    // forwarded so future controls don't silently break.
+    // BS_OWNERDRAW hamburger + address-bar ˅ button paint themselves
+    // so we can pick light vs dark colours. Other DRAWITEM senders
+    // bubble so future controls don't silently break.
     case WM_DRAWITEM: {
       auto* dis = reinterpret_cast<DRAWITEMSTRUCT*>(lParam);
       if (dis != nullptr && dis->hwndItem == hamburger_) {
         drawHamburgerItem(lParam);
+        return TRUE;
+      }
+      if (dis != nullptr && dis->hwndItem == addressDropdownBtn_) {
+        const RowTheme theme = currentRowTheme();
+        HBRUSH bg = CreateSolidBrush(theme.background);
+        FillRect(dis->hDC, &dis->rcItem, bg);
+        DeleteObject(bg);
+        if ((dis->itemState & (ODS_HOTLIGHT | ODS_SELECTED)) != 0) {
+          COLORREF pillColor = isAppInDarkMode() ? RGB(56, 56, 56)
+                                                  : RGB(225, 225, 225);
+          HBRUSH pill = CreateSolidBrush(pillColor);
+          FillRect(dis->hDC, &dis->rcItem, pill);
+          DeleteObject(pill);
+        }
+        SetBkMode(dis->hDC, TRANSPARENT);
+        SetTextColor(dis->hDC, theme.text);
+        // Use the Segoe Fluent icon font for crisp Win11-style chevron;
+        // fall back to the row text font (then a Unicode chevron) if
+        // the icon font failed to load.
+        HFONT useFnt = mdl2Font_ != nullptr ? mdl2Font_ : rowFont_;
+        HGDIOBJ oldFnt = useFnt != nullptr
+                             ? SelectObject(dis->hDC, useFnt)
+                             : nullptr;
+        const wchar_t* glyph = glyphForButtonId(kTbAddressDropdown);
+        if (glyph == nullptr) glyph = L"v";
+        DrawTextW(dis->hDC, glyph, -1, &dis->rcItem,
+                  DT_SINGLELINE | DT_CENTER | DT_VCENTER | DT_NOPREFIX);
+        if (oldFnt != nullptr) SelectObject(dis->hDC, oldFnt);
         return TRUE;
       }
       HWND parent = GetParent(hwnd);
@@ -766,11 +909,38 @@ LRESULT PaneToolbarRow::handleMessage(HWND hwnd, UINT msg, WPARAM wParam,
       }
       break;
     }
-    // Child controls send WM_COMMAND / WM_CTLCOLOR* to their direct
-    // parent; bubble them up to MainWindow so the existing
-    // accelerator and address-bar dropdown routing keeps working.
+    // WM_CTLCOLOREDIT for the address-bar Edit — dark mode returns
+    // our dark brush + sets text/bg colours on the HDC. The plain
+    // Edit (not ComboBoxEx) honours these directly because there's
+    // no themed Combo wrapping it to ignore the return.
+    case WM_CTLCOLOREDIT: {
+      HWND ctrl = reinterpret_cast<HWND>(lParam);
+      if (ctrl == addressBar_ && isAppInDarkMode()) {
+        HDC hdc = reinterpret_cast<HDC>(wParam);
+        const RowTheme theme = currentRowTheme();
+        // Edit text area sits a bit brighter than the row chrome
+        // so the textbox reads as its own surface.
+        static COLORREF cachedBg = 0;
+        static HBRUSH cachedBrush = nullptr;
+        const COLORREF wantBg = RGB(40, 40, 40);
+        if (cachedBrush == nullptr || cachedBg != wantBg) {
+          if (cachedBrush != nullptr) DeleteObject(cachedBrush);
+          cachedBrush = CreateSolidBrush(wantBg);
+          cachedBg = wantBg;
+        }
+        SetTextColor(hdc, theme.text);
+        SetBkColor(hdc, wantBg);
+        return reinterpret_cast<LRESULT>(cachedBrush);
+      }
+      HWND parent = GetParent(hwnd);
+      if (parent != nullptr) {
+        return SendMessageW(parent, msg, wParam, lParam);
+      }
+      break;
+    }
+    // Other CTLCOLOR / WM_COMMAND bubble up to MainWindow so the
+    // existing accelerator + button routing keeps working.
     case WM_COMMAND:
-    case WM_CTLCOLOREDIT:
     case WM_CTLCOLORSTATIC:
     case WM_CTLCOLORBTN: {
       HWND parent = GetParent(hwnd);
