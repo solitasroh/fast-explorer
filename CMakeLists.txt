@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.24)
 project(FastExplorer
-  VERSION 0.2.2
+  VERSION 0.2.3
   LANGUAGES CXX
 )
 
@@ -428,15 +428,14 @@ set(CPACK_PACKAGE_FILE_NAME "FastExplorer-${FastExplorer_VERSION}-win64")
 # Both files are uploaded to the GitHub Release; appcast.xml points
 # at the .exe so the auto-update click triggers a real install.
 set(CPACK_GENERATOR "ZIP;NSIS")
-# Toplevel-directory flag: ZIP wants files flat at the archive root
-# (sole-purpose extract), NSIS needs the toplevel directory so its
-# File commands resolve against the staging tree (without it the
-# install Section silently copies zero files, leaving a successful
-# /S install with an empty target dir — observed on v0.2.1). The
-# generator-scoped CPACK_NSIS_INCLUDE_TOPLEVEL_DIRECTORY override
-# brings the dir back for NSIS only.
-set(CPACK_INCLUDE_TOPLEVEL_DIRECTORY OFF)
-set(CPACK_NSIS_INCLUDE_TOPLEVEL_DIRECTORY ON)
+# Toplevel directory kept ON (the CPack default). Setting it OFF
+# globally broke NSIS — staging tree shape no longer matched the
+# generated `File` commands and /S installs landed empty (observed
+# v0.2.1 + v0.2.2). The generator-scoped override
+# CPACK_NSIS_INCLUDE_TOPLEVEL_DIRECTORY is not a real CPack
+# variable, so the only safe path is to leave the default on and
+# accept that ZIP extracts produce one nested folder
+# (FastExplorer-<ver>-win64/). Portable users just `cd` into it.
 
 # NSIS-specific config. Installs under %LOCALAPPDATA%\Programs\
 # FastExplorer so no admin elevation is needed for first install
@@ -444,7 +443,14 @@ set(CPACK_NSIS_INCLUDE_TOPLEVEL_DIRECTORY ON)
 # points at the exe; the post-install Finish page offers a checkbox
 # to launch the app, ticked by default.
 set(CPACK_PACKAGE_INSTALL_DIRECTORY "FastExplorer")
-set(CPACK_NSIS_INSTALL_ROOT "$LOCALAPPDATA\\Programs")
+# Bracket-quote with a literal `\\` so the value stored is two
+# backslashes. CMake's CPackConfig.cmake writer preserves the
+# value as-is into `"..."`; the inner `\\` is then a valid
+# escape that the CPackConfig re-parser collapses back to a
+# single `\` before handing the string to the NSIS generator.
+# A single `\` here would write `"\P..."` to CPackConfig and
+# trip the "Invalid character escape '\P'" parser error.
+set(CPACK_NSIS_INSTALL_ROOT [[$LOCALAPPDATA\\Programs]])
 set(CPACK_NSIS_DISPLAY_NAME "Fast Explorer")
 set(CPACK_NSIS_PACKAGE_NAME "Fast Explorer")
 set(CPACK_NSIS_HELP_LINK "https://github.com/solitasroh/fast-explorer")
