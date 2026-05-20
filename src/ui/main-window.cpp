@@ -32,6 +32,7 @@
 #include "ui/pane-controller.h"
 #include "ui/pane-layout.h"
 #include "ui/pane-manager.h"
+#include "ui/pane-splitter.h"
 #include "../../resources/resource-ids.h"
 #include "ui/clipboard-ops.h"
 #include "ui/com-raii.h"
@@ -1348,6 +1349,23 @@ LRESULT MainWindow::onCreate(HWND hwnd) {
   // current Windows theme. Re-applied later if the user toggles
   // Settings → Personalization → Colors via WM_SETTINGCHANGE.
   applySystemTheme();
+
+  initRatiosToDefaults();
+
+  // Register the splitter class once (idempotent).
+  PaneSplitter::registerClass(instance_);
+
+  // Pre-create 3 splitter HWNDs in a hidden state. Visible/positioned
+  // by relayout() based on the active preset's splitterCount.
+  for (std::size_t i = 0; i < splitterHwnds_.size(); ++i) {
+    SplitterContext ctx;
+    ctx.orient = SplitterOrientation::Vertical;     // updated by relayout
+    ctx.ratioId = 0;                                // updated by relayout
+    ctx.ratios = &ratiosPerPreset_[static_cast<std::size_t>(preset_)];
+    ctx.onCommit = [this]() { this->relayout(); };
+    splitterHwnds_[i] = PaneSplitter::create(instance_, hwnd, std::move(ctx));
+    if (splitterHwnds_[i]) ShowWindow(splitterHwnds_[i], SW_HIDE);
+  }
   return 0;
 }
 
