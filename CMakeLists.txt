@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.24)
 project(FastExplorer
-  VERSION 0.2.4
+  VERSION 0.2.5
   LANGUAGES CXX
 )
 
@@ -410,10 +410,17 @@ add_test(NAME core-tests COMMAND core-tests)
 # Build the release ZIP with: cmake --build --preset release --target package
 # Produces: build/FastExplorer-<version>-win64.zip
 # ---------------------------------------------------------------------------
+# Install into bin/ to match the CPack convention: the
+# CPACK_PACKAGE_EXECUTABLES shortcut, the Add/Remove Programs
+# DisplayIcon, and CPACK_NSIS_MUI_FINISHPAGE_RUN all expect the
+# exe to live at `$INSTDIR\bin\<name>.exe`. Previously the install
+# used DESTINATION "." (root of install dir), so the auto-generated
+# shortcut at $INSTDIR\bin\FastExplorer.exe was broken — clicking
+# it pointed at a nonexistent path.
 install(TARGETS FastExplorer
-  RUNTIME DESTINATION .
+  RUNTIME DESTINATION bin
 )
-install(FILES "${WINSPARKLE_DLL}" DESTINATION .)
+install(FILES "${WINSPARKLE_DLL}" DESTINATION bin)
 
 set(CPACK_PACKAGE_NAME "FastExplorer")
 set(CPACK_PACKAGE_VENDOR "Fast Explorer Project")
@@ -458,7 +465,10 @@ set(CPACK_NSIS_URL_INFO_ABOUT "https://github.com/solitasroh/fast-explorer")
 set(CPACK_NSIS_CONTACT "rsj0811@rootech.com")
 set(CPACK_NSIS_MODIFY_PATH OFF)
 set(CPACK_NSIS_ENABLE_UNINSTALL_BEFORE_INSTALL ON)
-set(CPACK_NSIS_MUI_FINISHPAGE_RUN "FastExplorer.exe")
+# Bracket-quote with literal `\\` for the same CPackConfig escape
+# reason as CPACK_NSIS_INSTALL_ROOT above — `\F` would trip the
+# "Invalid character escape" parser at CPackConfig.cmake re-load.
+set(CPACK_NSIS_MUI_FINISHPAGE_RUN [[bin\\FastExplorer.exe]])
 set(CPACK_PACKAGE_EXECUTABLES "FastExplorer" "Fast Explorer")
 # CPack's NSIS template hard-codes `RequestExecutionLevel admin` at
 # header level — that demands UAC consent on every launch, and when
