@@ -495,6 +495,13 @@ void MainWindow::relayout() {
   }
 
   // Position splitter HWNDs; hide unused ones.
+  // Axis math for cursor->ratio mapping must match computePaneLayout:
+  //   * Vertical splitters use `W * ratio`  → origin=0, length=clientW.
+  //   * Horizontal splitters use `top + totalH * ratio`
+  //     → origin=reservedTop (=0 today), length=totalH=clientH-statusH.
+  // Using full clientH for horizontal splitters would be off by statusH,
+  // which made drags feel slightly miscalibrated in v0.4.0.
+  const int totalH = clientH - statusH;  // reservedTop=0
   for (std::size_t i = 0; i < splitterHwnds_.size(); ++i) {
     HWND s = splitterHwnds_[i];
     if (!s) continue;
@@ -509,6 +516,21 @@ void MainWindow::relayout() {
       ctx->orient = sp.orient;
       ctx->ratioId = sp.ratioId;
       ctx->ratios = &ratiosPerPreset_[static_cast<std::size_t>(preset_)];
+      if (sp.orient == SplitterOrientation::Vertical) {
+        ctx->axisOriginInParent = 0;
+        ctx->axisLengthForRatio = clientW;
+        // The ghost line spans this splitter's vertical extent only.
+        ctx->perpLow  = sp.visualRect.top;
+        ctx->perpHigh = sp.visualRect.bottom;
+      } else {
+        ctx->axisOriginInParent = 0;          // reservedTop
+        ctx->axisLengthForRatio = totalH;
+        // The ghost line spans this splitter's horizontal extent only —
+        // important for inner splitters (e.g. Tri_A's right-column
+        // splitter) that don't span the full client width.
+        ctx->perpLow  = sp.visualRect.left;
+        ctx->perpHigh = sp.visualRect.right;
+      }
     }
     SetWindowPos(s, HWND_TOP,
                  sp.hitRect.left, sp.hitRect.top,
