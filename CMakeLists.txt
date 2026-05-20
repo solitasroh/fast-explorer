@@ -119,6 +119,7 @@ set(FE_APP_SOURCES
   src/core/process-memory.cpp
   src/core/process-memory.h
   src/core/layout-orientation.h
+  src/core/layout-preset.h
   src/core/settings-store.cpp
   src/core/settings-store.h
   src/core/text-utf.cpp
@@ -259,6 +260,7 @@ add_executable(core-tests
   tests/settings-store-tests.cpp
   tests/pane-manager-tests.cpp
   tests/pane-layout-tests.cpp
+  tests/layout-preset-tests.cpp
   tests/filter-pattern-tests.cpp
   tests/bench-fs-helper.h
   src/ui/messages.h
@@ -335,6 +337,7 @@ add_executable(core-tests
   src/core/ring-logger.cpp
   src/core/ring-logger.h
   src/core/layout-orientation.h
+  src/core/layout-preset.h
   src/core/settings-store.cpp
   src/core/settings-store.h
   src/core/text-utf.cpp
