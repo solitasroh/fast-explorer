@@ -13,19 +13,20 @@ using fast_explorer::ui::formatSelectionSummary;
 using fast_explorer::ui::humanReadableSize;
 using fast_explorer::ui::statusBarPartLayout;
 using fast_explorer::ui::StatusPartLayout;
+using fast_explorer::ui::kStatusBarPartExtendsToEdge;
 
-// Compile-time policy lock: a single part for single mode, a 50/50
-// split for dual mode, and the -1 sentinel always at the far edge
-// so the last part covers the trailing slack on odd-width windows.
+// Compile-time policy lock: always a single full-width part regardless
+// of paneCount or clientWidth. The -1 sentinel at slot 0 extends the
+// part to the right edge of the status bar.
 static_assert(statusBarPartLayout(1280, 1).count == 1);
 static_assert(statusBarPartLayout(1280, 1).edges[0] == -1);
-static_assert(statusBarPartLayout(1280, 2).count == 2);
-static_assert(statusBarPartLayout(1280, 2).edges[0] == 640);
-static_assert(statusBarPartLayout(1280, 2).edges[1] == -1);
-static_assert(statusBarPartLayout(1281, 2).edges[0] == 640);  // round down
-static_assert(statusBarPartLayout(0, 2).count == 1);  // degenerate width
-static_assert(statusBarPartLayout(1280, 0).count == 1);  // fallback
-static_assert(statusBarPartLayout(1280, 3).count == 1);  // fallback
+static_assert(statusBarPartLayout(1280, 2).count == 1);
+static_assert(statusBarPartLayout(1280, 2).edges[0] == -1);
+static_assert(statusBarPartLayout(1281, 2).count == 1);
+static_assert(statusBarPartLayout(0, 2).count == 1);   // degenerate width
+static_assert(statusBarPartLayout(1280, 0).count == 1);  // zero panes
+static_assert(statusBarPartLayout(1280, 3).count == 1);  // tri pane
+static_assert(statusBarPartLayout(1280, 4).count == 1);  // quad pane
 
 FE_TEST_CASE(StatusText_Loading_IncludesPath) {
   FE_ASSERT_WSTREQ(loadingStatusText(L"C:\\tmp\\foo"),
@@ -129,29 +130,33 @@ FE_TEST_CASE(StatusText_OpResult_LeafExtraction_NoSeparator) {
                    L"Moved 'barefile' to Recycle Bin");
 }
 
-FE_TEST_CASE(StatusPartLayout_Single_SinglePartFullWidth) {
+FE_TEST_CASE(StatusPartLayout_AlwaysSinglePart_Single) {
   const auto out = statusBarPartLayout(1280, 1);
   FE_ASSERT_EQ(out.count, static_cast<std::size_t>(1));
-  FE_ASSERT_EQ(out.edges[0], -1);
+  FE_ASSERT_EQ(out.edges[0], kStatusBarPartExtendsToEdge);
 }
 
-FE_TEST_CASE(StatusPartLayout_Dual_FiftyFiftySplit) {
+FE_TEST_CASE(StatusPartLayout_AlwaysSinglePart_Dual) {
   const auto out = statusBarPartLayout(1280, 2);
-  FE_ASSERT_EQ(out.count, static_cast<std::size_t>(2));
-  FE_ASSERT_EQ(out.edges[0], 640);
-  FE_ASSERT_EQ(out.edges[1], -1);
+  FE_ASSERT_EQ(out.count, static_cast<std::size_t>(1));
+  FE_ASSERT_EQ(out.edges[0], kStatusBarPartExtendsToEdge);
 }
 
-FE_TEST_CASE(StatusPartLayout_Dual_OddWidth_LeftAbsorbsLossOnRoundDown) {
-  const auto out = statusBarPartLayout(1281, 2);
-  FE_ASSERT_EQ(out.edges[0], 640);
-  FE_ASSERT_EQ(out.edges[1], -1);
+FE_TEST_CASE(StatusPartLayout_AlwaysSinglePart_Tri) {
+  const auto out = statusBarPartLayout(1280, 3);
+  FE_ASSERT_EQ(out.count, static_cast<std::size_t>(1));
+  FE_ASSERT_EQ(out.edges[0], kStatusBarPartExtendsToEdge);
 }
 
-FE_TEST_CASE(StatusPartLayout_OutOfRangeOrZeroWidth_FallsBackToSingle) {
+FE_TEST_CASE(StatusPartLayout_AlwaysSinglePart_Quad) {
+  const auto out = statusBarPartLayout(1280, 4);
+  FE_ASSERT_EQ(out.count, static_cast<std::size_t>(1));
+  FE_ASSERT_EQ(out.edges[0], kStatusBarPartExtendsToEdge);
+}
+
+FE_TEST_CASE(StatusPartLayout_AlwaysSinglePart_DegenerateArgs) {
   FE_ASSERT_EQ(statusBarPartLayout(0, 2).count, static_cast<std::size_t>(1));
   FE_ASSERT_EQ(statusBarPartLayout(1280, 0).count, static_cast<std::size_t>(1));
-  FE_ASSERT_EQ(statusBarPartLayout(1280, 3).count, static_cast<std::size_t>(1));
 }
 
 FE_TEST_CASE(HumanReadableSize_BytesUnderKiB_RawWithBSuffix) {

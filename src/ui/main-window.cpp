@@ -47,7 +47,9 @@ namespace fast_explorer::ui {
 
 namespace {
 
-constexpr std::size_t kMaxPanes = 2;
+constexpr std::size_t kMaxPanes = 4;
+static_assert(kMaxPanes == fast_explorer::core::kMaxPanes,
+              "main-window kMaxPanes must match core::kMaxPanes");
 // One timer id per pane so dual-mode debounce windows do not collide.
 constexpr UINT_PTR kTimerFsCoalesceBase = 1;
 constexpr UINT kFsCoalesceMs = 100;
@@ -718,6 +720,7 @@ void MainWindow::setActivePane(std::size_t idx) {
   }
   applyActivePaneAppearance();
   syncAddressBar(idx);
+  refreshSelectionSummary(idx);
 }
 
 void MainWindow::setLayoutOrientation(LayoutOrientation orientation) {
@@ -1155,37 +1158,24 @@ void MainWindow::handleAddressCommit(std::size_t paneIdx) {
 }
 
 void MainWindow::setPaneStatusText(std::size_t paneIdx, const wchar_t* text) {
-  if (statusBar_ == nullptr || text == nullptr || paneIdx >= kMaxPanes) {
-    return;
+  if (statusBar_ == nullptr || text == nullptr) return;
+  if (paneIdx >= kMaxPanes) return;
+  if (!paneManager_ || paneIdx != paneManager_->activeIndex()) {
+    return;  // Only active pane drives the (single) status bar.
   }
-  // In single mode the status bar has only one part (index 0); a
-  // write to pane 1 would land in a non-existent part and be lost
-  // anyway. Drop it explicitly so a stray dual-mode message in
-  // flight does not paint an out-of-bounds part if the user
-  // collapses to single between the message post and its dispatch.
-  if (paneIdx == 1 && (!paneManager_ || !(paneManager_->count() > 1))) {
-    return;
-  }
-  SendMessageW(statusBar_, SB_SETTEXTW, static_cast<WPARAM>(paneIdx),
+  SendMessageW(statusBar_, SB_SETTEXTW, 0,
                reinterpret_cast<LPARAM>(text));
 }
 
 void MainWindow::applyStatusParts(int clientWidth) {
-  if (statusBar_ == nullptr) {
-    return;
-  }
-  const std::size_t paneCount = paneManager_ ? paneManager_->count() : 1;
-  const auto layout = statusBarPartLayout(clientWidth, paneCount);
-  // SB_SETPARTS via SendMessageW: synchronous, so the status bar
-  // copies the edges array before this call returns. The kStatus
-  // BarPartExtendsToEdge sentinel in the trailing slot extends the
-  // last part to the right edge of the status bar even on odd-
-  // width windows. Must stay SendMessageW (not PostMessageW) so
-  // the int* into the stack-temporary `layout` is dereferenced
-  // before its lifetime ends.
-  SendMessageW(statusBar_, SB_SETPARTS,
-               static_cast<WPARAM>(layout.count),
-               reinterpret_cast<LPARAM>(layout.edges.data()));
+  if (statusBar_ == nullptr) return;
+  (void)clientWidth;
+  // Always a single full-width part — the bar shows ACTIVE pane info
+  // only, regardless of paneCount. SB_SETPARTS is synchronous so the
+  // int* into the stack array is valid for the duration of the call.
+  int edges[1] = {kStatusBarPartExtendsToEdge};
+  SendMessageW(statusBar_, SB_SETPARTS, 1,
+               reinterpret_cast<LPARAM>(&edges[0]));
 }
 
 bool MainWindow::create(HINSTANCE instance, int showCommand) {

@@ -66,16 +66,13 @@ std::wstring opResultBatchStatusText(
 // windows.
 inline constexpr int kStatusBarPartExtendsToEdge = -1;
 
-// Right-edge x-coordinates fed to Win32 SB_SETPARTS, in the order
-// pane 0 then pane 1. The returned `count` (1 or 2) is the number
-// of parts the caller should pass as the wParam to SB_SETPARTS.
-// Slot 1 is left zero when count == 1.
-//
-// Single (paneCount == 1): one full-width part — edges =
-//   {kStatusBarPartExtendsToEdge, 0}, count = 1.
-// Dual   (paneCount == 2): 50/50 split — edges =
-//   {clientWidth/2, kStatusBarPartExtendsToEdge}, count = 2.
-// Anything outside {1, 2}: single full-width fallback.
+// Right-edge x-coordinates fed to Win32 SB_SETPARTS. Always returns
+// a single full-width part regardless of paneCount or clientWidth:
+//   edges = {kStatusBarPartExtendsToEdge, 0}, count = 1.
+// The status bar shows only the ACTIVE pane's info so a multi-part
+// layout is never needed. Parameters are accepted for API stability
+// and to avoid churn at call sites; both are ignored.
+// Slot 1 is left zero (unused) in the returned layout.
 struct StatusPartLayout {
   // edges is intentionally non-const because Win32 SB_SETPARTS
   // takes a non-const int* via LPARAM (legacy unannotated API).
@@ -85,9 +82,8 @@ struct StatusPartLayout {
 
 [[nodiscard]] constexpr StatusPartLayout statusBarPartLayout(
     int clientWidth, std::size_t paneCount) noexcept {
-  if (paneCount == 2 && clientWidth > 0) {
-    return {{clientWidth / 2, kStatusBarPartExtendsToEdge}, 2};
-  }
+  (void)clientWidth;
+  (void)paneCount;
   return {{kStatusBarPartExtendsToEdge, 0}, 1};
 }
 
