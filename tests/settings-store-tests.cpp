@@ -501,3 +501,60 @@ FE_TEST_CASE(SettingsStore_v5_RoundTrip_QuadA) {
   FE_ASSERT_TRUE(r.ratios[0] > 0.59f && r.ratios[0] < 0.61f);
   DeleteFileW(path.c_str());
 }
+
+FE_TEST_CASE(SettingsStore_v4_to_v5_DualV_Migrates) {
+  const std::string v4Json =
+    "{\n"
+    "  \"last_path\": \"C:/old\",\n"
+    "  \"window_x\": 1, \"window_y\": 2, \"window_w\": 800, \"window_h\": 600,\n"
+    "  \"layout_mode\": \"dual\",\n"
+    "  \"second_path\": \"D:/old\",\n"
+    "  \"orientation\": \"vertical\",\n"
+    "  \"view_show_hidden\": 0,\n"
+    "  \"view_show_extensions\": 1\n"
+    "}\n";
+  const std::wstring path = uniqueTempPath(L"fe_v4_dv");
+  writeRawBytes(path, v4Json);
+
+  SessionState out{};
+  FE_ASSERT_TRUE(loadSessionState(path, out));
+  FE_ASSERT_EQ(out.paneCount, std::size_t{2});
+  FE_ASSERT_EQ(out.preset, LayoutPreset::Dual_V);
+  FE_ASSERT_WSTREQ(out.panePaths[0], L"C:/old");
+  FE_ASSERT_WSTREQ(out.panePaths[1], L"D:/old");
+  FE_ASSERT_WSTREQ(out.lastPath,   L"C:/old");
+  FE_ASSERT_WSTREQ(out.secondPath, L"D:/old");
+  DeleteFileW(path.c_str());
+}
+
+FE_TEST_CASE(SettingsStore_v4_to_v5_Single_Migrates) {
+  const std::string v4Json =
+    "{\n"
+    "  \"last_path\": \"X:/proj\",\n"
+    "  \"layout_mode\": \"single\"\n"
+    "}\n";
+  const std::wstring path = uniqueTempPath(L"fe_v4_s");
+  writeRawBytes(path, v4Json);
+  SessionState out{};
+  FE_ASSERT_TRUE(loadSessionState(path, out));
+  FE_ASSERT_EQ(out.paneCount, std::size_t{1});
+  FE_ASSERT_EQ(out.preset, LayoutPreset::Single);
+  FE_ASSERT_WSTREQ(out.panePaths[0], L"X:/proj");
+  DeleteFileW(path.c_str());
+}
+
+FE_TEST_CASE(SettingsStore_v4_to_v5_DualH_Migrates) {
+  const std::string v4Json =
+    "{\n"
+    "  \"last_path\": \"A:/\",\n"
+    "  \"second_path\": \"B:/\",\n"
+    "  \"layout_mode\": \"dual\",\n"
+    "  \"orientation\": \"horizontal\"\n"
+    "}\n";
+  const std::wstring path = uniqueTempPath(L"fe_v4_dh");
+  writeRawBytes(path, v4Json);
+  SessionState out{};
+  FE_ASSERT_TRUE(loadSessionState(path, out));
+  FE_ASSERT_EQ(out.preset, LayoutPreset::Dual_H);
+  DeleteFileW(path.c_str());
+}

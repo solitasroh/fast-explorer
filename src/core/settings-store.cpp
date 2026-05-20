@@ -584,6 +584,23 @@ bool loadSessionState(const std::wstring& path, SessionState& state) {
       r = fast_explorer::ui::defaultRatiosFor(static_cast<LayoutPreset>(i));
     }
   }
+  if (reader.schemaVersion() < kSchemaVersionCurrent) {
+    if (state.panePaths[0].empty() && !state.lastPath.empty()) {
+      state.panePaths[0] = state.lastPath;
+    }
+    if (state.panePaths[1].empty() && !state.secondPath.empty()) {
+      state.panePaths[1] = state.secondPath;
+    }
+    if (state.layoutMode == LayoutMode::Dual) {
+      state.preset = (state.orientation == LayoutOrientation::Horizontal)
+                         ? LayoutPreset::Dual_H : LayoutPreset::Dual_V;
+      state.paneCount = 2;
+    } else {
+      state.preset = LayoutPreset::Single;
+      state.paneCount = 1;
+    }
+    state.activePane = 0;
+  }
   return true;
 }
 
