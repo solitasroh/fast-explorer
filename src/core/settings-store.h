@@ -1,10 +1,13 @@
 #pragma once
 
+#include <array>
 #include <climits>
 #include <cstdint>
 #include <string>
 
 #include "core/layout-orientation.h"
+#include "core/layout-preset.h"
+#include "ui/splitter-ratios.h"
 
 namespace fast_explorer::core {
 
@@ -15,19 +18,31 @@ constexpr int kSettingsUseDefault = INT_MIN;
 
 enum class LayoutMode : std::uint8_t { Single = 0, Dual = 1 };
 
+constexpr std::size_t kMaxPanes = 4;
+
 struct SessionState {
   std::wstring lastPath;
+  std::wstring secondPath;
   int windowX = kSettingsUseDefault;
   int windowY = kSettingsUseDefault;
   int windowWidth = kSettingsUseDefault;
   int windowHeight = kSettingsUseDefault;
+
+  // Legacy v4 fields retained for migration source. Writer no longer
+  // emits layout_mode / orientation in v5; these are derived from
+  // preset on read.
   LayoutMode layoutMode = LayoutMode::Single;
-  std::wstring secondPath;
   LayoutOrientation orientation = LayoutOrientation::Vertical;
-  // v0.2 view toggles (schema v4). Both default to the "useful for the
-  // FastExplorer target user" choice rather than the Windows Explorer
-  // default — power users want extensions visible, but hidden items
-  // stay off so the first launch experience matches expectations.
+
+  // v5 fields
+  std::array<std::wstring, kMaxPanes> panePaths{};
+  std::size_t paneCount = 1;
+  std::size_t activePane = 0;
+  fast_explorer::core::LayoutPreset preset =
+      fast_explorer::core::LayoutPreset::Single;
+  std::array<fast_explorer::ui::SplitterRatios,
+             fast_explorer::core::kLayoutPresetCount> ratiosPerPreset{};
+
   bool showHidden = false;
   bool showExtensions = true;
 };
