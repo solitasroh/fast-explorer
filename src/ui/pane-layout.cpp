@@ -196,8 +196,25 @@ PaneLayoutResult computePaneLayout(fast_explorer::core::LayoutPreset preset,
       out.splitterCount = 3;
       return out;
     }
+    case P::Quad_D: {
+      const int x  = static_cast<int>(static_cast<float>(W) * ratios.ratios[0]);
+      const int y1 = top + static_cast<int>(static_cast<float>(totalH) *
+                                             ratios.ratios[1]);
+      const int y2 = top + static_cast<int>(static_cast<float>(totalH) *
+                                             ratios.ratios[2]);
+      out.slots[0] = {0, top, x, bot};
+      out.slots[1] = {x, top, W, y1};
+      out.slots[2] = {x, y1,  W, y2};
+      out.slots[3] = {x, y2,  W, bot};
+      out.splitters[0] = makeVerticalSplitter(x, top, bot, 0);
+      out.splitters[1] = makeHorizontalSplitter(y1, x, W, 1);
+      out.splitters[2] = makeHorizontalSplitter(y2, x, W, 2);
+      out.slotCount = 4;
+      out.splitterCount = 3;
+      return out;
+    }
     default:
-      // Quad_D implemented in later tasks.
+      // Defensive fallthrough — unreachable for any valid LayoutPreset.
       return out;
   }
 }

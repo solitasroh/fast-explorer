@@ -326,3 +326,18 @@ FE_TEST_CASE(ComputePaneLayout_QuadC_FourRows_ThreeHorizontalSplitters) {
   FE_ASSERT_EQ(out.splitters[1].orient, SplitterOrientation::Horizontal);
   FE_ASSERT_EQ(out.splitters[2].orient, SplitterOrientation::Horizontal);
 }
+
+FE_TEST_CASE(ComputePaneLayout_QuadD_LeftFull_RightThreeStack_ThreeSplitters) {
+  const auto out = computePaneLayout(LayoutPreset::Quad_D,
+                                     defaultRatiosFor(LayoutPreset::Quad_D),
+                                     1280, 800, 0, 22);
+  FE_ASSERT_EQ(out.slotCount, std::size_t{4});
+  FE_ASSERT_EQ(out.splitterCount, std::size_t{3});
+  FE_ASSERT_TRUE(rectEquals(out.slots[0],   0,   0,  640, 778));
+  FE_ASSERT_TRUE(rectEquals(out.slots[1], 640,   0, 1280, 259));
+  FE_ASSERT_TRUE(rectEquals(out.slots[2], 640, 259, 1280, 518));
+  FE_ASSERT_TRUE(rectEquals(out.slots[3], 640, 518, 1280, 778));
+  FE_ASSERT_EQ(out.splitters[0].orient, SplitterOrientation::Vertical);
+  FE_ASSERT_EQ(out.splitters[1].orient, SplitterOrientation::Horizontal);
+  FE_ASSERT_EQ(out.splitters[2].orient, SplitterOrientation::Horizontal);
+}
