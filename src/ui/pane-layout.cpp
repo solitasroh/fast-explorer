@@ -134,8 +134,20 @@ PaneLayoutResult computePaneLayout(fast_explorer::core::LayoutPreset preset,
       out.splitterCount = 2;
       return out;
     }
+    case P::Tri_C: {
+      const int x0 = static_cast<int>(static_cast<float>(W) * ratios.ratios[0]);
+      const int x1 = static_cast<int>(static_cast<float>(W) * ratios.ratios[1]);
+      out.slots[0] = {0,  top, x0, bot};
+      out.slots[1] = {x0, top, x1, bot};
+      out.slots[2] = {x1, top, W,  bot};
+      out.splitters[0] = makeVerticalSplitter(x0, top, bot, 0);
+      out.splitters[1] = makeVerticalSplitter(x1, top, bot, 1);
+      out.slotCount = 3;
+      out.splitterCount = 2;
+      return out;
+    }
     default:
-      // Tri_C / Quad_* implemented in later tasks.
+      // Quad_* implemented in later tasks.
       return out;
   }
 }
