@@ -65,5 +65,10 @@
       <pubDate>Wed, 20 May 2026 06:57:57 +0000</pubDate>
       <enclosure url="https://github.com/solitasroh/fast-explorer/releases/download/v0.3.0/FastExplorer-0.3.0-win64.exe" sparkle:version="0.3.0" sparkle:edSignature="5Kct7CxZMdsw18fW5heOGpxy1DdPKwsJTMSRHXhc/kfbgpTLIIVqnHqsNKOZvTYAKxBl1mTli3K4Oc6emjhsDQ==" length="1428599" type="application/octet-stream" />
     </item>
+    <item>
+      <title>Version 0.4.0</title>
+      <pubDate>Wed, 20 May 2026 23:50:01 +0000</pubDate>
+      <enclosure url="https://github.com/solitasroh/fast-explorer/releases/download/v0.4.0/FastExplorer-0.4.0-win64.exe" sparkle:version="0.4.0" sparkle:edSignature="xSstzNYEkflgKYNPW9v+9leKJDFxAzM2YtXF5N/jht/g9H3579RtigTezn17DrYEQpbFVQFniozkMAriA2ZlDA==" length="1436632" type="application/octet-stream" />
+    </item>
   </channel>
 </rss>
