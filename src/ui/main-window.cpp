@@ -1499,10 +1499,25 @@ LRESULT CALLBACK addressBarColorSubclassProc(
 // actual parent of the Edit / dropdown listbox). Idempotent — repeated
 // calls bind the same (hwnd, proc, id) without leaking. State is
 // allocated once and freed by the subclass proc on WM_NCDESTROY.
+//
+// Also strips the visual-style theme from the inner Edit. Themed Edit
+// controls bypass WM_CTLCOLOREDIT for their background fill — they
+// use DrawThemeBackground with the theme's own colour — so without
+// SetWindowTheme(L" ", L" ") the dark brush we return below is
+// ignored and the textbox renders pure white in dark mode (which the
+// v0.2.8 ship hit). The empty-class form falls back to the classic
+// (non-themed) Edit renderer that fully honours CTLCOLOR. Visual
+// difference vs themed light mode: square corners and a classic
+// 1px border — same as Win Explorer's own dark address bar.
 void installAddressBarColorSubclass(HWND addressBar) noexcept {
   if (addressBar == nullptr) return;
   HWND innerCombo = reinterpret_cast<HWND>(
       SendMessageW(addressBar, CBEM_GETCOMBOCONTROL, 0, 0));
+  HWND innerEdit = reinterpret_cast<HWND>(
+      SendMessageW(addressBar, CBEM_GETEDITCONTROL, 0, 0));
+  if (innerEdit != nullptr) {
+    SetWindowTheme(innerEdit, L" ", L" ");
+  }
   if (innerCombo == nullptr) return;
   constexpr UINT_PTR kAddrColorSubclassId = 0xFE10B0u;
   DWORD_PTR refData = 0;
