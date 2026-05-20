@@ -94,6 +94,15 @@ std::vector<PidlOwner> parseChildren(
   std::vector<PidlOwner> out;
   out.reserve(leaves.size());
   for (const auto& leaf : leaves) {
+    // Skip empty leaf names defensively — an empty string passed to
+    // ParseDisplayName resolves to the folder itself on some shell
+    // namespaces, which is never what the caller intends. Also
+    // skip individual leaves whose ParseDisplayName fails (e.g. a
+    // stale selection bit referencing a just-deleted file): the
+    // shell extension stack tolerates a smaller selection cleanly,
+    // and failing the whole menu over one stale leaf leaves the
+    // user with no way to act on the surviving items.
+    if (leaf.empty()) continue;
     LPITEMIDLIST child = nullptr;
     ULONG eaten = 0;
     SFGAOF attrs = 0;
@@ -101,7 +110,7 @@ std::vector<PidlOwner> parseChildren(
                                         const_cast<LPWSTR>(leaf.c_str()),
                                         &eaten, &child, &attrs)) ||
         child == nullptr) {
-      return {};
+      continue;
     }
     out.emplace_back(child);
   }

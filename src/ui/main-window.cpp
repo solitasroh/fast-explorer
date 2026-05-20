@@ -2283,6 +2283,11 @@ std::vector<std::wstring> collectSelectedLeaves(HWND lv,
     const auto idx = static_cast<std::size_t>(row);
     if (idx >= store.publishedCount()) continue;
     const auto& entry = store.visibleAt(idx);
+    // Skip entries with no name (defensive: a stale OWNERDATA
+    // selection bit after an fs-watch refresh could otherwise feed
+    // an empty leaf into ClipboardOps::copy, which would silently
+    // shrink the clipboard payload).
+    if (entry.namePtr == nullptr || entry.nameLength == 0) continue;
     out.emplace_back(entry.namePtr, entry.nameLength);
   }
   return out;
@@ -2580,11 +2585,18 @@ void MainWindow::handleListViewRightClick(NMHDR* hdr) {
       // Multi-selection right-click on one of the selected rows:
       // address every selected item, matching Explorer's behavior
       // ("Delete", "Cut", "Properties" all act on the whole group).
+      // Validate each entry's name pointer before appending so a
+      // stale OWNERDATA selection bit (which can survive an
+      // fs-watch-triggered refresh after a Delete) does not inject
+      // an empty leaf — parseChildren skips empties, but
+      // constructing an empty std::wstring here is wasted work.
       leaves.reserve(selectedRows.size());
       for (int row : selectedRows) {
         if (static_cast<std::size_t>(row) < shown) {
           const auto& e = store.visibleAt(static_cast<std::size_t>(row));
-          leaves.emplace_back(e.namePtr, e.nameLength);
+          if (e.namePtr != nullptr && e.nameLength > 0) {
+            leaves.emplace_back(e.namePtr, e.nameLength);
+          }
         }
       }
     } else {
@@ -2601,7 +2613,9 @@ void MainWindow::handleListViewRightClick(NMHDR* hdr) {
       }
       if (static_cast<std::size_t>(clicked) < shown) {
         const auto& e = store.visibleAt(static_cast<std::size_t>(clicked));
-        leaves.emplace_back(e.namePtr, e.nameLength);
+        if (e.namePtr != nullptr && e.nameLength > 0) {
+          leaves.emplace_back(e.namePtr, e.nameLength);
+        }
       }
     }
   }
