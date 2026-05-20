@@ -14,8 +14,8 @@ namespace fast_explorer::ui {
 
 // Seam orientation lives in core for settings round-trip; re-exported
 // here so the existing `ui::LayoutOrientation::*` call sites
-// (computePaneRects, resolveLayoutToggle, MainWindow) compile
-// unchanged. Vertical = panes side-by-side (default). Horizontal =
+// (resolveLayoutToggle, MainWindow) compile unchanged.
+// Vertical = panes side-by-side (default). Horizontal =
 // panes stacked top-over-bottom.
 using LayoutOrientation = fast_explorer::core::LayoutOrientation;
 
@@ -52,13 +52,6 @@ struct LayoutTransition {
   return {LayoutAction::SwitchOrientation, pressed};
 }
 
-// Result of laying out the client area below the address bar and
-// above the status bar. paneCount controls how many pane slots are
-// returned with non-empty rects; the unused slot stays zeroed.
-struct PaneLayoutRects {
-  std::array<RECT, 2> panes{};
-};
-
 enum class SplitterOrientation : std::uint8_t { Vertical = 0, Horizontal = 1 };
 
 struct SplitterRect {
@@ -74,25 +67,6 @@ struct PaneLayoutResult {
   std::size_t slotCount{0};
   std::size_t splitterCount{0};
 };
-
-// Computes pane rects for `paneCount` (1 or 2) inside a client area
-// of (clientWidth, clientHeight), with `addressBarHeight` reserved
-// at the top and `statusBarHeight` at the bottom. For paneCount==2
-// the split is a 50/50 division of the remaining strip, along the
-// `orientation` seam:
-//   - Vertical   (default): left | right, each pane full height
-//   - Horizontal:           top  / bottom, each pane full width
-//
-// Returns zeroed rects when paneCount is out of range or the strip
-// is non-positive. For odd divisions the first pane absorbs the
-// rounded-down half (the second pane covers the remainder).
-[[nodiscard]] PaneLayoutRects computePaneRects(
-    int clientWidth,
-    int clientHeight,
-    int addressBarHeight,
-    int statusBarHeight,
-    std::size_t paneCount,
-    LayoutOrientation orientation = LayoutOrientation::Vertical) noexcept;
 
 // Computes a full layout result (pane slots + splitter descriptors) for
 // the given preset and splitter ratios. reservedTop/reservedBottom are

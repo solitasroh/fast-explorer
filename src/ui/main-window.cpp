@@ -704,24 +704,6 @@ void MainWindow::enterLayout(fast_explorer::core::LayoutPreset target) {
   relayout();
 }
 
-void MainWindow::enterDualMode(const std::wstring& secondPath,
-                               LayoutOrientation orientation) {
-  // Compatibility wrapper. The secondPath argument is honored by
-  // openPane's slot-creation path; the layout decision is now a
-  // preset, not (mode + orientation).
-  using fast_explorer::core::LayoutPreset;
-  (void)secondPath;  // openPane fallback uses active().currentPath();
-                     // session restore drives an explicit openFolder
-                     // path via restoreLayoutFromSession.
-  enterLayout(orientation == LayoutOrientation::Horizontal
-                  ? LayoutPreset::Dual_H
-                  : LayoutPreset::Dual_V);
-}
-
-void MainWindow::enterSingleMode() {
-  enterLayout(fast_explorer::core::LayoutPreset::Single);
-}
-
 void MainWindow::setActivePane(std::size_t idx) {
   if (!paneManager_ || !paneManager_->setActive(idx)) {
     return;
@@ -2282,7 +2264,7 @@ LRESULT MainWindow::onFsChange(HWND hwnd, WPARAM wParam) {
   // Generation gate: an fs-watch event queued for a folder we just
   // left would otherwise re-arm the debounce timer and trigger a
   // refresh of the *new* folder using the *old* folder's noise.
-  // It also prevents the timer-leak after enterSingleMode kills
+  // It also prevents the timer-leak after enterLayout(Single) kills
   // the pane-1 timer band — without the gate, a queued pane-1
   // event would re-arm a timer for a pane that no longer exists.
   if (isStaleGeneration(wParam)) {

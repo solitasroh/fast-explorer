@@ -54,25 +54,6 @@ class MainWindow {
   // is not yet created or the path is invalid.
   bool openFolder(const std::wstring& path);
 
-  // Creates the second pane (list-view + PaneController + per-pane
-  // coordinators) and triggers a layout refresh. No-op when already
-  // in dual mode. Does not change the active pane — the caller
-  // decides whether the new pane gets focus. The second pane opens
-  // on `secondPath` when non-empty; otherwise it falls back to the
-  // active pane's current folder so a manual Ctrl+2 lands on the
-  // working location rather than an empty list. `orientation` picks
-  // the seam between the two panes (Vertical = side-by-side, default;
-  // Horizontal = top/bottom). Entering dual mode while already dual
-  // is a no-op — use setLayoutOrientation to flip the seam in place.
-  void enterDualMode(const std::wstring& secondPath = {},
-                     LayoutOrientation orientation =
-                         LayoutOrientation::Vertical);
-
-  // Destroys the second pane (releases its coordinators, removes the
-  // PaneController, destroys the second list-view) and triggers a
-  // layout refresh. No-op when already in single mode.
-  void enterSingleMode();
-
   // Switches to the given preset, opening or closing slots as needed.
   // Implementation lands in Task 27. Currently a no-op stub so the
   // build links while Task 25/26 wire infrastructure.
@@ -153,9 +134,8 @@ class MainWindow {
   // Wires per-pane coordinators (icon / selection / label-edit) for
   // pane `idx` against the given list-view. Returns false if any
   // coordinator construction failed, leaving partial state for the
-  // caller to roll back. Used by both onCreate (idx=0) and
-  // enterDualMode (idx=1) so the construction sequence stays in one
-  // place.
+  // caller to roll back. Used by onCreate (idx=0) and installPaneAt
+  // (idx>=1) so the construction sequence stays in one place.
   bool installPaneCoordinators(std::size_t idx, HWND listView);
   // Creates per-slot UI (listview, toolbar row, address bar, drop
   // target, coordinators) for the slot at `idx`. Assumes the
@@ -253,8 +233,8 @@ class MainWindow {
   HWND hwnd_ = nullptr;
   // listViews_[0] is the original list-view created in onCreate; alias
   // listView_ keeps the single-pane code paths unchanged. listViews_
-  // [1] is created on demand by enterDualMode() and destroyed by
-  // enterSingleMode().
+  // [1..3] are created on demand by enterLayout() / installPaneAt()
+  // and destroyed by uninstallPaneAt().
   HWND listView_ = nullptr;
   std::array<HWND, 4> listViews_{nullptr, nullptr, nullptr, nullptr};
   HWND statusBar_ = nullptr;
