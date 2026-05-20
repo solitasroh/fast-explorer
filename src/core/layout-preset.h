@@ -45,4 +45,33 @@ static_assert(static_cast<std::size_t>(LayoutPreset::Quad_D) + 1 ==
   return 1;
 }
 
+[[nodiscard]] constexpr LayoutPreset nextPresetInCycle(
+    LayoutPreset current, std::size_t targetSlotCount) noexcept {
+  if (targetSlotCount <= 1) return LayoutPreset::Single;
+  if (targetSlotCount == 2) {
+    // Dual seam flip is owned by resolveLayoutToggle (Alt+V/H);
+    // entering from non-dual lands on Dual_V.
+    if (current == LayoutPreset::Dual_V || current == LayoutPreset::Dual_H) {
+      return current;
+    }
+    return LayoutPreset::Dual_V;
+  }
+  if (targetSlotCount == 3) {
+    switch (current) {
+      case LayoutPreset::Tri_A: return LayoutPreset::Tri_B;
+      case LayoutPreset::Tri_B: return LayoutPreset::Tri_C;
+      case LayoutPreset::Tri_C: return LayoutPreset::Tri_A;
+      default:                  return LayoutPreset::Tri_A;
+    }
+  }
+  // targetSlotCount >= 4
+  switch (current) {
+    case LayoutPreset::Quad_A: return LayoutPreset::Quad_B;
+    case LayoutPreset::Quad_B: return LayoutPreset::Quad_C;
+    case LayoutPreset::Quad_C: return LayoutPreset::Quad_D;
+    case LayoutPreset::Quad_D: return LayoutPreset::Quad_A;
+    default:                   return LayoutPreset::Quad_A;
+  }
+}
+
 }  // namespace fast_explorer::core
