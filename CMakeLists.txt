@@ -63,6 +63,7 @@ set(FE_APP_SOURCES
   src/ui/label-edit-controller.h
   src/ui/shell-worker.cpp
   src/ui/shell-worker.h
+  src/ui/splitter-ratios.h
   src/ui/filter-pattern.cpp
   src/ui/filter-pattern.h
   src/ui/search-popup.cpp
@@ -258,6 +259,7 @@ add_executable(core-tests
   tests/selection-sync-tests.cpp
   tests/label-edit-controller-tests.cpp
   tests/settings-store-tests.cpp
+  tests/splitter-ratios-tests.cpp
   tests/pane-manager-tests.cpp
   tests/pane-layout-tests.cpp
   tests/layout-preset-tests.cpp
@@ -286,6 +288,7 @@ add_executable(core-tests
   src/ui/label-edit-controller.h
   src/ui/shell-worker.cpp
   src/ui/shell-worker.h
+  src/ui/splitter-ratios.h
   src/ui/filter-pattern.cpp
   src/ui/filter-pattern.h
   src/ui/search-popup.cpp
