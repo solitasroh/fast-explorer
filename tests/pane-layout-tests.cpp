@@ -311,3 +311,18 @@ FE_TEST_CASE(ComputePaneLayout_QuadB_FourColumns_ThreeVerticalSplitters) {
   FE_ASSERT_EQ(out.splitters[2].orient, SplitterOrientation::Vertical);
   FE_ASSERT_EQ(out.splitters[2].ratioId, std::uint8_t{2});
 }
+
+FE_TEST_CASE(ComputePaneLayout_QuadC_FourRows_ThreeHorizontalSplitters) {
+  const auto out = computePaneLayout(LayoutPreset::Quad_C,
+                                     defaultRatiosFor(LayoutPreset::Quad_C),
+                                     1280, 800, 0, 22);
+  FE_ASSERT_EQ(out.slotCount, std::size_t{4});
+  FE_ASSERT_EQ(out.splitterCount, std::size_t{3});
+  FE_ASSERT_TRUE(rectEquals(out.slots[0], 0,   0, 1280, 194));
+  FE_ASSERT_TRUE(rectEquals(out.slots[1], 0, 194, 1280, 389));
+  FE_ASSERT_TRUE(rectEquals(out.slots[2], 0, 389, 1280, 583));
+  FE_ASSERT_TRUE(rectEquals(out.slots[3], 0, 583, 1280, 778));
+  FE_ASSERT_EQ(out.splitters[0].orient, SplitterOrientation::Horizontal);
+  FE_ASSERT_EQ(out.splitters[1].orient, SplitterOrientation::Horizontal);
+  FE_ASSERT_EQ(out.splitters[2].orient, SplitterOrientation::Horizontal);
+}
