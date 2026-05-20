@@ -1124,12 +1124,42 @@ void MainWindow::deleteFocusedItem() {
       paneIdx >= paneManager_->count()) {
     return;
   }
-  const int focused =
-      ListView_GetNextItem(focusedCtrl, -1, LVNI_FOCUSED);
-  if (focused < 0) {
-    return;
+  // Explorer parity: VK_DELETE acts on the ENTIRE selection, not just
+  // the focused row. Walk the list-view's selection bits directly so
+  // the leaf set matches what the user sees highlighted (this stays
+  // correct under filters since visibleAt(row) already resolves the
+  // displaySubset → visibleOrder mapping). Falls back to the focused
+  // row when nothing is selected (e.g. Delete pressed after a
+  // single-click without Shift/Ctrl).
+  PaneController& pane = paneManager_->at(paneIdx);
+  std::vector<int> rows;
+  int r = -1;
+  while ((r = ListView_GetNextItem(focusedCtrl, r, LVNI_SELECTED)) >= 0) {
+    rows.push_back(r);
   }
-  paneManager_->at(paneIdx).deleteItem(static_cast<std::uint32_t>(focused));
+  if (rows.empty()) {
+    const int focused =
+        ListView_GetNextItem(focusedCtrl, -1, LVNI_FOCUSED);
+    if (focused < 0) {
+      return;
+    }
+    rows.push_back(focused);
+  }
+  // Descending order so each deleteItem call indexes into a store
+  // whose later rows have not yet been removed. The shell worker
+  // queues each command and processes them in FIFO; the order on
+  // the queue does not matter for IFileOperation's recycle-bin
+  // delete, but resolving the row → path at request time DOES
+  // require the row index to still be valid against the current
+  // store snapshot. Since each deleteItem() call only enqueues
+  // (does not mutate the store), processing order is unimportant
+  // here, but iterating descending keeps the row indices stable
+  // for any future synchronous deleteItem variant.
+  std::sort(rows.begin(), rows.end(),
+            [](int a, int b) noexcept { return a > b; });
+  for (int row : rows) {
+    pane.deleteItem(static_cast<std::uint32_t>(row));
+  }
 }
 
 void MainWindow::handleAddressCommit(std::size_t paneIdx) {
@@ -2224,12 +2254,15 @@ LRESULT MainWindow::onLowMemory() {
 }
 
 LRESULT MainWindow::onOperationResult(WPARAM wParam) {
-  // Generation gate: a rename completion arriving after the user
-  // navigated the pane elsewhere must not overwrite the new
-  // folder's status text.
-  if (isStaleGeneration(wParam)) {
-    return 0;
-  }
+  // No generation gate here: ShellWorker publishes via ResultChannel
+  // which packs gen=0 unconditionally (it has no enumeration token
+  // to track against). The worst case a stale OperationResult from
+  // a pre-navigation Delete causes is one transient line of status
+  // text on the new folder — fine. Gating on gen=0 vs. the pane's
+  // current (non-zero post-openFolder) generation would drop EVERY
+  // result and silently kill the "Moved N items to Recycle Bin"
+  // confirmation. Pane-existence + null-target checks below still
+  // protect against pane teardown races.
   PaneController* target = paneForWParam(wParam);
   if (target == nullptr) {
     return 0;
@@ -2251,21 +2284,23 @@ LRESULT MainWindow::onOperationResult(WPARAM wParam) {
 }
 
 LRESULT MainWindow::onFsChange(HWND hwnd, WPARAM wParam) {
-  // Generation gate: an fs-watch event queued for a folder we just
-  // left would otherwise re-arm the debounce timer and trigger a
-  // refresh of the *new* folder using the *old* folder's noise.
-  // It also prevents the timer-leak after enterLayout(Single) kills
-  // the pane-1 timer band — without the gate, a queued pane-1
-  // event would re-arm a timer for a pane that no longer exists.
-  if (isStaleGeneration(wParam)) {
-    return 0;
-  }
+  // No generation gate here: FsWatcher packs gen=0 in its WPARAM
+  // (see fs-watcher.cpp). Gating on gen=0 vs. the pane's current
+  // (non-zero post-openFolder) generation would drop EVERY change
+  // notification and silently disable auto-refresh after Delete /
+  // external edits. The old-folder-event race the gate was meant
+  // to catch is bounded another way: PaneController::navigateInternal
+  // calls fsWatcher_.stop() before resetting the store, which joins
+  // the old worker — any subsequent debounce timer fire just
+  // refreshes the (correct) new folder. Pane-bounds + null-target
+  // checks below cover pane teardown / count shrink races.
+  const std::size_t idx = paneIndexFromWParam(wParam);
+  if (idx >= kMaxPanes) return 0;
+  if (!paneManager_ || idx >= paneManager_->count()) return 0;
   // Debounce: every event restarts the per-pane timer; the actual
   // refresh fires once after kFsCoalesceMs of quiet. We pack the
   // pane index into the timer id so two panes' debounce windows do
   // not collide.
-  const std::size_t idx = paneIndexFromWParam(wParam);
-  if (idx >= kMaxPanes) return 0;
   const UINT_PTR timerId = kTimerFsCoalesceBase + idx;
   SetTimer(hwnd, timerId, kFsCoalesceMs, nullptr);
   return 0;
