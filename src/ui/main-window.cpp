@@ -800,8 +800,21 @@ void MainWindow::restoreLayoutFromSession(
   if (!paneManager_) return;
 
   // Pull persisted ratios into the live store so the first relayout
-  // honours the user's prior splitter positions.
-  ratiosPerPreset_ = state.ratiosPerPreset;
+  // honours the user's prior splitter positions. Per-preset slots that
+  // are all-zero (fresh SessionState{} from a missing settings file, or
+  // a serialized but empty `ratios` object) keep the per-preset
+  // defaults already populated by initRatiosToDefaults() — without
+  // this guard a first launch (or settings.json delete) clobbers the
+  // defaults to 0/0/0, parking every splitter at the window edge and
+  // making the drag handle effectively unreachable.
+  for (std::size_t i = 0; i < ratiosPerPreset_.size(); ++i) {
+    const auto& src = state.ratiosPerPreset[i];
+    if (src.ratios[0] == 0.0f && src.ratios[1] == 0.0f &&
+        src.ratios[2] == 0.0f) {
+      continue;
+    }
+    ratiosPerPreset_[i] = src;
+  }
 
   // Even when restoring a single-pane preset we adopt the persisted
   // orientation so the next Alt+V / Alt+H press lands in the user's
