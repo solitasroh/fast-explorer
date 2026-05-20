@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.24)
 project(FastExplorer
-  VERSION 0.2.1
+  VERSION 0.2.2
   LANGUAGES CXX
 )
 
@@ -428,7 +428,15 @@ set(CPACK_PACKAGE_FILE_NAME "FastExplorer-${FastExplorer_VERSION}-win64")
 # Both files are uploaded to the GitHub Release; appcast.xml points
 # at the .exe so the auto-update click triggers a real install.
 set(CPACK_GENERATOR "ZIP;NSIS")
+# Toplevel-directory flag: ZIP wants files flat at the archive root
+# (sole-purpose extract), NSIS needs the toplevel directory so its
+# File commands resolve against the staging tree (without it the
+# install Section silently copies zero files, leaving a successful
+# /S install with an empty target dir — observed on v0.2.1). The
+# generator-scoped CPACK_NSIS_INCLUDE_TOPLEVEL_DIRECTORY override
+# brings the dir back for NSIS only.
 set(CPACK_INCLUDE_TOPLEVEL_DIRECTORY OFF)
+set(CPACK_NSIS_INCLUDE_TOPLEVEL_DIRECTORY ON)
 
 # NSIS-specific config. Installs under %LOCALAPPDATA%\Programs\
 # FastExplorer so no admin elevation is needed for first install
