@@ -462,7 +462,8 @@ void MainWindow::enterDualMode(const std::wstring& secondPath,
     return;
   }
   orientation_ = orientation;
-  // Capture before openPane mutates active-pane state.
+  // Capture before the second pane is added so chooseSecondPaneInitialPath
+  // can fall back to the current active path.
   const std::wstring fallback =
       paneManager_->active().currentPath();
   HWND second = createListView(hwnd_, instance_);

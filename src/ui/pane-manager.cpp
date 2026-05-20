@@ -18,15 +18,14 @@ std::size_t PaneManager::openPane(HWND host,
     return panes_.size();
   }
   const std::size_t newIdx = panes_.size();
-  auto pane = std::make_unique<PaneController>(host, newIdx);
-  const std::wstring fallback = panes_.empty()
-                                    ? std::wstring{}
-                                    : panes_[activeIndex_]->currentPath();
-  const std::wstring& path = initialPath.empty() ? fallback : initialPath;
-  if (!path.empty()) {
-    pane->openFolder(path);
-  }
-  panes_.push_back(std::move(pane));
+  panes_.push_back(std::make_unique<PaneController>(host, newIdx));
+  // Folder load is the caller's responsibility. openPane is a pure
+  // "create slot" primitive; the caller must invoke openFolder on the
+  // returned slot with the resolved path. This keeps the single-enum
+  // contract on dual-mode entry (chooseSecondPaneInitialPath +
+  // at(idx).openFolder in MainWindow drives the one authoritative
+  // load) and avoids spurious backStack entries from a double-call.
+  (void)initialPath;
   return newIdx;
 }
 

@@ -39,9 +39,12 @@ class PaneManager {
   // before any active() / at() call. Returns 0.
   std::size_t openInitial(HWND host);
 
-  // Appends a slot at index count() (so resulting count == old
-  // count + 1). Returns the new slot index (1..3). initialPath
-  // falls back to active().currentPath() when empty.
+  // Appends a slot at index count(). Returns the new slot index
+  // (1..kMaxPanes - 1). The `initialPath` argument is reserved for
+  // future tab-aware extensions; callers must invoke openFolder on
+  // the returned slot to populate it. openPane does NOT auto-load —
+  // it is a pure "create slot" primitive to preserve the single-enum
+  // contract on dual-mode entry.
   // No-op + returns count() when already at kMaxPanes.
   std::size_t openPane(HWND host, const std::wstring& initialPath);
 
