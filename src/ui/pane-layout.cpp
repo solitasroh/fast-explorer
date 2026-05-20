@@ -146,8 +146,25 @@ PaneLayoutResult computePaneLayout(fast_explorer::core::LayoutPreset preset,
       out.splitterCount = 2;
       return out;
     }
+    case P::Quad_A: {
+      const int x   = static_cast<int>(static_cast<float>(W) * ratios.ratios[0]);
+      const int yL  = top + static_cast<int>(static_cast<float>(totalH) *
+                                              ratios.ratios[1]);
+      const int yR  = top + static_cast<int>(static_cast<float>(totalH) *
+                                              ratios.ratios[2]);
+      out.slots[0] = {0, top, x, yL};
+      out.slots[1] = {x, top, W, yR};
+      out.slots[2] = {0, yL,  x, bot};
+      out.slots[3] = {x, yR,  W, bot};
+      out.splitters[0] = makeVerticalSplitter(x, top, bot, 0);
+      out.splitters[1] = makeHorizontalSplitter(yL, 0, x, 1);
+      out.splitters[2] = makeHorizontalSplitter(yR, x, W, 2);
+      out.slotCount = 4;
+      out.splitterCount = 3;
+      return out;
+    }
     default:
-      // Quad_* implemented in later tasks.
+      // Quad_B / Quad_C / Quad_D implemented in later tasks.
       return out;
   }
 }
