@@ -788,15 +788,59 @@ void MainWindow::applyInitialState(
 
 void MainWindow::restoreLayoutFromSession(
     const fast_explorer::core::SessionState& state) {
-  // Even in single mode we adopt the persisted orientation so the
-  // next Alt+V / Alt+H press lands in the user's last-used seam
-  // (and so a saved file with layout_mode=single + orientation=
-  // horizontal is meaningful — pressing Alt+V from there enters
-  // dual in horizontal, which is the natural "last-mode wins" UX).
+  using fast_explorer::core::LayoutPreset;
+  using fast_explorer::core::slotCountForPreset;
+  if (!paneManager_) return;
+
+  // Pull persisted ratios into the live store so the first relayout
+  // honours the user's prior splitter positions.
+  ratiosPerPreset_ = state.ratiosPerPreset;
+
+  // Even when restoring a single-pane preset we adopt the persisted
+  // orientation so the next Alt+V / Alt+H press lands in the user's
+  // last-used seam.
   orientation_ = state.orientation;
-  if (state.layoutMode == fast_explorer::core::LayoutMode::Dual) {
-    enterDualMode(state.secondPath, state.orientation);
+
+  const std::size_t targetCount = slotCountForPreset(state.preset);
+
+  // Slot 0 was opened by onCreate (its path was loaded in main.cpp
+  // from state.panePaths[0] / lastPath). Open slots 1..targetCount-1
+  // with their persisted paths.
+  for (std::size_t i = 1;
+       i < targetCount && i < PaneManager::kMaxPanes; ++i) {
+    paneManager_->openPane(hwnd_, L"");  // create slot
+    if (!installPaneAt(i)) {
+      paneManager_->closePane();
+      break;
+    }
+    const std::wstring& path = state.panePaths[i];
+    const std::wstring& openIn =
+        !path.empty() ? path : paneManager_->active().currentPath();
+    if (!openIn.empty() && paneManager_->at(i).openFolder(openIn)) {
+      clearListViewForNavigation(i);
+      if (i < firstBatchSeen_.size()) {
+        firstBatchSeen_[i] = false;
+      }
+      const std::wstring text = loadingStatusText(openIn);
+      setPaneStatusText(i, text.c_str());
+    }
+    syncAddressBar(i);
   }
+
+  preset_ = state.preset;
+  if (preset_ == LayoutPreset::Dual_V) {
+    orientation_ = LayoutOrientation::Vertical;
+    lastDualPreset_ = preset_;
+  } else if (preset_ == LayoutPreset::Dual_H) {
+    orientation_ = LayoutOrientation::Horizontal;
+    lastDualPreset_ = preset_;
+  }
+  if (state.activePane < paneManager_->count()) {
+    paneManager_->setActive(state.activePane);
+    pane_ = &paneManager_->active();
+  }
+  applyActivePaneAppearance();
+  relayout();
 }
 
 const fast_explorer::core::SessionState&
