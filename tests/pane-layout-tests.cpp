@@ -293,3 +293,21 @@ FE_TEST_CASE(ComputePaneLayout_QuadA_2x2Grid_ThreeSplitters) {
   FE_ASSERT_EQ(out.splitters[2].orient, SplitterOrientation::Horizontal);
   FE_ASSERT_EQ(out.splitters[2].ratioId, std::uint8_t{2});
 }
+
+FE_TEST_CASE(ComputePaneLayout_QuadB_FourColumns_ThreeVerticalSplitters) {
+  const auto out = computePaneLayout(LayoutPreset::Quad_B,
+                                     defaultRatiosFor(LayoutPreset::Quad_B),
+                                     1280, 800, 0, 22);
+  FE_ASSERT_EQ(out.slotCount, std::size_t{4});
+  FE_ASSERT_EQ(out.splitterCount, std::size_t{3});
+  FE_ASSERT_TRUE(rectEquals(out.slots[0],   0,   0,  320, 778));
+  FE_ASSERT_TRUE(rectEquals(out.slots[1], 320,   0,  640, 778));
+  FE_ASSERT_TRUE(rectEquals(out.slots[2], 640,   0,  960, 778));
+  FE_ASSERT_TRUE(rectEquals(out.slots[3], 960,   0, 1280, 778));
+  FE_ASSERT_EQ(out.splitters[0].orient, SplitterOrientation::Vertical);
+  FE_ASSERT_EQ(out.splitters[0].ratioId, std::uint8_t{0});
+  FE_ASSERT_EQ(out.splitters[1].orient, SplitterOrientation::Vertical);
+  FE_ASSERT_EQ(out.splitters[1].ratioId, std::uint8_t{1});
+  FE_ASSERT_EQ(out.splitters[2].orient, SplitterOrientation::Vertical);
+  FE_ASSERT_EQ(out.splitters[2].ratioId, std::uint8_t{2});
+}
