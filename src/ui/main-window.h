@@ -157,6 +157,17 @@ class MainWindow {
   // enterDualMode (idx=1) so the construction sequence stays in one
   // place.
   bool installPaneCoordinators(std::size_t idx, HWND listView);
+  // Creates per-slot UI (listview, toolbar row, address bar, drop
+  // target, coordinators) for the slot at `idx`. Assumes the
+  // PaneController at idx already exists in paneManager_. Slot 0 is
+  // special: its listview is created in onCreate, so installPaneAt(0)
+  // is never called. Used by enterLayout when growing pane count.
+  bool installPaneAt(std::size_t idx);
+
+  // Tears down per-slot UI for slot `idx` (releases coordinators,
+  // destroys listview/toolbar row HWNDs, etc.). Used by enterLayout
+  // when shrinking. Slot 0 is never destroyed.
+  void uninstallPaneAt(std::size_t idx);
   // Synchronous layout recompute. Equivalent to firing WM_SIZE but
   // avoids the asynchronous message-pump round-trip and the
   // misleading WM_SIZE lParam=0 that the prior implementation

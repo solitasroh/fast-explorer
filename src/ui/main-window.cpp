@@ -458,23 +458,6 @@ void MainWindow::relayout() {
   }
   applyStatusParts(clientW);
 
-  // Bridge: until enterLayout (Task 27) becomes the entry point that
-  // updates preset_, derive an effective preset from the legacy
-  // pane-count + orientation_ state so dual mode renders correctly.
-  using fast_explorer::core::LayoutPreset;
-  LayoutPreset effective = preset_;
-  if (paneManager_) {
-    const std::size_t paneCount = paneManager_->count();
-    if (paneCount <= 1) {
-      effective = LayoutPreset::Single;
-    } else if (paneCount == 2) {
-      effective = (orientation_ == LayoutOrientation::Horizontal)
-                      ? LayoutPreset::Dual_H
-                      : LayoutPreset::Dual_V;
-    }
-  }
-  preset_ = effective;
-
   const auto& ratios =
       ratiosPerPreset_[static_cast<std::size_t>(preset_)];
   const auto result = computePaneLayout(preset_, ratios,
@@ -543,140 +526,200 @@ void MainWindow::initRatiosToDefaults() noexcept {
   }
 }
 
-void MainWindow::enterLayout(fast_explorer::core::LayoutPreset target) {
-  // Body lands in Task 27.
-  (void)target;
+bool MainWindow::installPaneAt(std::size_t idx) {
+  // Slot 0 is set up in onCreate; never re-installed from here.
+  if (idx == 0) return true;
+  if (idx >= listViews_.size()) return false;
+  if (!paneManager_ || idx >= paneManager_->count()) return false;
+  if (hwnd_ == nullptr) return false;
+
+  // Create the listview (mirror the slot-0 creation in onCreate).
+  HWND lv = createListView(hwnd_, instance_);
+  if (lv == nullptr) {
+    return false;
+  }
+  if (!addColumns(lv, GetDpiForWindow(hwnd_))) {
+    DestroyWindow(lv);
+    return false;
+  }
+  ListView_SetItemCountEx(lv, 0, 0);
+  listViews_[idx] = lv;
+
+  // Drop target.
+  auto* dt = new (std::nothrow) PaneDropTarget(lv, paneManager_.get(), idx);
+  if (dt) {
+    if (SUCCEEDED(RegisterDragDrop(lv, dt))) {
+      dropTargets_[idx] = dt;
+    } else {
+      dt->Release();
+    }
+  }
+
+  // Toolbar row + address bar + dropdown.
+  paneToolbarRows_[idx] = std::make_unique<PaneToolbarRow>();
+  if (!paneToolbarRows_[idx]->create(hwnd_, instance_, idx)) {
+    paneToolbarRows_[idx].reset();
+  }
+  HWND addressParent = paneToolbarRows_[idx]
+                           ? paneToolbarRows_[idx]->handle()
+                           : hwnd_;
+  addressBars_[idx] = createAddressBar(addressParent, instance_);
+  addressDropdownBtns_[idx] =
+      createAddressDropdownBtn(addressParent, instance_, idx);
+  if (addressBars_[idx]) {
+    if (paneToolbarRows_[idx]) {
+      paneToolbarRows_[idx]->setAddressBar(addressBars_[idx]);
+      paneToolbarRows_[idx]->setAddressDropdownBtn(addressDropdownBtns_[idx]);
+    }
+    SetWindowSubclass(addressBars_[idx], &MainWindow::addressBarSubclassProc, 0,
+                      static_cast<DWORD_PTR>(idx));
+  }
+
+  // Inherit current view toggle so the freshly opened pane's first
+  // enumerate honours the user's saved/active preference.
+  paneManager_->at(idx).setIncludeHidden(showHidden_);
+
+  if (!installPaneCoordinators(idx, lv)) {
+    // Coordinator construction failed mid-flight. Roll back the
+    // visible UI so we do not leave a listview backed by a partial
+    // coordinator chain. Caller (enterLayout) is responsible for the
+    // corresponding paneManager_->closePane() if needed.
+    if (dropTargets_[idx] != nullptr) {
+      RevokeDragDrop(lv);
+      dropTargets_[idx]->Release();
+      dropTargets_[idx] = nullptr;
+    }
+    if (addressBars_[idx]) {
+      DestroyWindow(addressBars_[idx]);
+      addressBars_[idx] = nullptr;
+    }
+    if (addressDropdownBtns_[idx]) {
+      DestroyWindow(addressDropdownBtns_[idx]);
+      addressDropdownBtns_[idx] = nullptr;
+    }
+    paneToolbarRows_[idx].reset();
+    DestroyWindow(lv);
+    listViews_[idx] = nullptr;
+    return false;
+  }
+  // openFolder (if any) is driven by the caller; sync address bar so
+  // the slot is not blank between create and the first openFolder.
+  syncAddressBar(idx);
+  return true;
 }
 
-void MainWindow::enterDualMode(const std::wstring& secondPath,
-                               LayoutOrientation orientation) {
-  if (hwnd_ == nullptr || !paneManager_) {
-    return;
-  }
-  if ((paneManager_->count() > 1)) {
-    return;
-  }
-  orientation_ = orientation;
-  // Capture before the second pane is added so chooseSecondPaneInitialPath
-  // can fall back to the current active path.
-  const std::wstring fallback =
-      paneManager_->active().currentPath();
-  HWND second = createListView(hwnd_, instance_);
-  if (second == nullptr) {
-    return;
-  }
-  if (!addColumns(second, GetDpiForWindow(hwnd_))) {
-    DestroyWindow(second);
-    return;
-  }
-  ListView_SetItemCountEx(second, 0, 0);
-  listViews_[1] = second;
-  if (paneManager_) {
-    auto* dt = new (std::nothrow) PaneDropTarget(second, paneManager_.get(), 1);
-    if (dt) {
-      if (SUCCEEDED(RegisterDragDrop(second, dt))) {
-        dropTargets_[1] = dt;
-      } else {
-        dt->Release();
-      }
-    }
-  }
-  paneToolbarRows_[1] = std::make_unique<PaneToolbarRow>();
-  if (!paneToolbarRows_[1]->create(hwnd_, instance_, 1)) {
-    paneToolbarRows_[1].reset();
-  }
-  HWND addressParent1 = paneToolbarRows_[1]
-                            ? paneToolbarRows_[1]->handle()
-                            : hwnd_;
-  addressBars_[1] = createAddressBar(addressParent1, instance_);
-  addressDropdownBtns_[1] = createAddressDropdownBtn(addressParent1, instance_, 1);
-  if (addressBars_[1]) {
-    if (paneToolbarRows_[1]) {
-      paneToolbarRows_[1]->setAddressBar(addressBars_[1]);
-      paneToolbarRows_[1]->setAddressDropdownBtn(addressDropdownBtns_[1]);
-    }
-    SetWindowSubclass(addressBars_[1], &MainWindow::addressBarSubclassProc, 0,
-                      static_cast<DWORD_PTR>(1));
-  }
-  paneManager_->openPane(hwnd_, L"");
-  // Inherit current view toggle into the freshly opened pane so its
-  // first enumerate honours the user's saved/active preference.
-  paneManager_->at(1).setIncludeHidden(showHidden_);
-  if (!installPaneCoordinators(1, second)) {
-    // Coordinator construction failed mid-flight. Roll back so we do
-    // not leave a visible second list-view backed by a partially-
-    // constructed coordinator chain.
-    paneManager_->closePane();
-    DestroyWindow(second);
-    listViews_[1] = nullptr;
-    return;
-  }
-  const std::wstring& openIn =
-      chooseSecondPaneInitialPath(secondPath, fallback);
-  if (!openIn.empty() && paneManager_->at(1).openFolder(openIn)) {
-    clearListViewForNavigation(1);
-    if (1 < firstBatchSeen_.size()) {
-      firstBatchSeen_[1] = false;
-    }
-    // Surface a "Loading: …" line for pane 1 immediately, mirroring
-    // MainWindow::openFolder for the active pane. Without this the
-    // pane-1 status part stays blank from dual-mode entry until the
-    // first enum batch arrives (visibly empty seconds on slow paths).
-    const std::wstring text = loadingStatusText(openIn);
-    setPaneStatusText(1, text.c_str());
-  }
-  // openFolder posts WM_FE_* asynchronously; the address bar text is
-  // a pure synchronous read of currentPath() and would otherwise stay
-  // blank until the first navigation event.
-  syncAddressBar(1);
-  applyActivePaneAppearance();
-  relayout();
-}
+void MainWindow::uninstallPaneAt(std::size_t idx) {
+  if (idx == 0) return;
+  if (idx >= listViews_.size()) return;
+  if (hwnd_ == nullptr) return;
 
-void MainWindow::enterSingleMode() {
-  if (hwnd_ == nullptr || !paneManager_ || !(paneManager_->count() > 1)) {
-    return;
-  }
-  // Hide the popup before any pane-1 HWNDs go away — its mouse hook
+  // Hide the popup before any pane HWNDs go away — its mouse hook
   // and pending pick payloads anchor on those windows.
   if (addressBarPopup_) {
     addressBarPopup_->hide();
   }
-  // Stop any pending pane-1 timers BEFORE tearing the pane down so
-  // a queued WM_TIMER cannot reference the just-destroyed slot
-  // (refreshSelectionSummary / fs-coalesce refresh both gate on
-  // paneManager_->count() and would no-op, but discarding the
-  // event up front keeps the cleanup local).
-  KillTimer(hwnd_, kTimerFsCoalesceBase + 1);
-  KillTimer(hwnd_, kTimerSelSummaryBase + 1);
-  KillTimer(hwnd_, kTimerFilterDebounceBase + 1);
-  // Release per-pane coordinators first so the second pane's worker
-  // threads (icon STA, shell STA) join before we tear down the
-  // PaneController they reference.
-  labelEdits_[1].reset();
-  selectionSyncs_[1].reset();
-  iconCoords_[1].reset();
-  paneManager_->closePane();
+  // Stop any pending per-pane timers BEFORE tearing the pane down so
+  // a queued WM_TIMER cannot reference the just-destroyed slot.
+  KillTimer(hwnd_, kTimerFsCoalesceBase + idx);
+  KillTimer(hwnd_, kTimerSelSummaryBase + idx);
+  KillTimer(hwnd_, kTimerFilterDebounceBase + idx);
+  // Release per-pane coordinators first so the slot's worker threads
+  // (icon STA, shell STA) join before we tear down the PaneController
+  // they reference.
+  labelEdits_[idx].reset();
+  selectionSyncs_[idx].reset();
+  iconCoords_[idx].reset();
+  if (dropTargets_[idx] != nullptr && listViews_[idx] != nullptr) {
+    RevokeDragDrop(listViews_[idx]);
+    dropTargets_[idx]->Release();
+    dropTargets_[idx] = nullptr;
+  }
+  if (listViews_[idx] != nullptr) {
+    DestroyWindow(listViews_[idx]);
+    listViews_[idx] = nullptr;
+  }
+  if (addressBars_[idx] != nullptr) {
+    DestroyWindow(addressBars_[idx]);
+    addressBars_[idx] = nullptr;
+  }
+  if (addressDropdownBtns_[idx] != nullptr) {
+    DestroyWindow(addressDropdownBtns_[idx]);
+    addressDropdownBtns_[idx] = nullptr;
+  }
+  paneToolbarRows_[idx].reset();
+}
+
+void MainWindow::enterLayout(fast_explorer::core::LayoutPreset target) {
+  using fast_explorer::core::LayoutPreset;
+  using fast_explorer::core::slotCountForPreset;
+  if (hwnd_ == nullptr || !paneManager_) return;
+
+  const std::size_t targetCount = slotCountForPreset(target);
+
+  // Grow.
+  while (paneManager_->count() < targetCount &&
+         paneManager_->count() < PaneManager::kMaxPanes) {
+    const std::wstring fallback = paneManager_->active().currentPath();
+    paneManager_->openPane(hwnd_, L"");  // create slot only
+    const std::size_t newIdx = paneManager_->count() - 1;
+    if (!installPaneAt(newIdx)) {
+      // installPaneAt rolled back its UI; release the now-orphan
+      // PaneController slot so count() reflects reality.
+      paneManager_->closePane();
+      break;
+    }
+    // Drive the folder load on the freshly opened slot.
+    if (!fallback.empty() && paneManager_->at(newIdx).openFolder(fallback)) {
+      clearListViewForNavigation(newIdx);
+      if (newIdx < firstBatchSeen_.size()) {
+        firstBatchSeen_[newIdx] = false;
+      }
+      const std::wstring text = loadingStatusText(fallback);
+      setPaneStatusText(newIdx, text.c_str());
+    }
+    syncAddressBar(newIdx);
+  }
+
+  // Shrink.
+  while (paneManager_->count() > targetCount) {
+    const std::size_t idx = paneManager_->count() - 1;
+    uninstallPaneAt(idx);
+    paneManager_->closePane();
+  }
   pane_ = &paneManager_->active();
-  if (dropTargets_[1] != nullptr && listViews_[1] != nullptr) {
-    RevokeDragDrop(listViews_[1]);
-    dropTargets_[1]->Release();
-    dropTargets_[1] = nullptr;
+
+  preset_ = target;
+  if (target == LayoutPreset::Dual_V) {
+    orientation_ = LayoutOrientation::Vertical;
+    lastDualPreset_ = target;
+  } else if (target == LayoutPreset::Dual_H) {
+    orientation_ = LayoutOrientation::Horizontal;
+    lastDualPreset_ = target;
   }
-  if (listViews_[1] != nullptr) {
-    DestroyWindow(listViews_[1]);
-    listViews_[1] = nullptr;
+  if (paneManager_->activeIndex() >= targetCount) {
+    paneManager_->setActive(targetCount - 1);
+    pane_ = &paneManager_->active();
   }
-  if (addressBars_[1] != nullptr) {
-    DestroyWindow(addressBars_[1]);
-    addressBars_[1] = nullptr;
-  }
-  // Drop the second pane's toolbar row after its hosted address bar
-  // is gone; PaneToolbarRow::destroy is a no-op if the HWND was
-  // already destroyed via the parent-window chain.
-  paneToolbarRows_[1].reset();
   applyActivePaneAppearance();
   relayout();
+}
+
+void MainWindow::enterDualMode(const std::wstring& secondPath,
+                               LayoutOrientation orientation) {
+  // Compatibility wrapper. The secondPath argument is honored by
+  // openPane's slot-creation path; the layout decision is now a
+  // preset, not (mode + orientation).
+  using fast_explorer::core::LayoutPreset;
+  (void)secondPath;  // openPane fallback uses active().currentPath();
+                     // session restore drives an explicit openFolder
+                     // path via restoreLayoutFromSession.
+  enterLayout(orientation == LayoutOrientation::Horizontal
+                  ? LayoutPreset::Dual_H
+                  : LayoutPreset::Dual_V);
+}
+
+void MainWindow::enterSingleMode() {
+  enterLayout(fast_explorer::core::LayoutPreset::Single);
 }
 
 void MainWindow::setActivePane(std::size_t idx) {
