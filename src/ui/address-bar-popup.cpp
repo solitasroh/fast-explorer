@@ -27,6 +27,44 @@ int scaleForDpi(int value, UINT dpi) noexcept {
 
 thread_local AddressBarPopup* tMouseHookOwner = nullptr;
 
+// Local copy — main-window.cpp owns the canonical one but it's in its
+// anon namespace, not exported. Cheap registry probe; the popup only
+// (re)reads it on show / theme change.
+bool prefersDarkMode() noexcept {
+  HKEY key = nullptr;
+  if (RegOpenKeyExW(HKEY_CURRENT_USER,
+                    L"Software\\Microsoft\\Windows\\CurrentVersion\\"
+                    L"Themes\\Personalize",
+                    0, KEY_READ, &key) != ERROR_SUCCESS) {
+    return false;
+  }
+  DWORD value = 1;
+  DWORD size = sizeof(value);
+  LONG r = RegQueryValueExW(key, L"AppsUseLightTheme", nullptr, nullptr,
+                            reinterpret_cast<BYTE*>(&value), &size);
+  RegCloseKey(key);
+  return r == ERROR_SUCCESS && value == 0;
+}
+
+void applyTreePopupTheme(HWND popup, HWND tree) noexcept {
+  if (tree == nullptr) return;
+  const bool dark = prefersDarkMode();
+  // DarkMode_Explorer also re-tints the chevron/expand glyphs so they
+  // read against the dark row backdrop; plain Explorer keeps the
+  // light-mode chevrons.
+  SetWindowTheme(tree, dark ? L"DarkMode_Explorer" : L"Explorer", nullptr);
+  if (dark) {
+    TreeView_SetBkColor(tree, RGB(32, 32, 32));
+    TreeView_SetTextColor(tree, RGB(241, 241, 241));
+  } else {
+    TreeView_SetBkColor(tree, static_cast<COLORREF>(-1));
+    TreeView_SetTextColor(tree, static_cast<COLORREF>(-1));
+  }
+  if (popup != nullptr) {
+    InvalidateRect(popup, nullptr, TRUE);
+  }
+}
+
 std::wstring strRetToString(STRRET& sr, LPCITEMIDLIST relative) {
   wchar_t buf[MAX_PATH];
   if (FAILED(StrRetToBufW(&sr, relative, buf,
@@ -219,8 +257,9 @@ void AddressBarPopup::ensurePopupCreated() {
   if (sys) {
     TreeView_SetImageList(tree_, sys, TVSIL_NORMAL);
   }
-  // Explorer theme enables hover highlight and chevron glyphs.
-  SetWindowTheme(tree_, L"Explorer", nullptr);
+  // Dark-mode aware theme + tree bg/text colours; falls back to plain
+  // Explorer theme + system defaults when the user is in light mode.
+  applyTreePopupTheme(popup_, tree_);
   SetWindowSubclass(tree_, &AddressBarPopup::treeSubclassProc, 0,
                     reinterpret_cast<DWORD_PTR>(this));
 }
@@ -228,6 +267,11 @@ void AddressBarPopup::ensurePopupCreated() {
 void AddressBarPopup::showFor(HWND anchor, const std::wstring& currentPath) {
   ensurePopupCreated();
   if (!popup_) return;
+  // Re-apply theme on each open so a runtime light↔dark flip is
+  // reflected without restarting; cheap (RegQueryValue + two
+  // SendMessageW). The class hbrBackground is fixed at RegisterClass
+  // time to COLOR_WINDOW, but the tree fully covers it via WM_SIZE.
+  applyTreePopupTheme(popup_, tree_);
   if (!rootsLoaded_) {
     populateRoots();
     rootsLoaded_ = true;

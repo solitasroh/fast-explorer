@@ -251,6 +251,55 @@ struct StatusBarSubclassState {
 LRESULT CALLBACK statusBarSubclassProc(HWND, UINT, WPARAM, LPARAM,
                                         UINT_PTR, DWORD_PTR);
 
+// ListView subclass that catches WM_NOTIFY from the listview's own
+// header child and over-paints column titles in dark mode. The header
+// honours SetWindowTheme(L"DarkMode_ItemsView") for the chevron and
+// sort glyphs but ignores it for text colour, so we own the text
+// rendering when dark. Light mode short-circuits to DefSubclassProc.
+struct HeaderDarkState {
+  HBRUSH bgBrush = nullptr;
+  COLORREF bgColor = 0;
+  COLORREF textColor = 0;
+  COLORREF sepColor = 0;
+  bool valid = false;
+  void refresh() noexcept {
+    bgColor   = RGB(45, 45, 48);    // header strip, slightly above row bg
+    textColor = RGB(225, 225, 225);
+    sepColor  = RGB(70, 70, 70);
+    if (bgBrush != nullptr) DeleteObject(bgBrush);
+    bgBrush = CreateSolidBrush(bgColor);
+    valid = true;
+  }
+};
+LRESULT CALLBACK listViewHeaderColorSubclass(HWND, UINT, WPARAM, LPARAM,
+                                              UINT_PTR, DWORD_PTR);
+
+// ComboBoxEx wraps a plain ComboBox which in turn owns the inner Edit
+// and dropdown listbox. WM_CTLCOLOREDIT / WM_CTLCOLORLISTBOX are sent
+// to the immediate parent of each control — that's the inner ComboBox,
+// not ComboBoxEx itself — so this subclass attaches there.
+//
+// SetWindowTheme(L"DarkMode_CFD") on the ComboBoxEx was tried first
+// (cleaner) but broke text clipping and left a hairline white seam at
+// the top of the textbox. The CTLCOLOR override gets us dark colours
+// without touching the layout the existing theme produces.
+struct AddressBarDarkState {
+  HBRUSH bgBrush = nullptr;
+  COLORREF bgColor = 0;
+  COLORREF textColor = 0;
+  bool valid = false;
+  void refresh() noexcept {
+    bgColor   = RGB(40, 40, 40);     // matches Explorer's address bar
+    textColor = RGB(241, 241, 241);
+    if (bgBrush != nullptr) DeleteObject(bgBrush);
+    bgBrush = CreateSolidBrush(bgColor);
+    valid = true;
+  }
+};
+LRESULT CALLBACK addressBarColorSubclassProc(HWND, UINT, WPARAM, LPARAM,
+                                              UINT_PTR, DWORD_PTR);
+void installAddressBarColorSubclass(HWND addressBar) noexcept;
+
 // T6 actions — single-shot shell integrations triggered from the
 // hamburger menu and (Copy path / Properties) from accelerators.
 // All return true on best-effort success and false on hard failure;
@@ -442,6 +491,7 @@ void MainWindow::enterDualMode(const std::wstring& secondPath,
       SetWindowSubclass(innerEdit, &MainWindow::addressBarSubclassProc, 0,
                         static_cast<DWORD_PTR>(1));
     }
+    installAddressBarColorSubclass(addressBars_[1]);
   }
   paneManager_->openSecond(hwnd_);
   // Inherit current view toggle into the freshly opened pane so its
@@ -747,6 +797,28 @@ void MainWindow::applyListViewTheme(HWND lv) noexcept {
   if (header != nullptr) {
     SetWindowTheme(header, dark ? L"DarkMode_ItemsView" : L"ItemsView",
                    nullptr);
+  }
+  // Theme alone leaves the header text rendering near-black in dark
+  // mode (its DrawThemeText pulls colour from the theme, ignoring our
+  // SetTextColor). Install a listview subclass that catches header
+  // NM_CUSTOMDRAW and full-paints the items when dark. Idempotent —
+  // SetWindowSubclass on an already-subclassed (hwnd, proc, id)
+  // updates refData without re-attaching, so calling on every
+  // applyActivePaneAppearance pass is safe.
+  constexpr UINT_PTR kHeaderColorSubclassId = 0xFE10A0u;
+  DWORD_PTR refData = 0;
+  if (!GetWindowSubclass(lv, &listViewHeaderColorSubclass,
+                         kHeaderColorSubclassId, &refData)) {
+    auto* state = new HeaderDarkState();
+    state->refresh();
+    SetWindowSubclass(lv, &listViewHeaderColorSubclass,
+                      kHeaderColorSubclassId,
+                      reinterpret_cast<DWORD_PTR>(state));
+  } else if (auto* state = reinterpret_cast<HeaderDarkState*>(refData)) {
+    state->refresh();
+  }
+  if (header != nullptr) {
+    InvalidateRect(header, nullptr, TRUE);
   }
 }
 
@@ -1183,6 +1255,7 @@ LRESULT MainWindow::onCreate(HWND hwnd) {
       SetWindowSubclass(innerEdit, &MainWindow::addressBarSubclassProc, 0,
                         static_cast<DWORD_PTR>(0));
     }
+    installAddressBarColorSubclass(addressBars_[0]);
     addressBarPopup_ = std::make_unique<AddressBarPopup>(hwnd);
     searchPopup_ = std::make_unique<SearchPopup>(hwnd);
   }
@@ -1321,6 +1394,130 @@ LRESULT CALLBACK statusBarSubclassProc(
     return 0;
   }
   return DefSubclassProc(hwnd, msg, wParam, lParam);
+}
+
+// Header NM_CUSTOMDRAW from the listview's child Header doesn't bubble
+// past the listview itself — we have to subclass the listview to see
+// it. In dark mode we take the full draw (fill rect + draw text);
+// otherwise pass through so themed light-mode rendering stays
+// pixel-perfect.
+LRESULT CALLBACK listViewHeaderColorSubclass(
+    HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam,
+    UINT_PTR idSubclass, DWORD_PTR refData) {
+  auto* state = reinterpret_cast<HeaderDarkState*>(refData);
+  if (msg == WM_NCDESTROY) {
+    RemoveWindowSubclass(hwnd, &listViewHeaderColorSubclass, idSubclass);
+    if (state != nullptr) {
+      if (state->bgBrush != nullptr) DeleteObject(state->bgBrush);
+      delete state;
+    }
+    return DefSubclassProc(hwnd, msg, wParam, lParam);
+  }
+  if (msg == WM_NOTIFY && systemPrefersDarkMode() && state != nullptr) {
+    auto* hdr = reinterpret_cast<NMHDR*>(lParam);
+    HWND header = ListView_GetHeader(hwnd);
+    if (hdr != nullptr && hdr->hwndFrom == header &&
+        hdr->code == NM_CUSTOMDRAW) {
+      auto* cd = reinterpret_cast<NMCUSTOMDRAW*>(hdr);
+      switch (cd->dwDrawStage) {
+        case CDDS_PREPAINT:
+          if (!state->valid) state->refresh();
+          // Fill the whole header strip first so any gap past the
+          // last column doesn't leak the system Btn3D Highlight.
+          FillRect(cd->hdc, &cd->rc, state->bgBrush);
+          return CDRF_NOTIFYITEMDRAW;
+        case CDDS_ITEMPREPAINT: {
+          if (!state->valid) state->refresh();
+          wchar_t buf[256] = {0};
+          HDITEMW hdi{};
+          hdi.mask = HDI_TEXT;
+          hdi.pszText = buf;
+          hdi.cchTextMax = static_cast<int>(std::size(buf));
+          Header_GetItem(header, cd->dwItemSpec, &hdi);
+          FillRect(cd->hdc, &cd->rc, state->bgBrush);
+          // Subtle 1px right separator so columns read as distinct.
+          RECT sep = cd->rc;
+          sep.left = sep.right - 1;
+          HBRUSH sepBr = CreateSolidBrush(state->sepColor);
+          FillRect(cd->hdc, &sep, sepBr);
+          DeleteObject(sepBr);
+          RECT text = cd->rc;
+          text.left += 8;
+          text.right -= 8;
+          SetBkMode(cd->hdc, TRANSPARENT);
+          SetTextColor(cd->hdc, state->textColor);
+          HFONT fnt = reinterpret_cast<HFONT>(
+              SendMessageW(header, WM_GETFONT, 0, 0));
+          HGDIOBJ oldFnt = fnt ? SelectObject(cd->hdc, fnt) : nullptr;
+          DrawTextW(cd->hdc, buf, -1, &text,
+                    DT_SINGLELINE | DT_VCENTER | DT_NOPREFIX |
+                        DT_END_ELLIPSIS);
+          if (oldFnt) SelectObject(cd->hdc, oldFnt);
+          return CDRF_SKIPDEFAULT;
+        }
+      }
+    }
+  }
+  if ((msg == WM_THEMECHANGED || msg == WM_SYSCOLORCHANGE) &&
+      state != nullptr) {
+    state->valid = false;
+    InvalidateRect(ListView_GetHeader(hwnd), nullptr, TRUE);
+  }
+  return DefSubclassProc(hwnd, msg, wParam, lParam);
+}
+
+LRESULT CALLBACK addressBarColorSubclassProc(
+    HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam,
+    UINT_PTR idSubclass, DWORD_PTR refData) {
+  auto* state = reinterpret_cast<AddressBarDarkState*>(refData);
+  if (msg == WM_NCDESTROY) {
+    RemoveWindowSubclass(hwnd, &addressBarColorSubclassProc, idSubclass);
+    if (state != nullptr) {
+      if (state->bgBrush != nullptr) DeleteObject(state->bgBrush);
+      delete state;
+    }
+    return DefSubclassProc(hwnd, msg, wParam, lParam);
+  }
+  if ((msg == WM_THEMECHANGED || msg == WM_SYSCOLORCHANGE) &&
+      state != nullptr) {
+    state->valid = false;
+    InvalidateRect(hwnd, nullptr, TRUE);
+  }
+  if ((msg == WM_CTLCOLOREDIT || msg == WM_CTLCOLORLISTBOX) &&
+      state != nullptr && systemPrefersDarkMode()) {
+    if (!state->valid) state->refresh();
+    HDC hdc = reinterpret_cast<HDC>(wParam);
+    SetTextColor(hdc, state->textColor);
+    SetBkColor(hdc, state->bgColor);
+    SetBkMode(hdc, OPAQUE);
+    return reinterpret_cast<LRESULT>(state->bgBrush);
+  }
+  return DefSubclassProc(hwnd, msg, wParam, lParam);
+}
+
+// Install the colour subclass on the ComboBoxEx's inner ComboBox (the
+// actual parent of the Edit / dropdown listbox). Idempotent — repeated
+// calls bind the same (hwnd, proc, id) without leaking. State is
+// allocated once and freed by the subclass proc on WM_NCDESTROY.
+void installAddressBarColorSubclass(HWND addressBar) noexcept {
+  if (addressBar == nullptr) return;
+  HWND innerCombo = reinterpret_cast<HWND>(
+      SendMessageW(addressBar, CBEM_GETCOMBOCONTROL, 0, 0));
+  if (innerCombo == nullptr) return;
+  constexpr UINT_PTR kAddrColorSubclassId = 0xFE10B0u;
+  DWORD_PTR refData = 0;
+  if (GetWindowSubclass(innerCombo, &addressBarColorSubclassProc,
+                        kAddrColorSubclassId, &refData)) {
+    if (auto* s = reinterpret_cast<AddressBarDarkState*>(refData)) {
+      s->refresh();
+    }
+    return;
+  }
+  auto* state = new AddressBarDarkState();
+  state->refresh();
+  SetWindowSubclass(innerCombo, &addressBarColorSubclassProc,
+                    kAddrColorSubclassId,
+                    reinterpret_cast<DWORD_PTR>(state));
 }
 }  // namespace
 

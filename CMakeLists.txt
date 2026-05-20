@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.24)
 project(FastExplorer
-  VERSION 0.2.7
+  VERSION 0.2.8
   LANGUAGES CXX
 )
 
