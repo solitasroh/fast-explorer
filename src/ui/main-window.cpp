@@ -717,6 +717,31 @@ void MainWindow::updateNavButtonStates(std::size_t paneIdx) noexcept {
   // Refresh (slot 3) stays always-enabled; no setter call needed.
 }
 
+void MainWindow::applyListViewTheme(HWND lv) noexcept {
+  if (lv == nullptr) return;
+  const bool dark = systemPrefersDarkMode();
+  // "DarkMode_Explorer" is the undocumented but stable theme class
+  // Microsoft's own shells use for dark listviews. Falling back to
+  // "Explorer" in light mode gives the standard hot-track + hover
+  // pill we already had.
+  SetWindowTheme(lv, dark ? L"DarkMode_Explorer" : L"Explorer", nullptr);
+  // Per-cell text colour. The active-pane background is set later
+  // in applyActivePaneAppearance; we set ours here so that if the
+  // pane is inactive (dual mode) the background colour still
+  // dark-mode tracks, then applyActivePaneAppearance overrides it
+  // with the active/inactive tint.
+  ListView_SetTextColor(lv, dark ? RGB(241, 241, 241)
+                                  : GetSysColor(COLOR_WINDOWTEXT));
+  // Header (column titles) needs its own theme application —
+  // listview's DarkMode_Explorer does not propagate to the child
+  // header on Win10. Win11 honours it; the call is a no-op there.
+  HWND header = ListView_GetHeader(lv);
+  if (header != nullptr) {
+    SetWindowTheme(header, dark ? L"DarkMode_ItemsView" : L"ItemsView",
+                   nullptr);
+  }
+}
+
 void MainWindow::applyActivePaneAppearance() noexcept {
   if (!paneManager_) return;
   const std::size_t active = paneManager_->activeIndex();
@@ -724,12 +749,16 @@ void MainWindow::applyActivePaneAppearance() noexcept {
   // visually obvious in dual mode; single mode skips the dim since
   // there is no other pane to contrast against.
   const bool dual = paneManager_->isDual();
+  const bool dark = systemPrefersDarkMode();
+  const COLORREF activeBg   = dark ? RGB(32, 32, 32)
+                                    : GetSysColor(COLOR_WINDOW);
+  const COLORREF inactiveBg = dark ? RGB(24, 24, 24)
+                                    : GetSysColor(COLOR_BTNFACE);
   for (std::size_t i = 0; i < listViews_.size(); ++i) {
     HWND lv = listViews_[i];
     if (lv == nullptr) continue;
-    const COLORREF bg = (!dual || i == active)
-                           ? GetSysColor(COLOR_WINDOW)
-                           : GetSysColor(COLOR_BTNFACE);
+    applyListViewTheme(lv);  // refresh theme + text color on each pass
+    const COLORREF bg = (!dual || i == active) ? activeBg : inactiveBg;
     ListView_SetBkColor(lv, bg);
     ListView_SetTextBkColor(lv, bg);
     InvalidateRect(lv, nullptr, TRUE);
@@ -971,6 +1000,10 @@ LRESULT MainWindow::handleMessage(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPa
           lstrcmpiW(reinterpret_cast<const wchar_t*>(lParam),
                     L"ImmersiveColorSet") == 0) {
         applySystemTheme();
+        // Re-apply listview + active-pane theming so the file
+        // grid follows the system light↔dark flip without
+        // restarting the app.
+        applyActivePaneAppearance();
       }
       return 0;
     }
@@ -2238,7 +2271,11 @@ LRESULT MainWindow::handleCustomDraw(NMHDR* hdr) {
         return CDRF_DODEFAULT;
       }
       // CDRF_NEWFONT honours clrText changes without a font swap.
-      cd->clrText = GetSysColor(COLOR_GRAYTEXT);
+      // GRAYTEXT system colour is near-black on dark backgrounds —
+      // pick a brighter grey when the system theme is dark so the
+      // dimmed-hidden-files cue stays legible.
+      cd->clrText = systemPrefersDarkMode() ? RGB(140, 140, 140)
+                                              : GetSysColor(COLOR_GRAYTEXT);
       return CDRF_NEWFONT;
     }
     default:

@@ -183,6 +183,12 @@ class MainWindow {
   bool paneIndexFromListView(HWND lv, std::size_t& outIdx) const noexcept;
   void clearListViewForNavigation(std::size_t paneIdx) noexcept;
   void applyActivePaneAppearance() noexcept;
+  // v0.2.6: applies dark-mode theme classes + colors to every
+  // listview alongside the existing active-pane appearance pass.
+  // Called from onCreate, applyInitialState, the active-pane
+  // toggle, and WM_SETTINGCHANGE so a runtime light↔dark flip
+  // takes effect without restart.
+  void applyListViewTheme(HWND lv) noexcept;
   // Pushes the pane's canGoBack/Forward/Up to its toolbar so the
   // buttons gray out at history boundaries. Cheap (no enum / no
   // alloc), safe to call from any nav-affecting path.
