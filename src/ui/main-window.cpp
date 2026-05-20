@@ -445,13 +445,94 @@ void MainWindow::relayout() {
   if (hwnd_ == nullptr) {
     return;
   }
-  // Build the same arg shape a real WM_SIZE delivers so onSize sees
-  // an honest message rather than a fabricated lParam=0 PostMessage.
   RECT client{};
   GetClientRect(hwnd_, &client);
-  const LPARAM lp = MAKELPARAM(client.right - client.left,
-                               client.bottom - client.top);
-  onSize(hwnd_, WM_SIZE, SIZE_RESTORED, lp);
+  const int clientW = client.right - client.left;
+  const int clientH = client.bottom - client.top;
+
+  int statusH = 0;
+  if (statusBar_) {
+    RECT statusRect{};
+    GetWindowRect(statusBar_, &statusRect);
+    statusH = statusRect.bottom - statusRect.top;
+  }
+  applyStatusParts(clientW);
+
+  // Bridge: until enterLayout (Task 27) becomes the entry point that
+  // updates preset_, derive an effective preset from the legacy
+  // pane-count + orientation_ state so dual mode renders correctly.
+  using fast_explorer::core::LayoutPreset;
+  LayoutPreset effective = preset_;
+  if (paneManager_) {
+    const std::size_t paneCount = paneManager_->count();
+    if (paneCount <= 1) {
+      effective = LayoutPreset::Single;
+    } else if (paneCount == 2) {
+      effective = (orientation_ == LayoutOrientation::Horizontal)
+                      ? LayoutPreset::Dual_H
+                      : LayoutPreset::Dual_V;
+    }
+  }
+  preset_ = effective;
+
+  const auto& ratios =
+      ratiosPerPreset_[static_cast<std::size_t>(preset_)];
+  const auto result = computePaneLayout(preset_, ratios,
+                                        clientW, clientH,
+                                        /*reservedTop*/ 0, statusH);
+
+  // Position slot HWNDs. Each slot's RECT contains its toolbar row at
+  // the top and the listview below.
+  const int rowH = scaleForDpi(42, GetDpiForWindow(hwnd_));
+  for (std::size_t i = 0; i < listViews_.size(); ++i) {
+    const RECT& r = result.slots[i];
+    const int w = r.right - r.left;
+    const int h = r.bottom - r.top;
+    const bool active = i < result.slotCount;
+    HWND rowHwnd = paneToolbarRows_[i] ? paneToolbarRows_[i]->handle()
+                                       : addressBars_[i];
+
+    if (!active || w <= 0 || h <= 0) {
+      if (rowHwnd) ShowWindow(rowHwnd, SW_HIDE);
+      if (listViews_[i]) ShowWindow(listViews_[i], SW_HIDE);
+      continue;
+    }
+    if (rowHwnd) {
+      SetWindowPos(rowHwnd, nullptr, r.left, r.top, w, rowH,
+                   SWP_NOZORDER | SWP_NOACTIVATE);
+      ShowWindow(rowHwnd, SW_SHOWNA);
+    }
+    if (listViews_[i]) {
+      SetWindowPos(listViews_[i], nullptr, r.left, r.top + rowH,
+                   w, h - rowH, SWP_NOZORDER | SWP_NOACTIVATE);
+      ShowWindow(listViews_[i], SW_SHOWNA);
+    }
+  }
+
+  // Position splitter HWNDs; hide unused ones.
+  for (std::size_t i = 0; i < splitterHwnds_.size(); ++i) {
+    HWND s = splitterHwnds_[i];
+    if (!s) continue;
+    if (i >= result.splitterCount) {
+      ShowWindow(s, SW_HIDE);
+      continue;
+    }
+    const auto& sp = result.splitters[i];
+    auto* ctx = reinterpret_cast<SplitterContext*>(
+        GetWindowLongPtrW(s, GWLP_USERDATA));
+    if (ctx) {
+      ctx->orient = sp.orient;
+      ctx->ratioId = sp.ratioId;
+      ctx->ratios = &ratiosPerPreset_[static_cast<std::size_t>(preset_)];
+    }
+    SetWindowPos(s, HWND_TOP,
+                 sp.hitRect.left, sp.hitRect.top,
+                 sp.hitRect.right - sp.hitRect.left,
+                 sp.hitRect.bottom - sp.hitRect.top,
+                 SWP_NOACTIVATE);
+    ShowWindow(s, SW_SHOWNA);
+    InvalidateRect(s, nullptr, FALSE);
+  }
 }
 
 void MainWindow::initRatiosToDefaults() noexcept {
@@ -1574,49 +1655,7 @@ LRESULT MainWindow::onSize(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
     SendMessageW(statusBar_, WM_SIZE, 0, 0);
   }
   if (hwnd_ != nullptr) {
-    RECT client;
-    GetClientRect(hwnd, &client);
-    int statusH = 0;
-    if (statusBar_) {
-      RECT sb;
-      GetWindowRect(statusBar_, &sb);
-      statusH = sb.bottom - sb.top;
-    }
-    const int addressH =
-        addressBars_[0] ? scaleForDpi(42, GetDpiForWindow(hwnd)) : 0;
-    const int clientW = client.right - client.left;
-    const int clientH = client.bottom - client.top;
-    // Resync status-bar parts every resize: the seam between part 0
-    // and part 1 follows the window width so it always sits at the
-    // 50/50 mark under the panes.
-    applyStatusParts(clientW);
-    // Each pane carries its own address bar; sliced out of each
-    // pane rect below, so computePaneRects gets zero global top.
-    const std::size_t paneCount = paneManager_ ? paneManager_->count() : 1;
-    const auto rects = computePaneRects(clientW, clientH, 0, statusH,
-                                        paneCount, orientation_);
-    for (std::size_t i = 0; i < listViews_.size(); ++i) {
-      if (listViews_[i] == nullptr) continue;
-      const RECT& r = rects.panes[i];
-      const int w = r.right - r.left;
-      const int h = r.bottom - r.top;
-      HWND rowHwnd = paneToolbarRows_[i] ? paneToolbarRows_[i]->handle()
-                                          : addressBars_[i];
-      if (w <= 0 || h <= 0) {
-        if (rowHwnd) ShowWindow(rowHwnd, SW_HIDE);
-        ShowWindow(listViews_[i], SW_HIDE);
-        continue;
-      }
-      const int barH = (rowHwnd != nullptr) ? addressH : 0;
-      if (rowHwnd) {
-        SetWindowPos(rowHwnd, nullptr, r.left, r.top, w, barH,
-                     SWP_NOZORDER | SWP_NOACTIVATE);
-        ShowWindow(rowHwnd, SW_SHOW);
-      }
-      ShowWindow(listViews_[i], SW_SHOW);
-      SetWindowPos(listViews_[i], nullptr, r.left, r.top + barH, w, h - barH,
-                   SWP_NOZORDER | SWP_NOACTIVATE);
-    }
+    relayout();
   }
   if (wParam == SIZE_MINIMIZED) {
     memory_.notifyMinimized();
