@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.24)
 project(FastExplorer
-  VERSION 0.2.0
+  VERSION 0.2.1
   LANGUAGES CXX
 )
 
@@ -422,6 +422,28 @@ set(CPACK_PACKAGE_VERSION_MAJOR "${FastExplorer_VERSION_MAJOR}")
 set(CPACK_PACKAGE_VERSION_MINOR "${FastExplorer_VERSION_MINOR}")
 set(CPACK_PACKAGE_VERSION_PATCH "${FastExplorer_VERSION_PATCH}")
 set(CPACK_PACKAGE_FILE_NAME "FastExplorer-${FastExplorer_VERSION}-win64")
-set(CPACK_GENERATOR "ZIP")
+# ZIP for power users who prefer portable extraction, NSIS .exe for
+# WinSparkle auto-update (ShellExecute on a .zip just opens it in
+# the system archive viewer — only an installer actually installs).
+# Both files are uploaded to the GitHub Release; appcast.xml points
+# at the .exe so the auto-update click triggers a real install.
+set(CPACK_GENERATOR "ZIP;NSIS")
 set(CPACK_INCLUDE_TOPLEVEL_DIRECTORY OFF)
+
+# NSIS-specific config. Installs under %LOCALAPPDATA%\Programs\
+# FastExplorer so no admin elevation is needed for first install
+# or for the auto-update flow. Start-menu shortcut "Fast Explorer"
+# points at the exe; the post-install Finish page offers a checkbox
+# to launch the app, ticked by default.
+set(CPACK_PACKAGE_INSTALL_DIRECTORY "FastExplorer")
+set(CPACK_NSIS_INSTALL_ROOT "$LOCALAPPDATA\\Programs")
+set(CPACK_NSIS_DISPLAY_NAME "Fast Explorer")
+set(CPACK_NSIS_PACKAGE_NAME "Fast Explorer")
+set(CPACK_NSIS_HELP_LINK "https://github.com/solitasroh/fast-explorer")
+set(CPACK_NSIS_URL_INFO_ABOUT "https://github.com/solitasroh/fast-explorer")
+set(CPACK_NSIS_CONTACT "rsj0811@rootech.com")
+set(CPACK_NSIS_MODIFY_PATH OFF)
+set(CPACK_NSIS_ENABLE_UNINSTALL_BEFORE_INSTALL ON)
+set(CPACK_NSIS_MUI_FINISHPAGE_RUN "FastExplorer.exe")
+set(CPACK_PACKAGE_EXECUTABLES "FastExplorer" "Fast Explorer")
 include(CPack)
