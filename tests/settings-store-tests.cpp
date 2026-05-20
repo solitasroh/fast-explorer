@@ -1,7 +1,9 @@
 #include <windows.h>
 
 #include <cstdio>
+#include <cwchar>
 #include <string>
+#include <string_view>
 
 #include "bench-fs-helper.h"
 #include "core/settings-store.h"
@@ -38,6 +40,28 @@ bool writeRawUtf8(const std::wstring& path, const char* body) {
   const BOOL ok = WriteFile(h, body, len, &written, nullptr);
   CloseHandle(h);
   return ok && written == len;
+}
+
+std::wstring uniqueTempPath(std::wstring_view tag) {
+  wchar_t buf[MAX_PATH];
+  GetTempPathW(MAX_PATH, buf);
+  std::wstring p = buf;
+  p += L"\\";
+  p += tag;
+  wchar_t tick[32];
+  swprintf_s(tick, L"_%llu", (unsigned long long)GetTickCount64());
+  p += tick;
+  p += L".json";
+  return p;
+}
+
+void writeRawBytes(const std::wstring& path, std::string_view bytes) {
+  HANDLE h = CreateFileW(path.c_str(), GENERIC_WRITE, 0, nullptr,
+                         CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+  if (h == INVALID_HANDLE_VALUE) return;
+  DWORD wrote = 0;
+  WriteFile(h, bytes.data(), static_cast<DWORD>(bytes.size()), &wrote, nullptr);
+  CloseHandle(h);
 }
 
 }  // namespace
@@ -441,4 +465,36 @@ FE_TEST_CASE(SettingsStore_Load_V3FileWithoutViewKeys_UsesV4Defaults) {
   FE_ASSERT_TRUE(s.showExtensions);
   // And the rest of the v3 payload is intact.
   FE_ASSERT_EQ(s.windowX, 100);
+}
+
+using fast_explorer::core::LayoutPreset;
+using fast_explorer::ui::defaultRatiosFor;
+
+FE_TEST_CASE(SettingsStore_v5_RoundTrip_QuadA) {
+  SessionState in{};
+  in.windowX = 100; in.windowY = 50; in.windowWidth = 1280; in.windowHeight = 800;
+  in.panePaths[0] = L"C:/a";
+  in.panePaths[1] = L"D:/b";
+  in.panePaths[2] = L"E:/c";
+  in.panePaths[3] = L"F:/d";
+  in.paneCount = 4;
+  in.activePane = 1;
+  in.preset = LayoutPreset::Quad_A;
+  in.ratiosPerPreset[size_t(LayoutPreset::Quad_A)] = {{0.6f, 0.5f, 0.5f}};
+
+  const std::wstring path = uniqueTempPath(L"fe_v5_qa");
+  FE_ASSERT_TRUE(saveSessionState(path, in));
+
+  SessionState out{};
+  FE_ASSERT_TRUE(loadSessionState(path, out));
+  FE_ASSERT_EQ(out.paneCount, std::size_t{4});
+  FE_ASSERT_EQ(out.activePane, std::size_t{1});
+  FE_ASSERT_EQ(out.preset, LayoutPreset::Quad_A);
+  FE_ASSERT_WSTREQ(out.panePaths[0], L"C:/a");
+  FE_ASSERT_WSTREQ(out.panePaths[1], L"D:/b");
+  FE_ASSERT_WSTREQ(out.panePaths[2], L"E:/c");
+  FE_ASSERT_WSTREQ(out.panePaths[3], L"F:/d");
+  const auto& r = out.ratiosPerPreset[size_t(LayoutPreset::Quad_A)];
+  FE_ASSERT_TRUE(r.ratios[0] > 0.59f && r.ratios[0] < 0.61f);
+  DeleteFileW(path.c_str());
 }

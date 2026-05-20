@@ -8,8 +8,10 @@
 #include <string_view>
 #include <vector>
 
+#include "core/layout-preset.h"
 #include "core/path-utils.h"
 #include "core/text-utf.h"
+#include "ui/splitter-ratios.h"
 
 namespace fast_explorer::core {
 
@@ -45,6 +47,46 @@ constexpr std::string_view kLayoutSingle  {"single"};
 constexpr std::string_view kLayoutDual    {"dual"};
 constexpr std::string_view kOrientVertical  {"vertical"};
 constexpr std::string_view kOrientHorizontal{"horizontal"};
+
+// Schema v5 keys
+constexpr std::string_view kKeySchemaVersion {"schema_version"};
+constexpr std::string_view kKeyPanePaths     {"pane_paths"};
+constexpr std::string_view kKeyPaneCount     {"pane_count"};
+constexpr std::string_view kKeyActivePane    {"active_pane"};
+constexpr std::string_view kKeyPreset        {"preset"};
+constexpr std::string_view kKeyRatios        {"ratios"};
+
+constexpr int kSchemaVersionCurrent = 5;
+
+constexpr std::string_view presetLabel(LayoutPreset p) noexcept {
+  switch (p) {
+    case LayoutPreset::Single: return "single";
+    case LayoutPreset::Dual_V: return "dual_v";
+    case LayoutPreset::Dual_H: return "dual_h";
+    case LayoutPreset::Tri_A:  return "tri_a";
+    case LayoutPreset::Tri_B:  return "tri_b";
+    case LayoutPreset::Tri_C:  return "tri_c";
+    case LayoutPreset::Quad_A: return "quad_a";
+    case LayoutPreset::Quad_B: return "quad_b";
+    case LayoutPreset::Quad_C: return "quad_c";
+    case LayoutPreset::Quad_D: return "quad_d";
+  }
+  return "single";
+}
+
+constexpr LayoutPreset presetFromLabel(std::string_view s) noexcept {
+  if (s == "single") return LayoutPreset::Single;
+  if (s == "dual_v") return LayoutPreset::Dual_V;
+  if (s == "dual_h") return LayoutPreset::Dual_H;
+  if (s == "tri_a")  return LayoutPreset::Tri_A;
+  if (s == "tri_b")  return LayoutPreset::Tri_B;
+  if (s == "tri_c")  return LayoutPreset::Tri_C;
+  if (s == "quad_a") return LayoutPreset::Quad_A;
+  if (s == "quad_b") return LayoutPreset::Quad_B;
+  if (s == "quad_c") return LayoutPreset::Quad_C;
+  if (s == "quad_d") return LayoutPreset::Quad_D;
+  return LayoutPreset::Single;
+}
 
 bool readWholeFileBytes(const std::wstring& path, std::vector<char>& out) {
   HANDLE h = CreateFileW(path.c_str(), GENERIC_READ,
@@ -133,6 +175,50 @@ void appendKeyRawString(std::string& out, std::string_view key,
   out.push_back('"');
   out.append(rawAscii);
   out.push_back('"');
+}
+
+void appendKeyPanePaths(std::string& out,
+                        const std::array<std::wstring, kMaxPanes>& paths,
+                        bool first) {
+  appendKeyHeader(out, kKeyPanePaths, first);
+  out.push_back('[');
+  for (std::size_t i = 0; i < paths.size(); ++i) {
+    if (i > 0) out.append(", ");
+    appendJsonEscapedString(out, paths[i]);
+  }
+  out.push_back(']');
+}
+
+void appendKeyRatios(std::string& out,
+                     const std::array<fast_explorer::ui::SplitterRatios,
+                                       fast_explorer::core::kLayoutPresetCount>& ratios,
+                     bool first) {
+  appendKeyHeader(out, kKeyRatios, first);
+  out.append("{\n");
+  bool firstEntry = true;
+  for (std::size_t i = 0; i < ratios.size(); ++i) {
+    const auto p = static_cast<LayoutPreset>(i);
+    const auto& r = ratios[i];
+    if (r.ratios[0] == 0.0f && r.ratios[1] == 0.0f && r.ratios[2] == 0.0f) {
+      continue;  // skip untouched
+    }
+    if (!firstEntry) out.append(",\n");
+    firstEntry = false;
+    out.append("    \"");
+    out.append(presetLabel(p));
+    out.append("\": [");
+    const std::size_t splitterCount = slotCountForPreset(p) > 1
+                                          ? slotCountForPreset(p) - 1 : 0;
+    const std::size_t n = std::min<std::size_t>(3, splitterCount);
+    for (std::size_t j = 0; j < n; ++j) {
+      if (j > 0) out.append(", ");
+      char buf[32];
+      const int len = std::snprintf(buf, sizeof(buf), "%.6f", r.ratios[j]);
+      if (len > 0) out.append(buf, static_cast<std::size_t>(len));
+    }
+    out.push_back(']');
+  }
+  out.append("\n  }");
 }
 
 class JsonReader {
@@ -357,38 +443,26 @@ bool loadSessionState(const std::wstring& path, SessionState& state) {
 }
 
 bool saveSessionState(const std::wstring& path, const SessionState& state) {
-  if (path.empty()) {
-    return false;
-  }
-  if (!ensureParentDir(path)) {
-    return false;
-  }
+  if (path.empty()) return false;
+  if (!ensureParentDir(path)) return false;
   std::string out;
   out.reserve(kSerializedReserveHint);
-  const std::string_view layoutLabel =
-      state.layoutMode == LayoutMode::Dual ? kLayoutDual : kLayoutSingle;
-  const std::string_view orientLabel =
-      state.orientation == LayoutOrientation::Horizontal
-          ? kOrientHorizontal : kOrientVertical;
-  appendKeyString   (out, kKeyLastPath,    state.lastPath,    /*first*/ true);
-  appendKeyInt      (out, kKeyWindowX,     state.windowX,     /*first*/ false);
-  appendKeyInt      (out, kKeyWindowY,     state.windowY,     /*first*/ false);
-  appendKeyInt      (out, kKeyWindowW,     state.windowWidth, /*first*/ false);
-  appendKeyInt      (out, kKeyWindowH,     state.windowHeight,/*first*/ false);
-  appendKeyRawString(out, kKeyLayoutMode,  layoutLabel,       /*first*/ false);
-  appendKeyString   (out, kKeySecondPath,  state.secondPath,  /*first*/ false);
-  appendKeyRawString(out, kKeyOrientation, orientLabel,       /*first*/ false);
-  appendKeyInt      (out, kKeyShowHidden,
-                     state.showHidden ? 1 : 0,                 /*first*/ false);
-  appendKeyInt      (out, kKeyShowExtensions,
-                     state.showExtensions ? 1 : 0,             /*first*/ false);
+  appendKeyInt       (out, kKeySchemaVersion, kSchemaVersionCurrent, /*first*/ true);
+  appendKeyInt       (out, kKeyWindowX,       state.windowX,         false);
+  appendKeyInt       (out, kKeyWindowY,       state.windowY,         false);
+  appendKeyInt       (out, kKeyWindowW,       state.windowWidth,     false);
+  appendKeyInt       (out, kKeyWindowH,       state.windowHeight,    false);
+  appendKeyPanePaths (out, state.panePaths,                          false);
+  appendKeyInt       (out, kKeyPaneCount,     static_cast<int>(state.paneCount),  false);
+  appendKeyInt       (out, kKeyActivePane,    static_cast<int>(state.activePane), false);
+  appendKeyRawString (out, kKeyPreset,        presetLabel(state.preset),          false);
+  appendKeyRatios    (out, state.ratiosPerPreset,                                  false);
+  appendKeyInt       (out, kKeyShowHidden,    state.showHidden     ? 1 : 0,        false);
+  appendKeyInt       (out, kKeyShowExtensions,state.showExtensions ? 1 : 0,        false);
   out.append("\n}\n");
 
   const std::wstring temp = path + L".tmp";
-  if (!writeWholeFile(temp, out)) {
-    DeleteFileW(temp.c_str());
-    return false;
-  }
+  if (!writeWholeFile(temp, out)) { DeleteFileW(temp.c_str()); return false; }
   if (!MoveFileExW(temp.c_str(), path.c_str(),
                    MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)) {
     DeleteFileW(temp.c_str());
