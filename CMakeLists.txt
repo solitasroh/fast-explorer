@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.24)
 project(FastExplorer
-  VERSION 0.2.6
+  VERSION 0.2.7
   LANGUAGES CXX
 )
 
@@ -465,10 +465,12 @@ set(CPACK_NSIS_URL_INFO_ABOUT "https://github.com/solitasroh/fast-explorer")
 set(CPACK_NSIS_CONTACT "rsj0811@rootech.com")
 set(CPACK_NSIS_MODIFY_PATH OFF)
 set(CPACK_NSIS_ENABLE_UNINSTALL_BEFORE_INSTALL ON)
-# Bracket-quote with literal `\\` for the same CPackConfig escape
-# reason as CPACK_NSIS_INSTALL_ROOT above — `\F` would trip the
-# "Invalid character escape" parser at CPackConfig.cmake re-load.
-set(CPACK_NSIS_MUI_FINISHPAGE_RUN [[bin\\FastExplorer.exe]])
+# CPack's NSIS template emits `MUI_FINISHPAGE_RUN "$INSTDIR\bin\<this>"`
+# — it prepends `$INSTDIR\bin\` itself, so passing `bin\FastExplorer.exe`
+# yields `$INSTDIR\bin\bin\FastExplorer.exe`, which doesn't exist and
+# turns the Finish-page Run checkbox into a silent no-op. Pass the leaf
+# name only.
+set(CPACK_NSIS_MUI_FINISHPAGE_RUN "FastExplorer.exe")
 set(CPACK_PACKAGE_EXECUTABLES "FastExplorer" "Fast Explorer")
 # CPack's NSIS template hard-codes `RequestExecutionLevel admin` at
 # header level — that demands UAC consent on every launch, and when

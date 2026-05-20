@@ -4,6 +4,7 @@
 #include <dwmapi.h>
 #include <shellapi.h>
 #include <uxtheme.h>
+#include <winsparkle.h>
 
 // dwmapi.lib linkage handled via CMakeLists.txt entry.
 #pragma comment(lib, "dwmapi.lib")
@@ -693,6 +694,13 @@ void MainWindow::showToolMenuForPane(std::size_t paneIdx) {
   AppendMenuW(menu,
               MF_STRING | (showExtensions_ ? MF_CHECKED : MF_UNCHECKED),
               packCmd(kMenuShowExt, paneIdx), L"확장자 표시(&X)");
+
+  // Group 4 — manual update check. Distinct from the auto-check loop
+  // because that one honours WinSparkle's 24h LastCheckTime debounce
+  // and there's no other path to force a check.
+  AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
+  AppendMenuW(menu, MF_STRING, packCmd(kMenuCheckUpdates, paneIdx),
+              L"업데이트 확인(&U)");
 
   RECT rc{};
   GetWindowRect(anchor, &rc);
@@ -1512,6 +1520,12 @@ LRESULT MainWindow::onCommand(HWND hwnd, UINT msg, WPARAM wParam,
             InvalidateRect(listViews_[i], nullptr, FALSE);
           }
         }
+        return 0;
+      }
+      case kMenuCheckUpdates: {
+        // _with_ui forces the dialog even if the 24h debounce window
+        // hasn't elapsed; the no-ui variant would skip silently.
+        win_sparkle_check_update_with_ui();
         return 0;
       }
     }

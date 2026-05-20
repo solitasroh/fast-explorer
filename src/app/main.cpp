@@ -5,6 +5,7 @@
 #include <stdio.h>
 #include <winsparkle.h>
 
+#include <atomic>
 #include <iterator>
 #include <string>
 
@@ -45,6 +46,27 @@ void perfLineToLogger(const wchar_t* line, void* userData) {
   logger->info(L"%ls", line);
 }
 
+// Published by wWinMain after MainWindow::create returns. WinSparkle's
+// shutdown callback (below) runs on its own background thread, so the
+// HWND has to be read with atomic semantics. Nullptr means "no window
+// yet" or "tearing down" — either way the callback is a no-op then.
+std::atomic<HWND> g_mainWindowHwnd{nullptr};
+
+// WinSparkle calls this on its worker thread when the user clicks
+// "Install update" and it's about to launch the downloaded installer.
+// Returning lets it spawn the installer; we use the call only as our
+// cue to start tearing down the message loop so the .exe stops
+// holding its own image file locked — otherwise the NSIS
+// uninstall-before-install step fails to delete FastExplorer.exe and
+// the install silently aborts. PostMessage is the documented
+// thread-safe way to poke a window from a non-UI thread.
+extern "C" void winSparkleShutdownRequest() {
+  HWND hwnd = g_mainWindowHwnd.load(std::memory_order_acquire);
+  if (hwnd != nullptr) {
+    PostMessageW(hwnd, WM_CLOSE, 0, 0);
+  }
+}
+
 // Pairs win_sparkle_init with win_sparkle_cleanup so the helper threads
 // WinSparkle starts are joined deterministically before the COM apartment
 // goes away or the process exits.
@@ -56,9 +78,15 @@ class WinSparkleScope {
     if (FE_EDDSA_PUBLIC_KEY[0] != '\0') {
       win_sparkle_set_eddsa_public_key(FE_EDDSA_PUBLIC_KEY);
     }
+    // Must be registered before win_sparkle_init so the worker thread
+    // sees it from its first iteration.
+    win_sparkle_set_shutdown_request_callback(&winSparkleShutdownRequest);
     win_sparkle_init();
   }
-  ~WinSparkleScope() { win_sparkle_cleanup(); }
+  ~WinSparkleScope() {
+    g_mainWindowHwnd.store(nullptr, std::memory_order_release);
+    win_sparkle_cleanup();
+  }
   WinSparkleScope(const WinSparkleScope&) = delete;
   WinSparkleScope& operator=(const WinSparkleScope&) = delete;
 };
@@ -214,6 +242,10 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance,
       }
       fast_explorer::ui::MainWindow window(services.memory(), services.perf());
       if (window.create(instance, showCommand)) {
+        // Publish the HWND so WinSparkle's shutdown-request callback
+        // (running on its worker thread) can PostMessage WM_CLOSE when
+        // the user accepts an update.
+        g_mainWindowHwnd.store(window.handle(), std::memory_order_release);
         window.applyInitialState(initialState);
         ACCEL accels[] = {
             {static_cast<BYTE>(FCONTROL | FVIRTKEY), L'L',

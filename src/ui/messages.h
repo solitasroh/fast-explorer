@@ -76,6 +76,7 @@ inline constexpr WORD kMenuCopyPath     = 312;  // Ctrl+Shift+C
 inline constexpr WORD kMenuProperties   = 313;  // Alt+Enter
 inline constexpr WORD kMenuShowHidden   = 320;  // toggle ✓
 inline constexpr WORD kMenuShowExt      = 321;  // toggle ✓
+inline constexpr WORD kMenuCheckUpdates = 330;  // win_sparkle_check_update_with_ui
 
 static_assert(kWmFeBase >= WM_APP,
               "WM_FE_* must live in the WM_APP user range");
