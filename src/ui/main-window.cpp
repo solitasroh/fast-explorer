@@ -458,11 +458,11 @@ void MainWindow::enterDualMode(const std::wstring& secondPath,
   if (hwnd_ == nullptr || !paneManager_) {
     return;
   }
-  if (paneManager_->isDual()) {
+  if ((paneManager_->count() > 1)) {
     return;
   }
   orientation_ = orientation;
-  // Capture before openSecond mutates active-pane state.
+  // Capture before openPane mutates active-pane state.
   const std::wstring fallback =
       paneManager_->active().currentPath();
   HWND second = createListView(hwnd_, instance_);
@@ -502,7 +502,7 @@ void MainWindow::enterDualMode(const std::wstring& secondPath,
     SetWindowSubclass(addressBars_[1], &MainWindow::addressBarSubclassProc, 0,
                       static_cast<DWORD_PTR>(1));
   }
-  paneManager_->openSecond(hwnd_);
+  paneManager_->openPane(hwnd_, L"");
   // Inherit current view toggle into the freshly opened pane so its
   // first enumerate honours the user's saved/active preference.
   paneManager_->at(1).setIncludeHidden(showHidden_);
@@ -510,7 +510,7 @@ void MainWindow::enterDualMode(const std::wstring& secondPath,
     // Coordinator construction failed mid-flight. Roll back so we do
     // not leave a visible second list-view backed by a partially-
     // constructed coordinator chain.
-    paneManager_->closeSecond();
+    paneManager_->closePane();
     DestroyWindow(second);
     listViews_[1] = nullptr;
     return;
@@ -538,7 +538,7 @@ void MainWindow::enterDualMode(const std::wstring& secondPath,
 }
 
 void MainWindow::enterSingleMode() {
-  if (hwnd_ == nullptr || !paneManager_ || !paneManager_->isDual()) {
+  if (hwnd_ == nullptr || !paneManager_ || !(paneManager_->count() > 1)) {
     return;
   }
   // Hide the popup before any pane-1 HWNDs go away — its mouse hook
@@ -560,7 +560,7 @@ void MainWindow::enterSingleMode() {
   labelEdits_[1].reset();
   selectionSyncs_[1].reset();
   iconCoords_[1].reset();
-  paneManager_->closeSecond();
+  paneManager_->closePane();
   pane_ = &paneManager_->active();
   if (dropTargets_[1] != nullptr && listViews_[1] != nullptr) {
     RevokeDragDrop(listViews_[1]);
@@ -604,7 +604,7 @@ void MainWindow::setLayoutOrientation(LayoutOrientation orientation) {
     return;
   }
   orientation_ = orientation;
-  if (paneManager_ && paneManager_->isDual()) {
+  if (paneManager_ && (paneManager_->count() > 1)) {
     relayout();
   }
 }
@@ -837,7 +837,7 @@ void MainWindow::applyActivePaneAppearance() noexcept {
   // Inactive pane gets the dialog face colour so the focused pane is
   // visually obvious in dual mode; single mode skips the dim since
   // there is no other pane to contrast against.
-  const bool dual = paneManager_->isDual();
+  const bool dual = (paneManager_->count() > 1);
   const bool dark = systemPrefersDarkMode();
   const COLORREF activeBg   = dark ? RGB(32, 32, 32)
                                     : GetSysColor(COLOR_WINDOW);
@@ -998,7 +998,7 @@ void MainWindow::setPaneStatusText(std::size_t paneIdx, const wchar_t* text) {
   // anyway. Drop it explicitly so a stray dual-mode message in
   // flight does not paint an out-of-bounds part if the user
   // collapses to single between the message post and its dispatch.
-  if (paneIdx == 1 && (!paneManager_ || !paneManager_->isDual())) {
+  if (paneIdx == 1 && (!paneManager_ || !(paneManager_->count() > 1))) {
     return;
   }
   SendMessageW(statusBar_, SB_SETTEXTW, static_cast<WPARAM>(paneIdx),
@@ -1206,7 +1206,7 @@ LRESULT MainWindow::handleMessage(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPa
         capturedState_->lastPath = paneManager_->active().currentPath();
       }
       if (paneManager_) {
-        const bool dual = paneManager_->isDual();
+        const bool dual = (paneManager_->count() > 1);
         capturedState_->layoutMode = dual
             ? fast_explorer::core::LayoutMode::Dual
             : fast_explorer::core::LayoutMode::Single;
@@ -1815,7 +1815,7 @@ LRESULT MainWindow::onCommand(HWND hwnd, UINT msg, WPARAM wParam,
             LOWORD(wParam) == kAccelLayoutHorizontalToggle
                 ? LayoutOrientation::Horizontal
                 : LayoutOrientation::Vertical;
-        const bool dual = paneManager_ && paneManager_->isDual();
+        const bool dual = paneManager_ && (paneManager_->count() > 1);
         const auto t = resolveLayoutToggle(dual, orientation_, pressed);
         switch (t.action) {
           case LayoutAction::EnterDual:
@@ -1843,7 +1843,7 @@ LRESULT MainWindow::onCommand(HWND hwnd, UINT msg, WPARAM wParam,
         handleClipboardPaste();
         return 0;
       case kAccelPaneSwitch:
-        if (paneManager_ && paneManager_->isDual()) {
+        if (paneManager_ && (paneManager_->count() > 1)) {
           const std::size_t next =
               (paneManager_->activeIndex() + 1) % paneManager_->count();
           setActivePane(next);

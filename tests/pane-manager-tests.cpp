@@ -11,7 +11,7 @@ using fast_explorer::ui::PaneManager;
 FE_TEST_CASE(PaneManager_Default_ZeroCount) {
   PaneManager pm;
   FE_ASSERT_EQ(pm.count(), static_cast<std::size_t>(0));
-  FE_ASSERT_FALSE(pm.isDual());
+  FE_ASSERT_FALSE(pm.count() > 1);
 }
 
 FE_TEST_CASE(PaneManager_OpenInitial_AssignsIndexZeroAndSingleMode) {
@@ -20,7 +20,7 @@ FE_TEST_CASE(PaneManager_OpenInitial_AssignsIndexZeroAndSingleMode) {
   FE_ASSERT_EQ(idx, static_cast<std::size_t>(0));
   FE_ASSERT_EQ(pm.count(), static_cast<std::size_t>(1));
   FE_ASSERT_EQ(pm.activeIndex(), static_cast<std::size_t>(0));
-  FE_ASSERT_FALSE(pm.isDual());
+  FE_ASSERT_FALSE(pm.count() > 1);
 }
 
 FE_TEST_CASE(PaneManager_ActiveReturnsThePane) {
@@ -39,39 +39,42 @@ FE_TEST_CASE(PaneManager_ActivePaneReceivesOpenFolder) {
   FE_ASSERT_WSTREQ(pm.at(0).currentPath(), L"C:\\tmp");
 }
 
-FE_TEST_CASE(PaneManager_OpenSecond_AssignsIndexOneAndDualMode) {
+FE_TEST_CASE(PaneManager_OpenPane_AssignsIndexOneAndDualMode) {
   PaneManager pm;
   pm.openInitial(nullptr);
-  const std::size_t idx = pm.openSecond(nullptr);
+  const std::size_t idx = pm.openPane(nullptr, L"");
   FE_ASSERT_EQ(idx, static_cast<std::size_t>(1));
   FE_ASSERT_EQ(pm.count(), static_cast<std::size_t>(2));
-  FE_ASSERT_TRUE(pm.isDual());
+  FE_ASSERT_TRUE(pm.count() > 1);
   FE_ASSERT_EQ(pm.activeIndex(), static_cast<std::size_t>(0));
 }
 
-FE_TEST_CASE(PaneManager_OpenSecond_Idempotent) {
+FE_TEST_CASE(PaneManager_OpenPane_AtMaxCapacity_ReturnsCount) {
   PaneManager pm;
   pm.openInitial(nullptr);
-  pm.openSecond(nullptr);
-  FE_ASSERT_EQ(pm.openSecond(nullptr), static_cast<std::size_t>(1));
-  FE_ASSERT_EQ(pm.count(), static_cast<std::size_t>(2));
+  pm.openPane(nullptr, L"");
+  pm.openPane(nullptr, L"");
+  pm.openPane(nullptr, L"");
+  FE_ASSERT_EQ(pm.count(), static_cast<std::size_t>(4));
+  FE_ASSERT_EQ(pm.openPane(nullptr, L""), static_cast<std::size_t>(4));
+  FE_ASSERT_EQ(pm.count(), static_cast<std::size_t>(4));
 }
 
-FE_TEST_CASE(PaneManager_CloseSecond_RemovesPaneAndResetsActive) {
+FE_TEST_CASE(PaneManager_ClosePane_RemovesPaneAndClampsActive) {
   PaneManager pm;
   pm.openInitial(nullptr);
-  pm.openSecond(nullptr);
+  pm.openPane(nullptr, L"");
   pm.setActive(1);
-  pm.closeSecond();
+  pm.closePane();
   FE_ASSERT_EQ(pm.count(), static_cast<std::size_t>(1));
-  FE_ASSERT_FALSE(pm.isDual());
+  FE_ASSERT_FALSE(pm.count() > 1);
   FE_ASSERT_EQ(pm.activeIndex(), static_cast<std::size_t>(0));
 }
 
-FE_TEST_CASE(PaneManager_CloseSecond_NoSecondPane_NoOp) {
+FE_TEST_CASE(PaneManager_ClosePane_NoSecondPane_NoOp) {
   PaneManager pm;
   pm.openInitial(nullptr);
-  pm.closeSecond();
+  pm.closePane();
   FE_ASSERT_EQ(pm.count(), static_cast<std::size_t>(1));
 }
 
@@ -85,7 +88,7 @@ FE_TEST_CASE(PaneManager_SetActive_OutOfRange_ReturnsFalse) {
 FE_TEST_CASE(PaneManager_SetActive_DualMode_SwitchesBetweenPanes) {
   PaneManager pm;
   pm.openInitial(nullptr);
-  pm.openSecond(nullptr);
+  pm.openPane(nullptr, L"");
   FE_ASSERT_TRUE(pm.setActive(1));
   FE_ASSERT_EQ(pm.activeIndex(), static_cast<std::size_t>(1));
   FE_ASSERT_TRUE(&pm.active() == &pm.at(1));
