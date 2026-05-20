@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.24)
 project(FastExplorer
-  VERSION 0.2.3
+  VERSION 0.2.4
   LANGUAGES CXX
 )
 
@@ -460,4 +460,16 @@ set(CPACK_NSIS_MODIFY_PATH OFF)
 set(CPACK_NSIS_ENABLE_UNINSTALL_BEFORE_INSTALL ON)
 set(CPACK_NSIS_MUI_FINISHPAGE_RUN "FastExplorer.exe")
 set(CPACK_PACKAGE_EXECUTABLES "FastExplorer" "Fast Explorer")
+# CPack's NSIS template hard-codes `RequestExecutionLevel admin` at
+# header level — that demands UAC consent on every launch, and when
+# the user denies (or the parent process is non-elevated) NSIS
+# silently exits 0, leaving an empty install dir. Since our install
+# target is %LOCALAPPDATA%\Programs (user-writable, no UAC needed),
+# we want `user`. NSIS allows multiple RequestExecutionLevel
+# directives — the last wins — so injecting one via
+# @CPACK_NSIS_DEFINES@ overrides the hard-coded `admin` without
+# having to vendor the template file. The .onInit logic also probes
+# UserInfo::GetAccountType; for non-admin (the common case) it
+# leaves $INSTDIR at the InstallDir directive value.
+set(CPACK_NSIS_DEFINES "RequestExecutionLevel user")
 include(CPack)
