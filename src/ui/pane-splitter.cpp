@@ -130,18 +130,35 @@ LRESULT CALLBACK splitterWndProc(HWND hwnd, UINT msg, WPARAM w, LPARAM l) {
     }
     case WM_LBUTTONUP: {
       if (!ctx || !ctx->dragging) return 0;
-      HWND parent = GetParent(hwnd);
-      drawGhost(parent, ctx->orient, ctx->lastGhostPos,
-                ctx->perpLow, ctx->perpHigh);
-      ReleaseCapture();
+      // Snapshot drag state into locals BEFORE ReleaseCapture. The
+      // ReleaseCapture call synchronously dispatches WM_CAPTURECHANGED
+      // on the same thread (Win32 contract), and that handler resets
+      // ctx->lastGhostPos to -1. Reading the field AFTER the release
+      // would feed -1 into computeRatioFromCursor, which then clamps
+      // to the 0.1 floor — visible as "every drag snaps to 10%".
+      // Clearing `dragging` here also turns the WM_CAPTURECHANGED
+      // handler into a no-op so it does not double-erase the ghost.
+      const int   commitPos       = ctx->lastGhostPos;
+      const int   commitOrigin    = ctx->axisOriginInParent;
+      const int   commitLength    = ctx->axisLengthForRatio;
+      const auto  commitOrient    = ctx->orient;
+      const int   commitPerpLow   = ctx->perpLow;
+      const int   commitPerpHigh  = ctx->perpHigh;
+      const std::uint8_t commitRatioId = ctx->ratioId;
+      SplitterRatios* const commitRatios = ctx->ratios;
+      auto commitCallback = ctx->onCommit;  // copy; ctx may relayout
       ctx->dragging = false;
+      ctx->lastGhostPos = -1;
+      HWND parent = GetParent(hwnd);
+      drawGhost(parent, commitOrient, commitPos, commitPerpLow, commitPerpHigh);
+      ReleaseCapture();
 
       const float clamped = computeRatioFromCursor(
-          ctx->lastGhostPos, ctx->axisOriginInParent,
-          ctx->axisLengthForRatio);
-      ctx->ratios->ratios[ctx->ratioId] = clamped;
-      if (ctx->onCommit) ctx->onCommit();
-      ctx->lastGhostPos = -1;
+          commitPos, commitOrigin, commitLength);
+      if (commitRatios) {
+        commitRatios->ratios[commitRatioId] = clamped;
+      }
+      if (commitCallback) commitCallback();
       return 0;
     }
     case WM_CAPTURECHANGED: {
