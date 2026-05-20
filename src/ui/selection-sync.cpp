@@ -45,37 +45,14 @@ void SelectionSync::handleItemChanged(NMHDR* hdr) {
   if ((nmlv->uChanged & LVIF_STATE) == 0) {
     return;
   }
-  if (nmlv->iItem < 0) {
-    // -1 is the LVS_OWNERDATA list-wide broadcast; reapplyFromPane()
-    // re-derives selection on the next sort apply.
-    return;
+  const UINT oldSel = nmlv->uOldState & LVIS_SELECTED;
+  const UINT newSel = nmlv->uNewState & LVIS_SELECTED;
+  if (oldSel == newSel) {
+    return;  // not a selection-state change
   }
-  const auto row = static_cast<std::size_t>(nmlv->iItem);
-  const auto& store = pane_.store();
-  if (row >= store.publishedCount()) {
-    return;
-  }
-  const std::span<const std::uint32_t> order = store.visibleOrder();
-  if (row >= order.size()) {
-    return;
-  }
-  const std::uint32_t raw = order[row];
-  const bool wasSelected = (nmlv->uOldState & LVIS_SELECTED) != 0;
-  const bool isSelected = (nmlv->uNewState & LVIS_SELECTED) != 0;
-  if (wasSelected == isSelected) {
-    return;
-  }
-  // selectRaw / deselectRaw use unordered_set and can throw bad_alloc;
-  // we swallow the sync miss because reapplyFromPane() rebuilds
-  // list-view state from the pane model on the next sort apply.
-  try {
-    if (isSelected) {
-      pane_.selectRaw(raw);
-    } else {
-      pane_.deselectRaw(raw);
-    }
-  } catch (const std::bad_alloc&) {
-  }
+  // Authoritative resync — see syncFromListView comment for why we
+  // do not trust per-row deltas under LVS_OWNERDATA.
+  syncFromListView();
 }
 
 void SelectionSync::handleOdStateChanged(NMHDR* hdr) {
@@ -83,41 +60,45 @@ void SelectionSync::handleOdStateChanged(NMHDR* hdr) {
     return;
   }
   auto* nm = reinterpret_cast<NMLVODSTATECHANGE*>(hdr);
-  // Walk [iFrom..iTo] (inclusive on both ends per common-controls
-  // docs) and reconcile each row's LVIS_SELECTED against the pane
-  // set. Without this loop, single-click deselections of previously-
-  // selected rows under LVS_OWNERDATA never reach PaneController,
-  // so selectedRaws_ grows on every click.
-  const int from = nm->iFrom;
-  const int to = nm->iTo;
-  if (from < 0 || to < from) {
+  const UINT oldSel = nm->uOldState & LVIS_SELECTED;
+  const UINT newSel = nm->uNewState & LVIS_SELECTED;
+  if (oldSel == newSel) {
     return;
   }
-  const bool wasSelected = (nm->uOldState & LVIS_SELECTED) != 0;
-  const bool isSelected = (nm->uNewState & LVIS_SELECTED) != 0;
-  if (wasSelected == isSelected) {
+  syncFromListView();
+}
+
+void SelectionSync::syncFromListView() {
+  if (listView_ == nullptr || reapplying_) {
     return;
   }
+  // Why a full resync instead of applying per-row deltas:
+  // LVS_OWNERDATA list-views silently drop selection notifications
+  // in some scenarios (deselect-on-click of the previously-selected
+  // row in particular doesn't reliably reach either LVN_ITEMCHANGED
+  // or LVN_ODSTATECHANGED on every Windows version). Tracking the
+  // delta therefore leaks: selectedRaws_ grows on every click. By
+  // reading ListView_GetNextItem(LVNI_SELECTED) we always end up
+  // with the truth no matter which notifications fired.
+  //
+  // Cost: O(visible rows) per selection change. For a Ctrl+A on
+  // 100k rows this is ~ms. Acceptable; the per-row delta version
+  // was correct in theory but unreliable in practice.
   const auto& store = pane_.store();
   const std::span<const std::uint32_t> order = store.visibleOrder();
   const std::size_t published = store.publishedCount();
-  const std::size_t high = static_cast<std::size_t>(to);
-  if (high >= published || high >= order.size()) {
-    return;
-  }
   try {
-    for (std::size_t row = static_cast<std::size_t>(from);
-         row <= high; ++row) {
-      const std::uint32_t raw = order[row];
-      if (isSelected) {
-        pane_.selectRaw(raw);
-      } else {
-        pane_.deselectRaw(raw);
-      }
+    pane_.clearSelection();
+    int row = -1;
+    while ((row = ListView_GetNextItem(listView_, row, LVNI_SELECTED)) !=
+           -1) {
+      const std::size_t r = static_cast<std::size_t>(row);
+      if (r >= published || r >= order.size()) break;
+      pane_.selectRaw(order[r]);
     }
   } catch (const std::bad_alloc&) {
-    // Same recovery as handleItemChanged — reapplyFromPane() rebuilds
-    // list-view state on the next sort apply.
+    // Same recovery as the prior delta version — reapplyFromPane()
+    // rebuilds list-view state on the next sort apply.
   }
 }
 

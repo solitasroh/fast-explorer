@@ -23,13 +23,18 @@ class SelectionSync {
 
   void handleItemChanged(NMHDR* hdr);
   // Range deselect/select broadcast specific to LVS_OWNERDATA lists.
-  // When the user clicks row B while row A is selected, comctl32
-  // reports the *deselection* of A via LVN_ODSTATECHANGED (a range
-  // notification), NOT via per-row LVN_ITEMCHANGED. Dropping this
-  // notification leaks selection — the pane set grows monotonically
-  // because deselects never reach selectedRaws_. Routed by
-  // MainWindow's WM_NOTIFY handler.
+  // Routes the same as handleItemChanged internally — both delegate
+  // to syncFromListView so we read the listview's actual current
+  // state instead of trying to track deltas that comctl32 sometimes
+  // drops on the floor (the cause of the "select count keeps growing
+  // on single click" bug).
   void handleOdStateChanged(NMHDR* hdr);
+  // Authoritative sync: clear the pane's selection set and rebuild it
+  // by iterating LVNI_SELECTED rows on the list-view. Bulletproof
+  // against missing / out-of-order notifications at the cost of
+  // O(n) per selection change. Public so MainWindow's debounced
+  // refresh can force a resync if it suspects drift.
+  void syncFromListView();
   void reapplyFromPane();
 
  private:

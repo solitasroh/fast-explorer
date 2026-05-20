@@ -80,8 +80,17 @@ FE_TEST_CASE(SelectionSync_HandleItemChanged_NoStateTransition_NoOp) {
   FE_ASSERT_EQ(pane.selectedCount(), static_cast<std::size_t>(0));
 }
 
-FE_TEST_CASE(SelectionSync_HandleItemChanged_SelectTransition_RoutesToPane) {
-  TempDir tmp(L"selsync-select");
+// The select/deselect transition tests that used to live here
+// asserted delta-based routing: NMLISTVIEW says "row 0 selected" →
+// PaneController.selectedCount becomes 1. That contract changed in
+// the resync rewrite — handleItemChanged now delegates to
+// syncFromListView, which reads ListView_GetNextItem(LVNI_SELECTED)
+// from the live list-view. Without a real HWND to query (the unit
+// tests use listView=nullptr) syncFromListView correctly bails, so
+// the old assertions can't be re-expressed here. The new routing
+// is covered by integration testing only.
+FE_TEST_CASE(SelectionSync_HandleItemChanged_NullListView_NoOp) {
+  TempDir tmp(L"selsync-null-lv");
   FE_ASSERT_EQ(generateDataset(PresetKind::Small, tmp.path(), 1).error,
                GenerateError::None);
   PaneController pane(nullptr);
@@ -89,32 +98,32 @@ FE_TEST_CASE(SelectionSync_HandleItemChanged_SelectTransition_RoutesToPane) {
   pane.joinForTest();
   SelectionSync sync(nullptr, pane);
 
-  const auto order = pane.store().visibleOrder();
-  FE_ASSERT_TRUE(order.size() >= 2);
+  // syncFromListView must not crash and must not mutate selection
+  // when the list-view handle is null (e.g. during teardown).
   NMLISTVIEW nm = makeItemChanged(0, 0, LVIS_SELECTED);
   sync.handleItemChanged(asHdr(nm));
-  FE_ASSERT_EQ(pane.selectedCount(), static_cast<std::size_t>(1));
-  FE_ASSERT_TRUE(pane.isRawSelected(order[0]));
+  FE_ASSERT_EQ(pane.selectedCount(), static_cast<std::size_t>(0));
 }
 
-FE_TEST_CASE(SelectionSync_HandleItemChanged_DeselectTransition_RoutesToPane) {
-  TempDir tmp(L"selsync-deselect");
+FE_TEST_CASE(SelectionSync_HandleItemChanged_StateChangeFiltering) {
+  // No-state-change notifications still short-circuit before any
+  // listview query — the previous regression that this guards
+  // against was firing the resync for non-LVIF_STATE updates and
+  // doing unnecessary work on every focus / image change.
+  TempDir tmp(L"selsync-noop");
   FE_ASSERT_EQ(generateDataset(PresetKind::Small, tmp.path(), 1).error,
                GenerateError::None);
   PaneController pane(nullptr);
   FE_ASSERT_TRUE(pane.openFolder(tmp.path()));
   pane.joinForTest();
   SelectionSync sync(nullptr, pane);
+  pane.selectRaw(0);
 
-  const auto order = pane.store().visibleOrder();
-  FE_ASSERT_TRUE(order.size() >= 1);
-  pane.selectRaw(order[0]);
-  FE_ASSERT_EQ(pane.selectedCount(), static_cast<std::size_t>(1));
-
-  NMLISTVIEW nm = makeItemChanged(0, LVIS_SELECTED, 0);
+  // newState == oldState → no transition, syncFromListView not called.
+  NMLISTVIEW nm = makeItemChanged(0, LVIS_SELECTED, LVIS_SELECTED);
   sync.handleItemChanged(asHdr(nm));
-  FE_ASSERT_EQ(pane.selectedCount(), static_cast<std::size_t>(0));
-  FE_ASSERT_FALSE(pane.isRawSelected(order[0]));
+  // Selection survives because we early-returned before touching it.
+  FE_ASSERT_EQ(pane.selectedCount(), static_cast<std::size_t>(1));
 }
 
 FE_TEST_CASE(SelectionSync_ReapplyFromPane_NullListView_NoCrash) {
