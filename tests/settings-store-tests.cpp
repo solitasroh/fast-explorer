@@ -13,6 +13,7 @@ using fast_explorer::core::defaultSettingsPath;
 using fast_explorer::core::kSettingsUseDefault;
 using fast_explorer::core::LayoutMode;
 using fast_explorer::core::LayoutOrientation;
+using fast_explorer::core::LayoutPreset;
 using fast_explorer::core::loadSessionState;
 using fast_explorer::core::saveSessionState;
 using fast_explorer::core::SessionState;
@@ -106,7 +107,7 @@ FE_TEST_CASE(SettingsStore_RoundTrip_PopulatedState) {
   TempDir tmp(L"settings-roundtrip");
   const std::wstring path = makeSettingsPath(tmp);
   SessionState written;
-  written.lastPath = L"C:\\Users\\test\\Pictures";
+  written.panePaths[0] = L"C:\\Users\\test\\Pictures";
   written.windowX = 50;
   written.windowY = 75;
   written.windowWidth = 1600;
@@ -115,7 +116,7 @@ FE_TEST_CASE(SettingsStore_RoundTrip_PopulatedState) {
 
   SessionState read;
   FE_ASSERT_TRUE(loadSessionState(path, read));
-  FE_ASSERT_WSTREQ(read.lastPath, written.lastPath);
+  FE_ASSERT_WSTREQ(read.panePaths[0], written.panePaths[0]);
   FE_ASSERT_EQ(read.windowX, written.windowX);
   FE_ASSERT_EQ(read.windowY, written.windowY);
   FE_ASSERT_EQ(read.windowWidth, written.windowWidth);
@@ -142,7 +143,7 @@ FE_TEST_CASE(SettingsStore_RoundTrip_PathWithBackslashAndQuote) {
   TempDir tmp(L"settings-escape");
   const std::wstring path = makeSettingsPath(tmp);
   SessionState written;
-  written.lastPath = L"C:\\path\\with\"quote\\inside";
+  written.panePaths[0] = L"C:\\path\\with\"quote\\inside";
   written.windowX = 1;
   written.windowY = 2;
   written.windowWidth = 3;
@@ -151,7 +152,7 @@ FE_TEST_CASE(SettingsStore_RoundTrip_PathWithBackslashAndQuote) {
 
   SessionState read;
   FE_ASSERT_TRUE(loadSessionState(path, read));
-  FE_ASSERT_WSTREQ(read.lastPath, written.lastPath);
+  FE_ASSERT_WSTREQ(read.panePaths[0], written.panePaths[0]);
 }
 
 FE_TEST_CASE(SettingsStore_Load_MalformedJson_ReturnsFalse) {
@@ -192,34 +193,36 @@ FE_TEST_CASE(SettingsStore_Save_OverwriteExistingFile) {
   TempDir tmp(L"settings-overwrite");
   const std::wstring path = makeSettingsPath(tmp);
   SessionState first;
-  first.lastPath = L"C:\\first";
+  first.panePaths[0] = L"C:\\first";
   FE_ASSERT_TRUE(saveSessionState(path, first));
   SessionState second;
-  second.lastPath = L"C:\\second";
+  second.panePaths[0] = L"C:\\second";
   FE_ASSERT_TRUE(saveSessionState(path, second));
 
   SessionState read;
   FE_ASSERT_TRUE(loadSessionState(path, read));
-  FE_ASSERT_WSTREQ(read.lastPath, L"C:\\second");
+  FE_ASSERT_WSTREQ(read.panePaths[0], L"C:\\second");
 }
 
 FE_TEST_CASE(SettingsStore_RoundTrip_DualLayoutWithSecondPath) {
   TempDir tmp(L"settings-dual-layout");
   const std::wstring path = makeSettingsPath(tmp);
   SessionState written;
-  written.lastPath = L"C:\\Users\\test\\Documents";
+  written.panePaths[0] = L"C:\\Users\\test\\Documents";
+  written.panePaths[1] = L"C:\\Users\\test\\Pictures";
+  written.paneCount = 2;
+  written.preset = LayoutPreset::Dual_V;
   written.windowX = 100;
   written.windowY = 100;
   written.windowWidth = 1280;
   written.windowHeight = 800;
-  written.layoutMode = LayoutMode::Dual;
-  written.secondPath = L"C:\\Users\\test\\Pictures";
   FE_ASSERT_TRUE(saveSessionState(path, written));
 
   SessionState read;
   FE_ASSERT_TRUE(loadSessionState(path, read));
-  FE_ASSERT_EQ(read.layoutMode, LayoutMode::Dual);
-  FE_ASSERT_WSTREQ(read.secondPath, written.secondPath);
+  FE_ASSERT_EQ(read.paneCount, std::size_t{2});
+  FE_ASSERT_EQ(read.preset, LayoutPreset::Dual_V);
+  FE_ASSERT_WSTREQ(read.panePaths[1], written.panePaths[1]);
 }
 
 FE_TEST_CASE(SettingsStore_RoundTrip_SingleLayoutEmptySecondPath) {
@@ -316,33 +319,34 @@ FE_TEST_CASE(SettingsStore_RoundTrip_SecondPathBackslashEscape) {
   TempDir tmp(L"settings-second-path-escape");
   const std::wstring path = makeSettingsPath(tmp);
   SessionState written;
-  written.lastPath = L"C:\\a";
+  written.panePaths[0] = L"C:\\a";
+  written.panePaths[1] = L"D:\\path with\\back\\slashes";
+  written.paneCount = 2;
+  written.preset = LayoutPreset::Dual_V;
   written.windowX = 1; written.windowY = 2;
   written.windowWidth = 3; written.windowHeight = 4;
-  written.layoutMode = LayoutMode::Dual;
-  written.secondPath = L"D:\\path with\\back\\slashes";
   FE_ASSERT_TRUE(saveSessionState(path, written));
 
   SessionState read;
   FE_ASSERT_TRUE(loadSessionState(path, read));
-  FE_ASSERT_WSTREQ(read.secondPath, written.secondPath);
+  FE_ASSERT_WSTREQ(read.panePaths[1], written.panePaths[1]);
 }
 
 FE_TEST_CASE(SettingsStore_RoundTrip_HorizontalOrientation) {
   TempDir tmp(L"settings-orient-horizontal");
   const std::wstring path = makeSettingsPath(tmp);
   SessionState written;
-  written.lastPath = L"C:\\";
+  written.panePaths[0] = L"C:\\";
+  written.panePaths[1] = L"D:\\";
+  written.paneCount = 2;
+  written.preset = LayoutPreset::Dual_H;
   written.windowX = 0; written.windowY = 0;
   written.windowWidth = 1280; written.windowHeight = 800;
-  written.layoutMode = LayoutMode::Dual;
-  written.secondPath = L"D:\\";
-  written.orientation = LayoutOrientation::Horizontal;
   FE_ASSERT_TRUE(saveSessionState(path, written));
 
   SessionState read;
   FE_ASSERT_TRUE(loadSessionState(path, read));
-  FE_ASSERT_EQ(read.orientation, LayoutOrientation::Horizontal);
+  FE_ASSERT_EQ(read.preset, LayoutPreset::Dual_H);
 }
 
 FE_TEST_CASE(SettingsStore_RoundTrip_VerticalOrientationDefault) {
@@ -467,7 +471,6 @@ FE_TEST_CASE(SettingsStore_Load_V3FileWithoutViewKeys_UsesV4Defaults) {
   FE_ASSERT_EQ(s.windowX, 100);
 }
 
-using fast_explorer::core::LayoutPreset;
 using fast_explorer::ui::defaultRatiosFor;
 
 FE_TEST_CASE(SettingsStore_v5_RoundTrip_QuadA) {

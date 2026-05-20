@@ -248,9 +248,12 @@ class JsonReader {
     }
   }
 
+  int schemaVersion() const noexcept { return schemaVersion_; }
+
  private:
   const std::string_view text_;
   std::size_t pos_ = 0;
+  int schemaVersion_ = 0;
 
   char peek() const {
     return pos_ < text_.size() ? text_[pos_] : '\0';
@@ -320,6 +323,78 @@ class JsonReader {
     out = static_cast<int>(acc);
     return true;
   }
+  bool parseFloatInto(float& out) {
+    skipWs();
+    const std::size_t start = pos_;
+    if (pos_ < text_.size() && (text_[pos_] == '-' || text_[pos_] == '+')) pos_++;
+    bool sawDot = false, sawDigit = false;
+    while (pos_ < text_.size()) {
+      const char c = text_[pos_];
+      if (c >= '0' && c <= '9') { sawDigit = true; pos_++; continue; }
+      if (c == '.' && !sawDot)  { sawDot = true; pos_++; continue; }
+      break;
+    }
+    if (!sawDigit) return false;
+    const std::string tok(text_.substr(start, pos_ - start));
+    try { out = std::stof(tok); } catch (...) { return false; }
+    return true;
+  }
+  bool parsePanePathsArrayInto(SessionState& state) {
+    skipWs();
+    if (!consume('[')) return false;
+    skipWs();
+    std::size_t idx = 0;
+    if (peek() == ']') { pos_++; return true; }
+    while (true) {
+      skipWs();
+      std::string raw;
+      if (!parseStringInto(raw)) return false;
+      if (idx < state.panePaths.size()) {
+        state.panePaths[idx] = widenUtf8(raw);
+      }
+      idx++;
+      skipWs();
+      if (consume(',')) continue;
+      if (consume(']')) return true;
+      return false;
+    }
+  }
+  bool parseRatiosObjectInto(SessionState& state) {
+    skipWs();
+    if (!consume('{')) return false;
+    skipWs();
+    if (peek() == '}') { pos_++; return true; }
+    while (true) {
+      skipWs();
+      std::string key;
+      if (!parseStringInto(key)) return false;
+      skipWs();
+      if (!consume(':')) return false;
+      skipWs();
+      if (!consume('[')) return false;
+      const LayoutPreset p = presetFromLabel(key);
+      auto& dst = state.ratiosPerPreset[static_cast<std::size_t>(p)];
+      std::size_t idx = 0;
+      skipWs();
+      if (peek() == ']') { pos_++; }
+      else {
+        while (true) {
+          float v = 0.0f;
+          if (!parseFloatInto(v)) return false;
+          if (idx < dst.ratios.size()) dst.ratios[idx] = v;
+          idx++;
+          skipWs();
+          if (consume(',')) { skipWs(); continue; }
+          if (consume(']')) break;
+          return false;
+        }
+      }
+      skipWs();
+      if (consume(',')) continue;
+      if (consume('}')) return true;
+      return false;
+    }
+  }
   bool parseValueInto(std::string_view key, SessionState& state) {
     if (key == kKeyLastPath) {
       std::string raw;
@@ -362,6 +437,39 @@ class JsonReader {
       else                       state.showExtensions = value;
       return true;
     }
+    if (key == kKeySchemaVersion) {
+      int v = 0;
+      if (!parseIntInto(v)) return false;
+      schemaVersion_ = v;
+      return true;
+    }
+    if (key == kKeyPaneCount) {
+      int v = 0;
+      if (!parseIntInto(v)) return false;
+      if (v < 1) v = 1;
+      if (v > static_cast<int>(kMaxPanes)) v = static_cast<int>(kMaxPanes);
+      state.paneCount = static_cast<std::size_t>(v);
+      return true;
+    }
+    if (key == kKeyActivePane) {
+      int v = 0;
+      if (!parseIntInto(v)) return false;
+      if (v < 0) v = 0;
+      state.activePane = static_cast<std::size_t>(v);
+      return true;
+    }
+    if (key == kKeyPreset) {
+      std::string raw;
+      if (!parseStringInto(raw)) return false;
+      state.preset = presetFromLabel(raw);
+      return true;
+    }
+    if (key == kKeyPanePaths) {
+      return parsePanePathsArrayInto(state);
+    }
+    if (key == kKeyRatios) {
+      return parseRatiosObjectInto(state);
+    }
     int* slot = nullptr;
     if      (key == kKeyWindowX) slot = &state.windowX;
     else if (key == kKeyWindowY) slot = &state.windowY;
@@ -380,6 +488,37 @@ class JsonReader {
     if (c == '"') {
       std::string sink;
       return parseStringInto(sink);
+    }
+    if (c == '[') {
+      pos_++;
+      skipWs();
+      if (peek() == ']') { pos_++; return true; }
+      while (true) {
+        skipWs();
+        if (!skipValue()) return false;
+        skipWs();
+        if (consume(',')) continue;
+        if (consume(']')) return true;
+        return false;
+      }
+    }
+    if (c == '{') {
+      pos_++;
+      skipWs();
+      if (peek() == '}') { pos_++; return true; }
+      while (true) {
+        skipWs();
+        std::string sink;
+        if (!parseStringInto(sink)) return false;
+        skipWs();
+        if (!consume(':')) return false;
+        skipWs();
+        if (!skipValue()) return false;
+        skipWs();
+        if (consume(',')) continue;
+        if (consume('}')) return true;
+        return false;
+      }
     }
     int sink = 0;
     return parseIntInto(sink);
@@ -438,6 +577,12 @@ bool loadSessionState(const std::wstring& path, SessionState& state) {
   if (!reader.parseObjectInto(state)) {
     state = SessionState{};
     return false;
+  }
+  for (std::size_t i = 0; i < state.ratiosPerPreset.size(); ++i) {
+    auto& r = state.ratiosPerPreset[i];
+    if (r.ratios[0] == 0.0f && r.ratios[1] == 0.0f && r.ratios[2] == 0.0f) {
+      r = fast_explorer::ui::defaultRatiosFor(static_cast<LayoutPreset>(i));
+    }
   }
   return true;
 }
