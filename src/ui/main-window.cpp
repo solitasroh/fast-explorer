@@ -453,6 +453,19 @@ void MainWindow::relayout() {
   onSize(hwnd_, WM_SIZE, SIZE_RESTORED, lp);
 }
 
+void MainWindow::initRatiosToDefaults() noexcept {
+  using fast_explorer::core::LayoutPreset;
+  for (std::size_t i = 0; i < ratiosPerPreset_.size(); ++i) {
+    ratiosPerPreset_[i] =
+        fast_explorer::ui::defaultRatiosFor(static_cast<LayoutPreset>(i));
+  }
+}
+
+void MainWindow::enterLayout(fast_explorer::core::LayoutPreset target) {
+  // Body lands in Task 27.
+  (void)target;
+}
+
 void MainWindow::enterDualMode(const std::wstring& secondPath,
                                LayoutOrientation orientation) {
   if (hwnd_ == nullptr || !paneManager_) {

@@ -7,9 +7,11 @@
 #include <memory>
 #include <string>
 
+#include "core/layout-preset.h"
 #include "ui/cut-state-tracker.h"
 #include "ui/pane-layout.h"
 #include "ui/search-popup.h"
+#include "ui/splitter-ratios.h"
 
 namespace fast_explorer::core {
 class ProcessMemoryService;
@@ -70,6 +72,11 @@ class MainWindow {
   // PaneController, destroys the second list-view) and triggers a
   // layout refresh. No-op when already in single mode.
   void enterSingleMode();
+
+  // Switches to the given preset, opening or closing slots as needed.
+  // Implementation lands in Task 27. Currently a no-op stub so the
+  // build links while Task 25/26 wire infrastructure.
+  void enterLayout(fast_explorer::core::LayoutPreset target);
 
   // Sets the active pane index and updates the cached pane_ pointer.
   // Focuses the matching list-view so subsequent F2 / Delete /
@@ -183,6 +190,7 @@ class MainWindow {
   bool paneIndexFromListView(HWND lv, std::size_t& outIdx) const noexcept;
   void clearListViewForNavigation(std::size_t paneIdx) noexcept;
   void applyActivePaneAppearance() noexcept;
+  void initRatiosToDefaults() noexcept;
   // v0.2.6: applies dark-mode theme classes + colors to every
   // listview alongside the existing active-pane appearance pass.
   // Called from onCreate, applyInitialState, the active-pane
@@ -267,6 +275,13 @@ class MainWindow {
   std::uint64_t qpcFrequencyHz_ = 0;
   std::unique_ptr<fast_explorer::core::SessionState> capturedState_;
   LayoutOrientation orientation_ = LayoutOrientation::Vertical;
+  fast_explorer::core::LayoutPreset preset_ =
+      fast_explorer::core::LayoutPreset::Single;
+  fast_explorer::core::LayoutPreset lastDualPreset_ =
+      fast_explorer::core::LayoutPreset::Dual_V;
+  std::array<fast_explorer::ui::SplitterRatios,
+             fast_explorer::core::kLayoutPresetCount> ratiosPerPreset_{};
+  std::array<HWND, 3> splitterHwnds_{nullptr, nullptr, nullptr};
   std::unique_ptr<SearchPopup> searchPopup_;
   // v0.2 view toggles. Defaults match SessionState defaults; the real
   // values are populated by applyInitialState from the loaded settings
