@@ -229,3 +229,18 @@ FE_TEST_CASE(ComputePaneLayout_DualH_HalfSplit_OneHorizontalSplitter) {
   FE_ASSERT_TRUE(rectEquals(out.slots[1], 0, 389, 1280, 778));
   FE_ASSERT_EQ(out.splitters[0].orient, SplitterOrientation::Horizontal);
 }
+
+FE_TEST_CASE(ComputePaneLayout_TriA_LeftFull_RightStacked_TwoSplitters) {
+  const auto out = computePaneLayout(LayoutPreset::Tri_A,
+                                     defaultRatiosFor(LayoutPreset::Tri_A),
+                                     1280, 800, 0, 22);
+  FE_ASSERT_EQ(out.slotCount, std::size_t{3});
+  FE_ASSERT_EQ(out.splitterCount, std::size_t{2});
+  FE_ASSERT_TRUE(rectEquals(out.slots[0],   0,   0, 512, 778));
+  FE_ASSERT_TRUE(rectEquals(out.slots[1], 512,   0, 1280, 389));
+  FE_ASSERT_TRUE(rectEquals(out.slots[2], 512, 389, 1280, 778));
+  FE_ASSERT_EQ(out.splitters[0].orient, SplitterOrientation::Vertical);
+  FE_ASSERT_EQ(out.splitters[0].ratioId, std::uint8_t{0});
+  FE_ASSERT_EQ(out.splitters[1].orient, SplitterOrientation::Horizontal);
+  FE_ASSERT_EQ(out.splitters[1].ratioId, std::uint8_t{1});
+}
