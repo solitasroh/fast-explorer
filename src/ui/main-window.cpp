@@ -1385,18 +1385,29 @@ LRESULT MainWindow::handleMessage(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPa
         capturedState_->windowWidth = r.right - r.left;
         capturedState_->windowHeight = r.bottom - r.top;
       }
+      capturedState_->panePaths.fill(std::wstring{});
       if (paneManager_) {
-        capturedState_->lastPath = paneManager_->active().currentPath();
+        for (std::size_t i = 0;
+             i < paneManager_->count() &&
+             i < fast_explorer::core::kMaxPanes; ++i) {
+          capturedState_->panePaths[i] = paneManager_->at(i).currentPath();
+        }
+        capturedState_->paneCount = paneManager_->count();
+        capturedState_->activePane = paneManager_->activeIndex();
+      } else {
+        capturedState_->paneCount = 1;
+        capturedState_->activePane = 0;
       }
-      if (paneManager_) {
-        const bool dual = (paneManager_->count() > 1);
-        capturedState_->layoutMode = dual
-            ? fast_explorer::core::LayoutMode::Dual
-            : fast_explorer::core::LayoutMode::Single;
-        capturedState_->secondPath = dual
-            ? paneManager_->at(1).currentPath()
-            : std::wstring();
-      }
+      capturedState_->preset = preset_;
+      capturedState_->ratiosPerPreset = ratiosPerPreset_;
+
+      // Legacy v4 fields kept populated for any callers that still
+      // read them (the v5 writer ignores them in emit).
+      capturedState_->lastPath   = capturedState_->panePaths[0];
+      capturedState_->secondPath = capturedState_->panePaths[1];
+      capturedState_->layoutMode = capturedState_->paneCount > 1
+                                       ? fast_explorer::core::LayoutMode::Dual
+                                       : fast_explorer::core::LayoutMode::Single;
       capturedState_->orientation = orientation_;
       capturedState_->showHidden = showHidden_;
       capturedState_->showExtensions = showExtensions_;
