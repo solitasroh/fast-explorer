@@ -55,5 +55,10 @@
       <pubDate>Wed, 20 May 2026 04:15:54 +0000</pubDate>
       <enclosure url="https://github.com/solitasroh/fast-explorer/releases/download/v0.2.8/FastExplorer-0.2.8-win64.exe" sparkle:version="0.2.8" sparkle:edSignature="Z0p3C1ApKLeL9eiA/6i9ZtN6Zx4Pv+MWkricZW38yepLj+nqNESFZ1+RVCnkUEPOn/7TmI6WzZawFuHNXXgpDQ==" length="1423974" type="application/octet-stream" />
     </item>
+    <item>
+      <title>Version 0.2.9</title>
+      <pubDate>Wed, 20 May 2026 04:27:01 +0000</pubDate>
+      <enclosure url="https://github.com/solitasroh/fast-explorer/releases/download/v0.2.9/FastExplorer-0.2.9-win64.exe" sparkle:version="0.2.9" sparkle:edSignature="+quZvAcd/rOp8D4dP040jZA4hug23qJhrnHavoeZuN2VLJq/uMmCyOjpo3dcYi/WYCSxwARmwpPUh+tYICReAg==" length="1423967" type="application/octet-stream" />
+    </item>
   </channel>
 </rss>
