@@ -75,6 +75,8 @@ set(FE_APP_SOURCES
   src/ui/pane-layout.h
   src/ui/pane-manager.cpp
   src/ui/pane-manager.h
+  src/ui/pane-splitter.cpp
+  src/ui/pane-splitter.h
   src/ui/pane-sort-coordinator.cpp
   src/ui/pane-sort-coordinator.h
   src/ui/result-channel.h
