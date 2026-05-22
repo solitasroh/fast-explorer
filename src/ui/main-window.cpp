@@ -29,6 +29,7 @@
 #include "ui/icon-cache.h"
 #include "ui/icon-cache-coordinator.h"
 #include "ui/label-edit-controller.h"
+#include "ui/listview-group-callback.h"
 #include "ui/messages.h"
 #include "ui/pane-controller.h"
 #include "ui/pane-layout.h"
@@ -457,6 +458,32 @@ bool MainWindow::installPaneCoordinators(std::size_t idx, HWND listView) {
     iconCoords_[idx].reset();
     return false;
   }
+  // Register the LVS_OWNERDATA group callback. Without this, comctl32
+  // silently ignores iGroupId for virtual list-views and group-view
+  // never engages. The callback is refcounted; comctl32 holds the ref
+  // until DestroyWindow, and we additionally hold one ref in
+  // groupCallbacks_[idx] so applyListViewGroups can call rebuild().
+  if (groupCallbacks_[idx] == nullptr) {
+    auto* cb = new (std::nothrow) ListViewGroupCallback();
+    if (cb != nullptr) {
+      IListView_FE* lv2 = nullptr;
+      // LVM_QUERYINTERFACE returns non-zero on success and writes the
+      // IListView pointer into the variable lParam addresses. The Win7+
+      // comctl32 6.10 IID is mandatory — the Vista GUID
+      // {2FFE2979-...} is rejected by current Windows.
+      SendMessageW(listView, kLvmQueryInterface,
+                   reinterpret_cast<WPARAM>(&IID_IListView_FE),
+                   reinterpret_cast<LPARAM>(&lv2));
+      if (lv2 != nullptr) {
+        cb->AddRef();  // ref held by the listview
+        lv2->SetOwnerDataCallback(static_cast<IOwnerDataCallback*>(cb));
+        lv2->Release();
+        groupCallbacks_[idx] = cb;  // first ref kept by MainWindow
+      } else {
+        cb->Release();  // toss the no-IListView case (shouldn't happen on Win7+)
+      }
+    }
+  }
   return true;
 }
 
@@ -670,6 +697,25 @@ void MainWindow::uninstallPaneAt(std::size_t idx) {
   labelEdits_[idx].reset();
   selectionSyncs_[idx].reset();
   iconCoords_[idx].reset();
+  // Clear the IListView->callback wiring before DestroyWindow so
+  // comctl32 stops querying a callback whose backing data is about
+  // to disappear. Then drop our own ref; if comctl32 still holds one
+  // (it should, until DestroyWindow), the object survives until
+  // common-controls releases it during the listview teardown.
+  if (groupCallbacks_[idx] != nullptr && listViews_[idx] != nullptr) {
+    IListView_FE* lv2 = nullptr;
+    SendMessageW(listViews_[idx], kLvmQueryInterface,
+                 reinterpret_cast<WPARAM>(&IID_IListView_FE),
+                 reinterpret_cast<LPARAM>(&lv2));
+    if (lv2 != nullptr) {
+      lv2->SetOwnerDataCallback(nullptr);
+      lv2->Release();
+    }
+  }
+  if (groupCallbacks_[idx] != nullptr) {
+    groupCallbacks_[idx]->Release();
+    groupCallbacks_[idx] = nullptr;
+  }
   if (dropTargets_[idx] != nullptr && listViews_[idx] != nullptr) {
     RevokeDragDrop(listViews_[idx]);
     dropTargets_[idx]->Release();
@@ -942,6 +988,12 @@ void MainWindow::clearListViewForNavigation(std::size_t paneIdx) noexcept {
   if (paneIdx < listViews_.size() && listViews_[paneIdx] != nullptr) {
     ListView_EnableGroupView(listViews_[paneIdx], FALSE);
     ListView_RemoveAllGroups(listViews_[paneIdx]);
+  }
+  // Drop the row→group mapping so a stale answer can't survive into the
+  // new folder's first paint. finalizeSortApply rebuilds before
+  // EnableGroupView(TRUE) once the new content has been sorted.
+  if (paneIdx < groupCallbacks_.size() && groupCallbacks_[paneIdx] != nullptr) {
+    groupCallbacks_[paneIdx]->clear();
   }
 }
 
@@ -1484,6 +1536,18 @@ LRESULT MainWindow::handleMessage(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPa
           RevokeDragDrop(listViews_[i]);
           dropTargets_[i]->Release();
           dropTargets_[i] = nullptr;
+        }
+      }
+      // Drop our refs on the group callbacks. comctl32 still holds its
+      // own ref (set via SetOwnerDataCallback); that ref is released
+      // when DestroyWindow tears the listview down, so the callback
+      // object actually deletes some short time later from comctl32's
+      // side. No need to call SetOwnerDataCallback(nullptr) — the
+      // listview HWNDs are about to be destroyed anyway.
+      for (std::size_t i = 0; i < groupCallbacks_.size(); ++i) {
+        if (groupCallbacks_[i] != nullptr) {
+          groupCallbacks_[i]->Release();
+          groupCallbacks_[i] = nullptr;
         }
       }
       PostQuitMessage(0);
@@ -2935,13 +2999,26 @@ void MainWindow::applyListViewGroups(std::size_t paneIdx) {
   }
   const auto ids = fast_explorer::core::enumerateGroups(
       gk, pane.store(), pane.groupNow());
-  for (const int32_t id : ids) {
+  // Populate the IOwnerDataCallback's row→group mapping BEFORE inserting
+  // groups: under LVS_OWNERDATA the LVGROUP::cItems we set below has to
+  // line up with the callback's per-group row counts, and the callback
+  // is what computed those counts. Skipping cItems leaves comctl32
+  // laying out empty group containers (the v0.4.x symptom — group view
+  // engaged but rows never painted).
+  ListViewGroupCallback* cb =
+      (paneIdx < groupCallbacks_.size()) ? groupCallbacks_[paneIdx] : nullptr;
+  if (cb != nullptr) {
+    cb->rebuild(pane.store(), gk, pane.groupNow(), ids);
+  }
+  for (size_t i = 0; i < ids.size(); ++i) {
+    const int32_t id = ids[i];
     LVGROUP grp{};
     grp.cbSize    = sizeof(grp);
-    grp.mask      = LVGF_GROUPID | LVGF_HEADER | LVGF_STATE;
+    grp.mask      = LVGF_GROUPID | LVGF_HEADER | LVGF_STATE | LVGF_ITEMS;
     grp.iGroupId  = id;
     grp.stateMask = LVGS_COLLAPSIBLE;
     grp.state     = LVGS_COLLAPSIBLE;
+    grp.cItems    = static_cast<UINT>(cb ? cb->countInGroup(i) : 0);
     std::wstring header = fast_explorer::core::groupTitleForId(
         gk, id, &pane.store(), formatCache_.get());
     grp.pszHeader = const_cast<wchar_t*>(header.c_str());

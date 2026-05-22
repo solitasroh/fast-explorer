@@ -25,6 +25,7 @@ namespace fast_explorer::ui {
 class AddressBarPopup;
 class DispInfoHistogram;
 class LabelEditController;
+class ListViewGroupCallback;
 class PaneController;
 class PaneManager;
 class PaneToolbarRow;
@@ -276,6 +277,13 @@ class MainWindow {
   std::array<std::unique_ptr<class IconCacheCoordinator>, 4> iconCoords_;
   std::array<std::unique_ptr<SelectionSync>, 4> selectionSyncs_;
   std::array<std::unique_ptr<LabelEditController>, 4> labelEdits_;
+  // Per-pane LVS_OWNERDATA group callback. Raw pointer because the
+  // listview holds a ref via IListView::SetOwnerDataCallback — we
+  // AddRef once at install time and Release once at uninstall. The
+  // callback's destructor runs whenever the final ref drops, which
+  // may be from comctl32's side after DestroyWindow.
+  std::array<ListViewGroupCallback*, 4> groupCallbacks_{
+      nullptr, nullptr, nullptr, nullptr};
   std::unique_ptr<class DispInfoHistogram> dispInfoHist_;
   std::uint64_t qpcFrequencyHz_ = 0;
   std::unique_ptr<fast_explorer::core::SessionState> capturedState_;

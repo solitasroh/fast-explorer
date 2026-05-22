@@ -61,6 +61,8 @@ set(FE_APP_SOURCES
   src/ui/jthread-utils.h
   src/ui/label-edit-controller.cpp
   src/ui/label-edit-controller.h
+  src/ui/listview-group-callback.cpp
+  src/ui/listview-group-callback.h
   src/ui/shell-worker.cpp
   src/ui/shell-worker.h
   src/ui/splitter-ratios.h
