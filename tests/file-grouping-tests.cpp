@@ -31,3 +31,21 @@ FE_TEST_CASE(group_none_returns_zero_for_every_entry) {
   FE_ASSERT_EQ(groupIdForEntry(GroupKey::None, e1, 0), 0);
   FE_ASSERT_EQ(groupIdForEntry(GroupKey::None, e2, 0), 0);
 }
+
+FE_TEST_CASE(group_name_korean_choseong_first_syllable) {
+  // U+AC00 = '가' → choseong index 0 (ㄱ)
+  auto e = makeEntry(L"가나다.txt");
+  FE_ASSERT_EQ(groupIdForEntry(GroupKey::Name, e, 0), 0);
+}
+
+FE_TEST_CASE(group_name_korean_choseong_middle_range) {
+  // U+B9C8 = '마' → choseong index 6 (ㅁ)
+  auto e = makeEntry(L"마라톤.exe");
+  FE_ASSERT_EQ(groupIdForEntry(GroupKey::Name, e, 0), 6);
+}
+
+FE_TEST_CASE(group_name_korean_choseong_last) {
+  // '하' → choseong index 18 (ㅎ)
+  auto e = makeEntry(L"하늘.txt");
+  FE_ASSERT_EQ(groupIdForEntry(GroupKey::Name, e, 0), 18);
+}
