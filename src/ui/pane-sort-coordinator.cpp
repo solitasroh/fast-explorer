@@ -144,10 +144,28 @@ void PaneSortCoordinator::reapplyAfterEnumeration() {
   if (sortSpec_.key == fast_explorer::core::SortKey::None) {
     return;
   }
-  if (store_.publishedCount() == 0) {
+  const std::size_t count = store_.publishedCount();
+  if (count == 0) {
     return;
   }
-  store_.sort(sortSpec_);
+  if (groupBy_ == fast_explorer::core::GroupKey::None) {
+    store_.sort(sortSpec_);
+  } else {
+    std::vector<std::uint32_t> order(count);
+    for (std::uint32_t i = 0; i < static_cast<std::uint32_t>(count); ++i) {
+      order[i] = i;
+    }
+    const auto spec = sortSpec_;
+    const auto gk = groupBy_;
+    const auto now = nowFiletime_;
+    std::sort(order.begin(), order.end(),
+              [this, spec, gk, now](std::uint32_t a, std::uint32_t b) {
+                return fast_explorer::core::compareWithGroup(
+                           store_.entryAt(a), store_.entryAt(b),
+                           spec, gk, now) < 0;
+              });
+    store_.applySortedOrder(std::move(order));
+  }
   sorted_ = true;
 }
 

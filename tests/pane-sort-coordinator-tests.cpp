@@ -190,11 +190,36 @@ FE_TEST_CASE(sort_coord_group_by_name_clusters_by_choseong) {
     const auto& e = fx.store.visibleAt(i);
     names.emplace_back(e.namePtr, e.nameLength);
   }
-  // First two: group 0 (가/강), then group 18 (하), then group 19 (Apple/Apricot/Banana).
+  // First two: group 0 (가/강), then group 18 (하), then group 19
+  // (Apple/Apricot, both ㄱ-equivalent ASCII 'A'), then group 20 (Banana, 'B').
   FE_ASSERT_TRUE(names[0] == L"가나" || names[0] == L"강물");
   FE_ASSERT_TRUE(names[1] == L"가나" || names[1] == L"강물");
   FE_ASSERT_WSTREQ(names[2], L"하늘");
   FE_ASSERT_WSTREQ(names[3], L"Apple");
   FE_ASSERT_WSTREQ(names[4], L"Apricot");
   FE_ASSERT_WSTREQ(names[5], L"Banana");
+}
+
+FE_TEST_CASE(sort_coord_reapplyAfterEnumeration_preserves_groupBy) {
+  SortFixture fx(0);
+  for (auto name : {L"Banana", L"가나", L"하늘", L"Apple"}) {
+    fx.store.appendEntry(makeEntry(name, fx.backing));
+  }
+  fx.store.publish(static_cast<std::uint32_t>(fx.store.itemCount()));
+  // Initial grouped sort.
+  fx.coord.requestSort(SortKey::Name, false, GroupKey::Name, 0);
+  // Simulate re-enumeration: caller would have cleared + repopulated the
+  // store, but our entries are stable. Just call reapply.
+  fx.coord.reapplyAfterEnumeration();
+  std::vector<std::wstring> names;
+  for (std::size_t i = 0; i < fx.store.publishedCount(); ++i) {
+    const auto& e = fx.store.visibleAt(i);
+    names.emplace_back(e.namePtr, e.nameLength);
+  }
+  // Group 0 (가) first, then group 18 (하), then group 19 (Apple),
+  // then group 20 (Banana).
+  FE_ASSERT_WSTREQ(names[0], L"가나");
+  FE_ASSERT_WSTREQ(names[1], L"하늘");
+  FE_ASSERT_WSTREQ(names[2], L"Apple");
+  FE_ASSERT_WSTREQ(names[3], L"Banana");
 }
