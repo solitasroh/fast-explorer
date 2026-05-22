@@ -301,3 +301,36 @@ FE_TEST_CASE(title_type_folder_and_unknown) {
   FE_ASSERT_WSTREQ(groupTitleForId(GroupKey::Type, 0, nullptr, nullptr), L"폴더");
   FE_ASSERT_WSTREQ(groupTitleForId(GroupKey::Type, 1, nullptr, nullptr), L"파일");
 }
+
+#include "core/file-sort.h"
+
+using fast_explorer::core::compareEntries;
+using fast_explorer::core::compareWithGroup;
+using fast_explorer::core::SortDirection;
+using fast_explorer::core::SortKey;
+using fast_explorer::core::SortSpec;
+
+FE_TEST_CASE(compare_with_group_none_matches_compareEntries) {
+  auto a = makeEntry(L"가.txt");
+  auto b = makeEntry(L"Apple.txt");
+  const SortSpec spec{SortKey::Name, SortDirection::Ascending};
+  const int classic = compareEntries(a, b, spec);
+  const int wrapped = compareWithGroup(a, b, spec, GroupKey::None, 0);
+  FE_ASSERT_EQ(classic, wrapped);
+}
+
+FE_TEST_CASE(compare_with_group_cross_group_uses_group_id) {
+  auto a = makeEntry(L"하늘.txt");  // group 18
+  auto b = makeEntry(L"가나.txt");  // group 0
+  const SortSpec spec{SortKey::Name, SortDirection::Ascending};
+  const int r = compareWithGroup(a, b, spec, GroupKey::Name, 0);
+  FE_ASSERT_TRUE(r > 0);
+}
+
+FE_TEST_CASE(compare_with_group_same_group_falls_through_to_name) {
+  auto a = makeEntry(L"가나.txt");  // group 0
+  auto b = makeEntry(L"강물.txt");  // group 0
+  const SortSpec spec{SortKey::Name, SortDirection::Ascending};
+  const int r = compareWithGroup(a, b, spec, GroupKey::Name, 0);
+  FE_ASSERT_TRUE(r < 0);
+}

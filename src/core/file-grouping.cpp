@@ -7,6 +7,7 @@
 
 #include "core/file-entry.h"
 #include "core/file-model-store.h"
+#include "core/file-sort.h"
 #include "ui/format-cache.h"
 
 namespace fast_explorer::core {
@@ -263,6 +264,19 @@ std::wstring groupTitleForId(GroupKey key, int32_t id,
     }
   }
   return std::wstring{};
+}
+
+int compareWithGroup(const FileEntry& a,
+                     const FileEntry& b,
+                     SortSpec spec,
+                     GroupKey gk,
+                     uint64_t nowFiletime) noexcept {
+  if (gk != GroupKey::None) {
+    const int32_t ga = groupIdForEntry(gk, a, nowFiletime);
+    const int32_t gb = groupIdForEntry(gk, b, nowFiletime);
+    if (ga != gb) return ga - gb;
+  }
+  return compareEntries(a, b, spec);
 }
 
 }  // namespace fast_explorer::core

@@ -4,6 +4,8 @@
 #include <string>
 #include <vector>
 
+#include "core/file-sort.h"
+
 namespace fast_explorer::ui {
 class FormatCache;
 }  // namespace fast_explorer::ui
@@ -43,5 +45,14 @@ enum class GroupKey : uint8_t {
     GroupKey key, int32_t id,
     const FileModelStore* store,
     const fast_explorer::ui::FormatCache* cache);
+
+// Tri-state comparator that uses groupId as the primary key, falling
+// through to the existing compareEntries comparator on group ties.
+// When `gk == GroupKey::None`, behaviour is exactly compareEntries.
+[[nodiscard]] int compareWithGroup(const FileEntry& a,
+                                   const FileEntry& b,
+                                   SortSpec spec,
+                                   GroupKey gk,
+                                   uint64_t nowFiletime) noexcept;
 
 }  // namespace fast_explorer::core
