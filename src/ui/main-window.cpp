@@ -14,6 +14,7 @@
 #include <iterator>
 
 #include "core/file-entry.h"
+#include "core/file-grouping.h"
 #include "core/file-model-store.h"
 #include "core/fs-backend.h"
 #include "core/perf-tracker.h"
@@ -2789,7 +2790,7 @@ void MainWindow::handleGetDispInfoBody(NMHDR* hdr) {
   if (disp->item.iItem < 0) {
     return;
   }
-  if ((disp->item.mask & (LVIF_TEXT | LVIF_IMAGE)) == 0) {
+  if ((disp->item.mask & (LVIF_TEXT | LVIF_IMAGE | LVIF_GROUPID)) == 0) {
     return;
   }
   const auto& store = sourcePane.store();
@@ -2808,6 +2809,17 @@ void MainWindow::handleGetDispInfoBody(NMHDR* hdr) {
   if ((disp->item.mask & LVIF_IMAGE) != 0) {
     auto& coord = iconCoords_[paneIdx];
     disp->item.iImage = coord ? coord->resolveIconIndex(entry) : 0;
+  }
+  // Group-id must be assigned before the LVIF_TEXT early-return below,
+  // since callbacks frequently request both flags in the same dispatch.
+  if ((disp->item.mask & LVIF_GROUPID) != 0) {
+    const auto gk = sourcePane.groupBy();
+    if (gk == fast_explorer::core::GroupKey::None) {
+      disp->item.iGroupId = I_GROUPIDNONE;  // ListView's "no group" sentinel
+    } else {
+      disp->item.iGroupId = fast_explorer::core::groupIdForEntry(
+          gk, entry, sourcePane.groupNow());
+    }
   }
   if ((disp->item.mask & LVIF_TEXT) == 0) {
     return;
