@@ -109,6 +109,36 @@ int32_t groupIdForModified(const FileEntry& entry, uint64_t nowUtc) noexcept {
   return 5;
 }
 
+// Stable FNV-1a hash of a case-folded ASCII extension string.
+// Folded into the [2, 0x7FFFFFFE] range so it never collides with the
+// reserved 0 (folder) or 1 (no-extension) IDs and stays positive.
+int32_t hashExtension(const wchar_t* ext, size_t len) noexcept {
+  constexpr uint32_t kFnvOffset = 0x811C9DC5u;
+  constexpr uint32_t kFnvPrime  = 0x01000193u;
+  uint32_t h = kFnvOffset;
+  for (size_t i = 0; i < len; ++i) {
+    wchar_t c = ext[i];
+    if (c >= L'A' && c <= L'Z') c = static_cast<wchar_t>(c + (L'a' - L'A'));
+    h ^= static_cast<uint32_t>(c);
+    h *= kFnvPrime;
+  }
+  int32_t id = static_cast<int32_t>(h & 0x7FFFFFFFu);
+  if (id < 2) id += 2;
+  return id;
+}
+
+int32_t groupIdForType(const FileEntry& entry) noexcept {
+  if (entry.flags & file_entry_flags::kIsDirectory) return 0;
+  if (entry.extensionOffset == kNoExtension ||
+      entry.extensionOffset >= entry.nameLength) {
+    return 1;
+  }
+  // Extension text starts AFTER the dot at extensionOffset.
+  const wchar_t* ext = entry.namePtr + entry.extensionOffset + 1;
+  const size_t   len = entry.nameLength - entry.extensionOffset - 1;
+  return hashExtension(ext, len);
+}
+
 int32_t groupIdForName(const FileEntry& entry) noexcept {
   if (entry.nameLength == 0 || entry.namePtr == nullptr) {
     return 46;
@@ -141,7 +171,7 @@ int32_t groupIdForEntry(GroupKey key,
     case GroupKey::None:     return 0;
     case GroupKey::Name:     return groupIdForName(entry);
     case GroupKey::Modified: return groupIdForModified(entry, nowFiletime);
-    case GroupKey::Type:     return 0;
+    case GroupKey::Type:     return groupIdForType(entry);
   }
   return 0;
 }

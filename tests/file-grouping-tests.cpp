@@ -41,6 +41,14 @@ uint64_t localFiletime(WORD year, WORD month, WORD day,
   return ui.QuadPart;
 }
 
+// Mirrors what the FS backend stores in FileEntry::extensionOffset — the
+// position of the LAST '.' in the name, or kNoExtension if there is none.
+uint16_t findExtensionOffset(std::wstring_view name) {
+  const auto pos = name.rfind(L'.');
+  if (pos == std::wstring_view::npos) return kNoExtension;
+  return static_cast<uint16_t>(pos);
+}
+
 }  // namespace
 
 FE_TEST_CASE(group_none_returns_zero_for_every_entry) {
@@ -159,4 +167,41 @@ FE_TEST_CASE(group_modified_future_clamps_to_today) {
   const uint64_t now = localFiletime(2026, 6, 15, 12, 0);
   auto e = makeEntry(L"x.txt", kNoExtension, 0, localFiletime(2027, 1, 1, 0, 0));
   FE_ASSERT_EQ(groupIdForEntry(GroupKey::Modified, e, now), 0);
+}
+
+FE_TEST_CASE(group_type_folder_is_zero) {
+  auto e = makeEntry(L"My Folder", kNoExtension,
+                     fast_explorer::core::file_entry_flags::kIsDirectory);
+  FE_ASSERT_EQ(groupIdForEntry(GroupKey::Type, e, 0), 0);
+}
+
+FE_TEST_CASE(group_type_no_extension_is_one) {
+  auto e = makeEntry(L"README", kNoExtension);
+  FE_ASSERT_EQ(groupIdForEntry(GroupKey::Type, e, 0), 1);
+}
+
+FE_TEST_CASE(group_type_same_extension_same_id) {
+  auto e1 = makeEntry(L"a.txt", findExtensionOffset(L"a.txt"));
+  auto e2 = makeEntry(L"different.txt", findExtensionOffset(L"different.txt"));
+  FE_ASSERT_EQ(groupIdForEntry(GroupKey::Type, e1, 0),
+               groupIdForEntry(GroupKey::Type, e2, 0));
+}
+
+FE_TEST_CASE(group_type_different_extension_different_id) {
+  auto e1 = makeEntry(L"a.txt", findExtensionOffset(L"a.txt"));
+  auto e2 = makeEntry(L"a.pdf", findExtensionOffset(L"a.pdf"));
+  FE_ASSERT_NE(groupIdForEntry(GroupKey::Type, e1, 0),
+               groupIdForEntry(GroupKey::Type, e2, 0));
+}
+
+FE_TEST_CASE(group_type_extension_is_case_insensitive) {
+  auto e1 = makeEntry(L"a.TXT", findExtensionOffset(L"a.TXT"));
+  auto e2 = makeEntry(L"a.txt", findExtensionOffset(L"a.txt"));
+  FE_ASSERT_EQ(groupIdForEntry(GroupKey::Type, e1, 0),
+               groupIdForEntry(GroupKey::Type, e2, 0));
+}
+
+FE_TEST_CASE(group_type_extension_is_above_one) {
+  auto e = makeEntry(L"a.txt", findExtensionOffset(L"a.txt"));
+  FE_ASSERT_TRUE(groupIdForEntry(GroupKey::Type, e, 0) > 1);
 }
