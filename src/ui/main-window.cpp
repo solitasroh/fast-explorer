@@ -1069,11 +1069,13 @@ void MainWindow::updateNavButtonStates(std::size_t paneIdx) noexcept {
 void MainWindow::applyListViewTheme(HWND lv) noexcept {
   if (lv == nullptr) return;
   const bool dark = systemPrefersDarkMode();
-  // "DarkMode_Explorer" is the undocumented but stable theme class
-  // Microsoft's own shells use for dark listviews. Falling back to
-  // "Explorer" in light mode gives the standard hot-track + hover
-  // pill we already had.
-  SetWindowTheme(lv, dark ? L"DarkMode_Explorer" : L"Explorer", nullptr);
+  // "DarkMode_ItemsView" is the theme class Win11 Explorer uses on its
+  // own listviews — unlike "DarkMode_Explorer" it themes the group
+  // header band as well as the rows, so LVS_OWNERDATA group titles
+  // ("폴더" / "파일" / "오늘") render in a readable light gray instead
+  // of the accent-tinted dim caption colour. Falls back to "Explorer"
+  // in light mode to keep the standard hot-track + hover pill.
+  SetWindowTheme(lv, dark ? L"DarkMode_ItemsView" : L"Explorer", nullptr);
   // Per-cell text colour. The active-pane background is set later
   // in applyActivePaneAppearance; we set ours here so that if the
   // pane is inactive (dual mode) the background colour still
@@ -2873,6 +2875,19 @@ LRESULT MainWindow::handleCustomDraw(NMHDR* hdr) {
     case CDDS_PREPAINT:
       return CDRF_NOTIFYITEMDRAW;
     case CDDS_ITEMPREPAINT: {
+      // Group header pre-paint (Vista+): dwItemType == LVCDI_GROUP.
+      // dwItemSpec then carries the group ID, not a row index — must
+      // be handled before the row-based dimmed-file logic below.
+      // System default uses a dark text colour that is unreadable on
+      // dark backgrounds, so override with a high-contrast colour.
+      // Group header pre-paint (Vista+, themed listviews often bypass
+      // this — kept as a best-effort fallback in case the theme stack
+      // ever yields to custom-draw). Dark-mode legibility for group
+      // headers in themed listviews is handled at theme-application
+      // time, not here.
+      if (cd->dwItemType == LVCDI_GROUP) {
+        return CDRF_DODEFAULT;
+      }
       std::size_t paneIdx = 0;
       if (!paneManager_ ||
           !paneIndexFromListView(cd->nmcd.hdr.hwndFrom, paneIdx) ||
