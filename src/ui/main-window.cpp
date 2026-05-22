@@ -1104,18 +1104,24 @@ void MainWindow::applyListViewTheme(HWND lv) noexcept {
   // dark mode via uxtheme ordinal 133. WM_THEMECHANGED then forces the
   // scrollbar non-client area to re-evaluate against the new flag and
   // repaint with the dark track/thumb instead of the white default.
+  //
+  // NOTE: we previously layered a part-scoped DarkMode_Explorer/ScrollBar
+  // override on top of the ItemsView body theme (commit f6b760d) so the
+  // scrollbar track would render dark. That layering caused two visible
+  // regressions: (a) scrollbar gripper glyphs (":" / "..") leaked into
+  // row cells because the part-scoped theme bled past the NC area, and
+  // (b) the row hover/selection pill picked up the Explorer (not
+  // ItemsView) shape and looked wrong against the dark body. The
+  // SetGroupMetrics(LVGMF_TEXTCOLOR) workaround is ignored by themed
+  // listviews — the theme's DrawThemeText overrides crHeader — so the
+  // only clean way to keep bright group headers is to leave the body on
+  // ItemsView and accept that the scrollbar track stays light. Group
+  // header legibility was the user-visible win; scrollbar darkness can
+  // come back later via a custom NC paint subclass if it becomes worth
+  // the cost.
   if (auto pfn = resolveAllowDarkModeForWindow()) {
     pfn(lv, dark ? TRUE : FALSE);
     SendMessageW(lv, WM_THEMECHANGED, 0, 0);
-  }
-  // DarkMode_ItemsView themes the body (rows + group-header band) but
-  // leaves the NC scrollbar drawing on the light theme. Layer a part-
-  // specific DarkMode_Explorer/ScrollBar override on the same HWND so
-  // SCROLLBAR theme parts pick up the dark track/thumb without losing
-  // the ItemsView body theme. The third arg of SetWindowTheme is a
-  // CLSID list scoping the theme to that part only.
-  if (dark) {
-    SetWindowTheme(lv, L"DarkMode_Explorer", L"ScrollBar");
   }
   // Per-cell text colour. The active-pane background is set later
   // in applyActivePaneAppearance; we set ours here so that if the
