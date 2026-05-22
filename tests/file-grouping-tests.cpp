@@ -205,3 +205,68 @@ FE_TEST_CASE(group_type_extension_is_above_one) {
   auto e = makeEntry(L"a.txt", findExtensionOffset(L"a.txt"));
   FE_ASSERT_TRUE(groupIdForEntry(GroupKey::Type, e, 0) > 1);
 }
+
+#include "core/file-model-store.h"
+#include "core/name-arena.h"
+
+using fast_explorer::core::FileModelStore;
+using fast_explorer::core::NameArena;
+using fast_explorer::core::enumerateGroups;
+
+namespace {
+
+struct StoreFixture {
+  FileModelStore store{L"X:\\d"};
+  NameArena arena;
+};
+
+// Append one entry, then publish so publishedCount reflects all rows so far.
+void addEntry(StoreFixture& fx, std::wstring_view name,
+              uint64_t modified100ns = 0,
+              bool isDir = false) {
+  const auto interned = fx.arena.intern(name);
+  FileEntry e{};
+  e.namePtr = interned.data();
+  e.nameLength = static_cast<uint16_t>(interned.size());
+  e.extensionOffset = findExtensionOffset(name);
+  e.modifiedTime100ns = modified100ns;
+  if (isDir) {
+    e.flags |= fast_explorer::core::file_entry_flags::kIsDirectory;
+  }
+  fx.store.appendEntry(e);
+  fx.store.publish(static_cast<std::uint32_t>(fx.store.itemCount()));
+}
+
+}  // namespace
+
+FE_TEST_CASE(enumerate_name_returns_only_present_buckets_sorted) {
+  StoreFixture fx;
+  addEntry(fx, L"가나");        // 0
+  addEntry(fx, L"하늘");        // 18
+  addEntry(fx, L"Apple");      // 19
+  addEntry(fx, L"9-readme");   // 45
+  const auto ids = enumerateGroups(GroupKey::Name, fx.store, 0);
+  FE_ASSERT_EQ(ids.size(), 4u);
+  FE_ASSERT_EQ(ids[0], 0);
+  FE_ASSERT_EQ(ids[1], 18);
+  FE_ASSERT_EQ(ids[2], 19);
+  FE_ASSERT_EQ(ids[3], 45);
+}
+
+FE_TEST_CASE(enumerate_returns_empty_when_store_empty) {
+  StoreFixture fx;
+  const auto ids = enumerateGroups(GroupKey::Name, fx.store, 0);
+  FE_ASSERT_EQ(ids.size(), 0u);
+}
+
+FE_TEST_CASE(enumerate_type_folders_first_then_files_sorted_by_id) {
+  StoreFixture fx;
+  addEntry(fx, L"folder1", 0, /*isDir=*/true);
+  addEntry(fx, L"a.txt");
+  addEntry(fx, L"b.pdf");
+  addEntry(fx, L"folder2", 0, /*isDir=*/true);
+  const auto ids = enumerateGroups(GroupKey::Type, fx.store, 0);
+  // 0 (folders) must appear first since two folders are present.
+  FE_ASSERT_TRUE(ids.size() >= 3u);
+  FE_ASSERT_EQ(ids[0], 0);
+}

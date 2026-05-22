@@ -2,7 +2,11 @@
 
 #include <windows.h>
 
+#include <algorithm>
+#include <unordered_set>
+
 #include "core/file-entry.h"
+#include "core/file-model-store.h"
 
 namespace fast_explorer::core {
 
@@ -174,6 +178,27 @@ int32_t groupIdForEntry(GroupKey key,
     case GroupKey::Type:     return groupIdForType(entry);
   }
   return 0;
+}
+
+std::vector<int32_t> enumerateGroups(GroupKey key,
+                                     const FileModelStore& store,
+                                     uint64_t nowFiletime) {
+  std::vector<int32_t> result;
+  if (key == GroupKey::None) return result;
+  const std::size_t count = store.publishedCount();
+  if (count == 0) return result;
+  std::unordered_set<int32_t> seen;
+  seen.reserve(count);
+  result.reserve(64);
+  for (std::size_t i = 0; i < count; ++i) {
+    const auto& entry = store.visibleAt(i);
+    const int32_t id = groupIdForEntry(key, entry, nowFiletime);
+    if (seen.insert(id).second) {
+      result.push_back(id);
+    }
+  }
+  std::sort(result.begin(), result.end());
+  return result;
 }
 
 }  // namespace fast_explorer::core

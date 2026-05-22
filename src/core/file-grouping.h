@@ -24,4 +24,13 @@ enum class GroupKey : uint8_t {
                                       const FileEntry& entry,
                                       uint64_t nowFiletime) noexcept;
 
+// Walks the store's displayed items (filter-aware via store.visibleAt)
+// and returns the group IDs present, in render order. Empty groups
+// are not included. Caller must hold the store stable for the call
+// (e.g., enumeration worker not active).
+[[nodiscard]] std::vector<int32_t> enumerateGroups(
+    GroupKey key,
+    const FileModelStore& store,
+    uint64_t nowFiletime);
+
 }  // namespace fast_explorer::core
