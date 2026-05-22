@@ -38,6 +38,7 @@
 #include "../../resources/resource-ids.h"
 #include "ui/clipboard-ops.h"
 #include "ui/com-raii.h"
+#include "ui/dark-scrollbar-subclass.h"
 #include "ui/drop-source.h"
 #include "ui/drop-target.h"
 #include "ui/selection-sync.h"
@@ -1123,6 +1124,13 @@ void MainWindow::applyListViewTheme(HWND lv) noexcept {
     pfn(lv, dark ? TRUE : FALSE);
     SendMessageW(lv, WM_THEMECHANGED, 0, 0);
   }
+  // Custom NC paint subclass owns the scrollbar appearance in dark
+  // mode. DarkMode_ItemsView (the body theme we keep) does not
+  // propagate dark colours to the scrollbar children, and the part-
+  // scoped DarkMode_Explorer/ScrollBar override bleeds gripper glyphs
+  // into row cells. The subclass uninstalls itself when dark=false so
+  // light mode keeps the system-themed scrollbar.
+  applyDarkScrollbarSubclass(lv, dark);
   // Per-cell text colour. The active-pane background is set later
   // in applyActivePaneAppearance; we set ours here so that if the
   // pane is inactive (dual mode) the background colour still
