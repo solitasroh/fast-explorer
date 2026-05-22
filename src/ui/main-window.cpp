@@ -2514,6 +2514,7 @@ void MainWindow::finalizeSortApply(std::size_t paneIdx) {
   if (count > 0) {
     ListView_RedrawItems(lv, 0, count - 1);
   }
+  applyListViewGroups(paneIdx);
 }
 
 LRESULT MainWindow::handleListViewNotify(NMHDR* hdr) {
