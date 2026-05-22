@@ -1098,27 +1098,30 @@ void MainWindow::applyListViewTheme(HWND lv) noexcept {
   // of the accent-tinted dim caption colour. Falls back to "Explorer"
   // in light mode to keep the standard hot-track + hover pill.
   SetWindowTheme(lv, dark ? L"DarkMode_ItemsView" : L"Explorer", nullptr);
-  // SetWindowTheme on the listview only themes the rows + header; the
-  // internal vertical/horizontal scrollbar children stay on the system
-  // light theme until each scrollbar HWND is individually opted into
-  // dark mode via uxtheme ordinal 133. WM_THEMECHANGED then forces the
-  // scrollbar non-client area to re-evaluate against the new flag and
-  // repaint with the dark track/thumb instead of the white default.
+  // SetWindowTheme on the listview themes the rows + group header band
+  // beautifully (DarkMode_ItemsView is the same class Win11 Explorer
+  // uses on its own listviews) but does NOT theme the scrollbar
+  // children — they keep the white "ScrollBar" theme that uxtheme hands
+  // out by default. Two earlier attempts to fix this failed:
+  //   (1) Layering a part-scoped DarkMode_Explorer/ScrollBar override
+  //       on top of the ItemsView body theme caused scrollbar gripper
+  //       glyphs (":" / "..") to leak into row cells and the hover pill
+  //       to pick up the wrong shape (commits f6b760d / 6674c39).
+  //   (2) A WM_NCPAINT subclass that intercepted mouse messages broke
+  //       hover behaviour (commits 6f735ad / 5fe0077).
+  // The clean fix lives one level deeper, at the comctl32 → uxtheme
+  // delay-load boundary: dark-scrollbar-hook.cpp patches the IAT thunk
+  // for OpenNcThemeData so that any "ScrollBar" classList becomes
+  // "Explorer::ScrollBar" before uxtheme resolves the atlas. That
+  // single redirection darkens every scrollbar in the process — listview,
+  // treeview, edit, popup — without touching SetWindowTheme on the
+  // body, so group header legibility and hover behaviour both stay
+  // intact. The hook is installed once in wWinMain before MainWindow
+  // is created (see installDarkScrollBarHook).
   //
-  // NOTE: we previously layered a part-scoped DarkMode_Explorer/ScrollBar
-  // override on top of the ItemsView body theme (commit f6b760d) so the
-  // scrollbar track would render dark. That layering caused two visible
-  // regressions: (a) scrollbar gripper glyphs (":" / "..") leaked into
-  // row cells because the part-scoped theme bled past the NC area, and
-  // (b) the row hover/selection pill picked up the Explorer (not
-  // ItemsView) shape and looked wrong against the dark body. The
-  // SetGroupMetrics(LVGMF_TEXTCOLOR) workaround is ignored by themed
-  // listviews — the theme's DrawThemeText overrides crHeader — so the
-  // only clean way to keep bright group headers is to leave the body on
-  // ItemsView and accept that the scrollbar track stays light. Group
-  // header legibility was the user-visible win; scrollbar darkness can
-  // come back later via a custom NC paint subclass if it becomes worth
-  // the cost.
+  // AllowDarkModeForWindow + WM_THEMECHANGED is still needed below
+  // because the per-window dark flag (uxtheme ordinal 133) gates a few
+  // sub-theme decisions that the hook alone does not flip.
   if (auto pfn = resolveAllowDarkModeForWindow()) {
     pfn(lv, dark ? TRUE : FALSE);
     SendMessageW(lv, WM_THEMECHANGED, 0, 0);

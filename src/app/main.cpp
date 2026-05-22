@@ -15,6 +15,7 @@
 #include "core/process-memory.h"
 #include "core/ring-logger.h"
 #include "core/settings-store.h"
+#include "ui/dark-scrollbar-hook.h"
 #include "ui/dispinfo-histogram.h"
 #include "ui/main-window.h"
 #include "ui/messages.h"
@@ -275,6 +276,16 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance,
       // applied — group titles ("폴더" / "파일" / "오늘") become barely
       // readable on the dark background.
       enableProcessDarkMode();
+
+      // Patch comctl32's delay-load thunk for uxtheme!OpenNcThemeData so
+      // listview scrollbars render with the dark "Explorer::ScrollBar"
+      // theme atlas instead of the white default that ships with
+      // DarkMode_ItemsView. Must run after InitCommonControlsEx (so
+      // comctl32 is loaded) and before any scrollbar HWND caches its
+      // theme — i.e. before MainWindow::create instantiates listviews.
+      // See ui/dark-scrollbar-hook.h for why this is the only known
+      // path that does not regress hover/selection or paint artifacts.
+      fast_explorer::ui::installDarkScrollBarHook();
 
       // WinSparkle scope must outlive the message loop; its dtor joins the
       // background update-check thread before COM teardown.
