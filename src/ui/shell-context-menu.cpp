@@ -204,13 +204,38 @@ void invokeVerbPerItem(IShellFolder* folder, HWND ownerHwnd,
 void runMenuAndInvoke(IContextMenu* menu, IShellFolder* folder,
                       HWND ownerHwnd, POINT screenPt,
                       const std::vector<std::wstring>& selectedLeaves,
-                      const std::wstring& folderPathW) {
+                      const std::wstring& folderPathW,
+                      const ShellContextMenu::ExtraSubmenu* extra) {
   MenuOwner popup(CreatePopupMenu());
   if (!popup) return;
   if (FAILED(menu->QueryContextMenu(popup.get(), 0, kCmdIdMin, kCmdIdMax,
                                     CMF_NORMAL | CMF_CANRENAME |
                                         CMF_EXPLORE))) {
     return;
+  }
+  // Append the caller's extra submenu after the shell items so the
+  // user's right-click on empty space still surfaces "새로 만들기 /
+  // 붙여넣기 / 속성" with our 분류 방법 stacked at the bottom. IDs in
+  // the extra submenu are required to be > kCmdIdMax so the post-
+  // TrackPopupMenuEx dispatch below can disambiguate them from shell
+  // verb ids cleanly. DestroyMenu on `popup` cascades to the submenu
+  // because AppendMenu(MF_POPUP, ...) transfers ownership.
+  if (extra != nullptr && !extra->items.empty()) {
+    AppendMenuW(popup.get(), MF_SEPARATOR, 0, nullptr);
+    HMENU sub = CreatePopupMenu();
+    if (sub != nullptr) {
+      for (const auto& it : extra->items) {
+        AppendMenuW(sub, MF_STRING, it.id, it.label.c_str());
+      }
+      if (extra->radioFirst != 0 && extra->radioLast != 0 &&
+          extra->radioChecked != 0) {
+        CheckMenuRadioItem(sub, extra->radioFirst, extra->radioLast,
+                           extra->radioChecked, MF_BYCOMMAND);
+      }
+      AppendMenuW(popup.get(), MF_POPUP,
+                  reinterpret_cast<UINT_PTR>(sub),
+                  extra->label.c_str());
+    }
   }
   MenuForwardData forward{};
   // Prefer IContextMenu3 (Unicode result for WM_MENUCHAR); fall back
@@ -227,27 +252,38 @@ void runMenuAndInvoke(IContextMenu* menu, IShellFolder* folder,
         TPM_RETURNCMD | TPM_RIGHTBUTTON | TPM_LEFTALIGN | TPM_TOPALIGN,
         screenPt.x, screenPt.y, ownerHwnd, nullptr);
     if (cmd != 0) {
-      // Subclass must remain installed across InvokeCommand because
-      // shell verbs (Open With, Share, ...) pump nested menus that
-      // emit WM_INITMENUPOPUP / WM_DRAWITEM / WM_MEASUREITEM.
-      //
-      // Verb-name probe: some extensions (Fontext "install",
-      // PrintTo, ...) ignore the multi-PIDL bundle inside a single
-      // InvokeCommand and process only the first PIDL. We mirror
-      // Explorer's workaround for those verbs by re-querying a
-      // single-PIDL context menu per file and invoking by name.
-      char verbA[64] = {0};
-      const UINT verbId = (cmd >= kCmdIdMin) ? cmd - kCmdIdMin : 0;
-      const bool gotVerb =
-          cmd >= kCmdIdMin &&
-          SUCCEEDED(menu->GetCommandString(verbId, GCS_VERBA, nullptr,
-                                           verbA, sizeof(verbA)));
-      if (gotVerb && selectedLeaves.size() > 1 &&
-          isPerItemFanOutVerb(verbA) && folder != nullptr) {
-        invokeVerbPerItem(folder, ownerHwnd, selectedLeaves, verbA,
-                          folderPathW);
+      // Picks above the shell verb range belong to the caller's extra
+      // submenu — post a WM_COMMAND to the owner so its existing
+      // dispatcher routes the id. PostMessage (not Send) so
+      // TrackPopupMenuEx fully unwinds and DestroyMenu can run before
+      // the dispatcher fires — avoids reentering menu code while the
+      // popup is still being torn down.
+      if (cmd > kCmdIdMax) {
+        PostMessageW(ownerHwnd, WM_COMMAND,
+                     MAKEWPARAM(cmd, 0), 0);
       } else {
-        invokeIdCommand(menu, cmd, ownerHwnd, screenPt, folderPathW);
+        // Subclass must remain installed across InvokeCommand because
+        // shell verbs (Open With, Share, ...) pump nested menus that
+        // emit WM_INITMENUPOPUP / WM_DRAWITEM / WM_MEASUREITEM.
+        //
+        // Verb-name probe: some extensions (Fontext "install",
+        // PrintTo, ...) ignore the multi-PIDL bundle inside a single
+        // InvokeCommand and process only the first PIDL. We mirror
+        // Explorer's workaround for those verbs by re-querying a
+        // single-PIDL context menu per file and invoking by name.
+        char verbA[64] = {0};
+        const UINT verbId = (cmd >= kCmdIdMin) ? cmd - kCmdIdMin : 0;
+        const bool gotVerb =
+            cmd >= kCmdIdMin &&
+            SUCCEEDED(menu->GetCommandString(verbId, GCS_VERBA, nullptr,
+                                             verbA, sizeof(verbA)));
+        if (gotVerb && selectedLeaves.size() > 1 &&
+            isPerItemFanOutVerb(verbA) && folder != nullptr) {
+          invokeVerbPerItem(folder, ownerHwnd, selectedLeaves, verbA,
+                            folderPathW);
+        } else {
+          invokeIdCommand(menu, cmd, ownerHwnd, screenPt, folderPathW);
+        }
       }
     }
   }
@@ -259,7 +295,8 @@ void runMenuAndInvoke(IContextMenu* menu, IShellFolder* folder,
 
 void ShellContextMenu::show(HWND ownerHwnd, const std::wstring& folderPath,
                             const std::vector<std::wstring>& selectedLeaves,
-                            POINT screenPt) {
+                            POINT screenPt,
+                            const ExtraSubmenu* extra) {
   if (ownerHwnd == nullptr || folderPath.empty()) return;
 
   PidlOwner folderPidl = parseAbsolute(folderPath);
@@ -279,7 +316,7 @@ void ShellContextMenu::show(HWND ownerHwnd, const std::wstring& folderPath,
   if (!menu) return;
 
   runMenuAndInvoke(menu.get(), folder.get(), ownerHwnd, screenPt,
-                   selectedLeaves, folderPath);
+                   selectedLeaves, folderPath, extra);
 }
 
 }  // namespace fast_explorer::ui

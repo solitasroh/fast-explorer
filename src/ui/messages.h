@@ -84,12 +84,15 @@ inline constexpr WORD kMenuProperties   = 313;  // Alt+Enter
 inline constexpr WORD kMenuShowHidden   = 320;  // toggle ✓
 inline constexpr WORD kMenuShowExt      = 321;  // toggle ✓
 inline constexpr WORD kMenuCheckUpdates = 330;  // win_sparkle_check_update_with_ui
-// Group-by submenu IDs (Phase C). 380..389 reserved within the
-// 300..399 "polished menu" range; 300..330 are already in use above.
-inline constexpr WORD kMenuGroupByNone     = 380;
-inline constexpr WORD kMenuGroupByName     = 381;
-inline constexpr WORD kMenuGroupByModified = 382;
-inline constexpr WORD kMenuGroupByType     = 383;
+// 분류 방법 menu IDs — deliberately above the shell verb range (1..0x7FFF
+// used by ShellContextMenu) so they coexist when injected into the shell
+// background menu. TrackPopupMenuEx returns the raw command id, and our
+// onCommand handler routes any id in this range straight to the group-by
+// dispatcher (see main-window.cpp).
+inline constexpr WORD kMenuGroupByNone     = 0x8000;
+inline constexpr WORD kMenuGroupByName     = 0x8001;
+inline constexpr WORD kMenuGroupByModified = 0x8002;
+inline constexpr WORD kMenuGroupByType     = 0x8003;
 
 static_assert(kWmFeBase >= WM_APP,
               "WM_FE_* must live in the WM_APP user range");

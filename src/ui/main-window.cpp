@@ -2745,10 +2745,10 @@ void MainWindow::handleListViewRightClick(NMHDR* hdr) {
   auto* nmia = reinterpret_cast<NMITEMACTIVATE*>(hdr);
   if (nmia->iItem < 0) {
     // Mouse right-click on empty area, or keyboard Shift+F10 over
-    // empty area. Route to the lightweight "분류 방법" popup instead
-    // of the shell folder-background menu (Phase C). The full shell
-    // background menu may come back as a child of this popup in a
-    // later task.
+    // empty area. Show the shell folder-background menu (새로 만들기
+    // / 붙여넣기 / 속성 / ...) with our 분류 방법 submenu appended at
+    // the bottom — Win Explorer parity, plus the FastExplorer-specific
+    // grouping affordance.
     POINT emptyPt = nmia->ptAction;
     if (emptyPt.x == -1 && emptyPt.y == -1) {
       // Keyboard-invoked → anchor to listview origin in screen coords.
@@ -2759,7 +2759,25 @@ void MainWindow::handleListViewRightClick(NMHDR* hdr) {
     } else {
       ClientToScreen(hdr->hwndFrom, &emptyPt);
     }
-    showGroupByContextMenu(paneIdx, emptyPt);
+    using fast_explorer::core::GroupKey;
+    const auto cur = targetPane.groupBy();
+    ShellContextMenu::ExtraSubmenu extra;
+    extra.label = L"분류 방법";
+    extra.items = {
+        {kMenuGroupByNone,     L"(없음)"},
+        {kMenuGroupByName,     L"이름"},
+        {kMenuGroupByModified, L"수정한 날짜"},
+        {kMenuGroupByType,     L"유형"},
+    };
+    extra.radioFirst = kMenuGroupByNone;
+    extra.radioLast  = kMenuGroupByType;
+    extra.radioChecked =
+        cur == GroupKey::Name     ? kMenuGroupByName
+      : cur == GroupKey::Modified ? kMenuGroupByModified
+      : cur == GroupKey::Type     ? kMenuGroupByType
+      :                             kMenuGroupByNone;
+    ShellContextMenu::show(hwnd_, folderPath, /*leaves=*/{}, emptyPt,
+                           &extra);
     return;
   }
   POINT screenPt = nmia->ptAction;
@@ -3031,29 +3049,6 @@ void MainWindow::applyListViewGroups(std::size_t paneIdx) {
   if (count > 0) {
     ListView_RedrawItems(lv, 0, count - 1);
   }
-}
-
-void MainWindow::showGroupByContextMenu(std::size_t paneIdx, POINT screenPt) {
-  if (!paneManager_ || paneIdx >= paneManager_->count()) return;
-  const auto cur = paneManager_->at(paneIdx).groupBy();
-  HMENU root = CreatePopupMenu();
-  HMENU sub  = CreatePopupMenu();
-  AppendMenuW(sub, MF_STRING, kMenuGroupByNone,     L"(없음)");
-  AppendMenuW(sub, MF_STRING, kMenuGroupByName,     L"이름");
-  AppendMenuW(sub, MF_STRING, kMenuGroupByModified, L"수정한 날짜");
-  AppendMenuW(sub, MF_STRING, kMenuGroupByType,     L"유형");
-  const UINT curId =
-      cur == fast_explorer::core::GroupKey::Name     ? kMenuGroupByName
-    : cur == fast_explorer::core::GroupKey::Modified ? kMenuGroupByModified
-    : cur == fast_explorer::core::GroupKey::Type     ? kMenuGroupByType
-    :                                                  kMenuGroupByNone;
-  CheckMenuRadioItem(sub, kMenuGroupByNone, kMenuGroupByType,
-                     curId, MF_BYCOMMAND);
-  AppendMenuW(root, MF_POPUP, reinterpret_cast<UINT_PTR>(sub),
-              L"분류 방법");
-  TrackPopupMenuEx(root, TPM_RIGHTBUTTON, screenPt.x, screenPt.y,
-                   hwnd_, nullptr);
-  DestroyMenu(root);  // also destroys the submenu
 }
 
 LRESULT MainWindow::handleOdFindItem(NMHDR* hdr) {
