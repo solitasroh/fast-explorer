@@ -933,6 +933,16 @@ void MainWindow::clearListViewForNavigation(std::size_t paneIdx) noexcept {
   ListView_SetItemState(lv, -1, 0, LVIS_SELECTED | LVIS_FOCUSED);
   ListView_SetItemCountEx(lv, 0, 0);
   InvalidateRect(lv, nullptr, TRUE);
+  // Disable group view during the navigation churn so common-controls
+  // doesn't try to render against stale group IDs while the store is
+  // being repopulated. finalizeSortApply will re-enable groups via
+  // applyListViewGroups once the new content's sort completes (the
+  // reapplyAfterEnumeration path triggers kWmFeSortComplete which
+  // finalizes through finalizeSortApply).
+  if (paneIdx < listViews_.size() && listViews_[paneIdx] != nullptr) {
+    ListView_EnableGroupView(listViews_[paneIdx], FALSE);
+    ListView_RemoveAllGroups(listViews_[paneIdx]);
+  }
 }
 
 void MainWindow::showToolMenuForPane(std::size_t paneIdx) {
