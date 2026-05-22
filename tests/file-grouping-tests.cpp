@@ -49,3 +49,49 @@ FE_TEST_CASE(group_name_korean_choseong_last) {
   auto e = makeEntry(L"하늘.txt");
   FE_ASSERT_EQ(groupIdForEntry(GroupKey::Name, e, 0), 18);
 }
+
+FE_TEST_CASE(group_name_latin_uppercase_A_is_19) {
+  auto e = makeEntry(L"Apple.txt");
+  FE_ASSERT_EQ(groupIdForEntry(GroupKey::Name, e, 0), 19);
+}
+
+FE_TEST_CASE(group_name_latin_lowercase_normalized) {
+  auto e1 = makeEntry(L"apple.txt");
+  auto e2 = makeEntry(L"APPLE.txt");
+  FE_ASSERT_EQ(groupIdForEntry(GroupKey::Name, e1, 0),
+               groupIdForEntry(GroupKey::Name, e2, 0));
+  FE_ASSERT_EQ(groupIdForEntry(GroupKey::Name, e1, 0), 19);
+}
+
+FE_TEST_CASE(group_name_latin_Z_is_44) {
+  auto e = makeEntry(L"zebra.txt");
+  FE_ASSERT_EQ(groupIdForEntry(GroupKey::Name, e, 0), 44);
+}
+
+FE_TEST_CASE(group_name_digit_is_45) {
+  auto e1 = makeEntry(L"9-readme.txt");
+  auto e2 = makeEntry(L"0.txt");
+  FE_ASSERT_EQ(groupIdForEntry(GroupKey::Name, e1, 0), 45);
+  FE_ASSERT_EQ(groupIdForEntry(GroupKey::Name, e2, 0), 45);
+}
+
+FE_TEST_CASE(group_name_symbol_is_other_46) {
+  auto e1 = makeEntry(L"_foo.txt");
+  auto e2 = makeEntry(L"!bar.txt");
+  FE_ASSERT_EQ(groupIdForEntry(GroupKey::Name, e1, 0), 46);
+  FE_ASSERT_EQ(groupIdForEntry(GroupKey::Name, e2, 0), 46);
+}
+
+FE_TEST_CASE(group_name_compat_jamo_normalized_to_choseong) {
+  // U+3131 (ㄱ, Hangul Compatibility Jamo) maps to choseong ㄱ (id 0)
+  auto e = makeEntry(L"ㄱ-file.txt");
+  FE_ASSERT_EQ(groupIdForEntry(GroupKey::Name, e, 0), 0);
+  // U+314E (ㅎ) maps to choseong ㅎ (id 18)
+  auto e2 = makeEntry(L"ㅎ-file.txt");
+  FE_ASSERT_EQ(groupIdForEntry(GroupKey::Name, e2, 0), 18);
+}
+
+FE_TEST_CASE(group_name_empty_name_is_other) {
+  auto e = makeEntry(L"");
+  FE_ASSERT_EQ(groupIdForEntry(GroupKey::Name, e, 0), 46);
+}
