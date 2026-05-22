@@ -3,6 +3,8 @@
 #include "core/file-entry.h"
 #include "core/file-grouping.h"
 
+#include <windows.h>
+
 using fast_explorer::core::FileEntry;
 using fast_explorer::core::GroupKey;
 using fast_explorer::core::groupIdForEntry;
@@ -21,6 +23,22 @@ FileEntry makeEntry(std::wstring_view name,
   e.flags = entryFlags;
   e.modifiedTime100ns = modified100ns;
   return e;
+}
+
+// Build a FILETIME (UTC ticks since 1601) representing the given local
+// wall-clock time. Mirrors the same conversion the production code uses.
+uint64_t localFiletime(WORD year, WORD month, WORD day,
+                       WORD hour, WORD minute) {
+  SYSTEMTIME st{};
+  st.wYear = year; st.wMonth = month; st.wDay = day;
+  st.wHour = hour; st.wMinute = minute;
+  FILETIME local{}, utc{};
+  SystemTimeToFileTime(&st, &local);
+  LocalFileTimeToFileTime(&local, &utc);
+  ULARGE_INTEGER ui{};
+  ui.LowPart = utc.dwLowDateTime;
+  ui.HighPart = utc.dwHighDateTime;
+  return ui.QuadPart;
 }
 
 }  // namespace
@@ -94,4 +112,51 @@ FE_TEST_CASE(group_name_compat_jamo_normalized_to_choseong) {
 FE_TEST_CASE(group_name_empty_name_is_other) {
   auto e = makeEntry(L"");
   FE_ASSERT_EQ(groupIdForEntry(GroupKey::Name, e, 0), 46);
+}
+
+FE_TEST_CASE(group_modified_today) {
+  const uint64_t now = localFiletime(2026, 6, 15, 12, 0);  // Mon noon
+  auto e = makeEntry(L"x.txt", kNoExtension, 0, localFiletime(2026, 6, 15, 0, 1));
+  FE_ASSERT_EQ(groupIdForEntry(GroupKey::Modified, e, now), 0);
+}
+
+FE_TEST_CASE(group_modified_yesterday) {
+  const uint64_t now = localFiletime(2026, 6, 15, 12, 0);
+  auto e = makeEntry(L"x.txt", kNoExtension, 0, localFiletime(2026, 6, 14, 23, 59));
+  FE_ASSERT_EQ(groupIdForEntry(GroupKey::Modified, e, now), 1);
+}
+
+FE_TEST_CASE(group_modified_this_week) {
+  // now = Wed 2026-06-17 12:00; this-week start = Mon 2026-06-15 00:00.
+  // A Mon noon item (2026-06-15 09:00) is in this-week bucket (>= week start,
+  // older than yesterday).
+  const uint64_t now = localFiletime(2026, 6, 17, 12, 0);
+  auto e = makeEntry(L"x.txt", kNoExtension, 0, localFiletime(2026, 6, 15, 9, 0));
+  FE_ASSERT_EQ(groupIdForEntry(GroupKey::Modified, e, now), 2);
+}
+
+FE_TEST_CASE(group_modified_this_month) {
+  const uint64_t now = localFiletime(2026, 6, 15, 12, 0);
+  // Sunday from 2 weeks ago (2026-06-01) — same month, before this-week-start.
+  auto e = makeEntry(L"x.txt", kNoExtension, 0, localFiletime(2026, 6, 1, 9, 0));
+  FE_ASSERT_EQ(groupIdForEntry(GroupKey::Modified, e, now), 3);
+}
+
+FE_TEST_CASE(group_modified_this_year) {
+  const uint64_t now = localFiletime(2026, 6, 15, 12, 0);
+  // February of same year — before this-month, in this-year.
+  auto e = makeEntry(L"x.txt", kNoExtension, 0, localFiletime(2026, 2, 1, 9, 0));
+  FE_ASSERT_EQ(groupIdForEntry(GroupKey::Modified, e, now), 4);
+}
+
+FE_TEST_CASE(group_modified_older) {
+  const uint64_t now = localFiletime(2026, 6, 15, 12, 0);
+  auto e = makeEntry(L"x.txt", kNoExtension, 0, localFiletime(2024, 1, 1, 9, 0));
+  FE_ASSERT_EQ(groupIdForEntry(GroupKey::Modified, e, now), 5);
+}
+
+FE_TEST_CASE(group_modified_future_clamps_to_today) {
+  const uint64_t now = localFiletime(2026, 6, 15, 12, 0);
+  auto e = makeEntry(L"x.txt", kNoExtension, 0, localFiletime(2027, 1, 1, 0, 0));
+  FE_ASSERT_EQ(groupIdForEntry(GroupKey::Modified, e, now), 0);
 }
