@@ -84,3 +84,19 @@ FE_TEST_CASE(UiMessages_MakePaneWParam_LegacyGenOnlyWParamDecodesAsPaneZero) {
   FE_ASSERT_EQ(paneIndexFromWParam(wp), static_cast<std::size_t>(0));
   FE_ASSERT_EQ(generationFromWParam(wp), 0xCAFEBABEu);
 }
+
+FE_TEST_CASE(messages_group_by_message_is_unique) {
+  using namespace fast_explorer::ui;
+  FE_ASSERT_TRUE(kWmFePaneGroupByChanged != kWmFeFilterDismiss);
+  FE_ASSERT_TRUE(kWmFePaneGroupByChanged != kWmFeAddressPopupClick);
+}
+
+FE_TEST_CASE(messages_group_by_menu_ids_are_unique) {
+  using namespace fast_explorer::ui;
+  FE_ASSERT_NE(kMenuGroupByNone, kMenuGroupByName);
+  FE_ASSERT_NE(kMenuGroupByNone, kMenuGroupByModified);
+  FE_ASSERT_NE(kMenuGroupByNone, kMenuGroupByType);
+  FE_ASSERT_NE(kMenuGroupByName, kMenuGroupByModified);
+  FE_ASSERT_NE(kMenuGroupByName, kMenuGroupByType);
+  FE_ASSERT_NE(kMenuGroupByModified, kMenuGroupByType);
+}

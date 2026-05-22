@@ -31,6 +31,10 @@ inline constexpr UINT kWmFeFilterQuery       = kWmFeBase + 0x0E;
 // Search popup hide notice (ESC or explicit). WPARAM = paneIndex,
 // LPARAM = 0. Caller clears the active filter.
 inline constexpr UINT kWmFeFilterDismiss     = kWmFeBase + 0x0F;
+// Group-by mode change for a pane. WPARAM = paneIndex,
+// LPARAM = new group-by mode (cast to LPARAM). Posted from the
+// hamburger / context menu so the pane refreshes grouping state.
+inline constexpr UINT kWmFePaneGroupByChanged = kWmFeBase + 0x10;
 
 inline constexpr WORD kAccelFocusAddress = 100;
 inline constexpr WORD kAccelNavBack       = 101;
@@ -80,10 +84,16 @@ inline constexpr WORD kMenuProperties   = 313;  // Alt+Enter
 inline constexpr WORD kMenuShowHidden   = 320;  // toggle ✓
 inline constexpr WORD kMenuShowExt      = 321;  // toggle ✓
 inline constexpr WORD kMenuCheckUpdates = 330;  // win_sparkle_check_update_with_ui
+// Group-by submenu IDs (Phase C). 380..389 reserved within the
+// 300..399 "polished menu" range; 300..330 are already in use above.
+inline constexpr WORD kMenuGroupByNone     = 380;
+inline constexpr WORD kMenuGroupByName     = 381;
+inline constexpr WORD kMenuGroupByModified = 382;
+inline constexpr WORD kMenuGroupByType     = 383;
 
 static_assert(kWmFeBase >= WM_APP,
               "WM_FE_* must live in the WM_APP user range");
-static_assert(kWmFeFilterDismiss <= 0xBFFFu,
+static_assert(kWmFePaneGroupByChanged <= 0xBFFFu,
               "WM_FE_* must not spill past the WM_APP user range");
 
 // WPARAM packing for multi-pane message routing. The low 32 bits hold
