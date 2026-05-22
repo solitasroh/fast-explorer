@@ -7,6 +7,7 @@
 
 #include "core/file-entry.h"
 #include "core/file-model-store.h"
+#include "ui/format-cache.h"
 
 namespace fast_explorer::core {
 
@@ -34,6 +35,14 @@ constexpr int8_t kCompatJamoToChoseong[] = {
        8,          -1,          9,          10,          11,         12,
   // U+3149 ㅉ, U+314A ㅊ, U+314B ㅋ, U+314C ㅌ, U+314D ㅍ, U+314E ㅎ,
       13,          14,         15,          16,          17,         18,
+};
+
+// Compatibility-jamo glyphs for the 19 choseong group IDs (0..18) used as
+// header labels. Index matches `groupIdForName`'s choseong indexing.
+constexpr const wchar_t* kChoseongGlyph[19] = {
+  L"ㄱ", L"ㄲ", L"ㄴ", L"ㄷ", L"ㄸ", L"ㄹ", L"ㅁ",
+  L"ㅂ", L"ㅃ", L"ㅅ", L"ㅆ", L"ㅇ", L"ㅈ", L"ㅉ",
+  L"ㅊ", L"ㅋ", L"ㅌ", L"ㅍ", L"ㅎ",
 };
 
 // Convert a UTC FILETIME (100ns ticks) to a local SYSTEMTIME.
@@ -202,6 +211,58 @@ std::vector<int32_t> enumerateGroups(GroupKey key,
   }
   std::sort(result.begin(), result.end());
   return result;
+}
+
+std::wstring groupTitleForId(GroupKey key, int32_t id,
+                             const FileModelStore* store,
+                             const fast_explorer::ui::FormatCache* cache) {
+  switch (key) {
+    case GroupKey::None:
+      return std::wstring{};
+    case GroupKey::Name: {
+      if (id >= 0 && id <= 18) return std::wstring{kChoseongGlyph[id]};
+      if (id >= 19 && id <= 44) {
+        const wchar_t letter = static_cast<wchar_t>(L'A' + (id - 19));
+        return std::wstring(1, letter);
+      }
+      if (id == 45) return L"0 - 9";
+      return L"기타";
+    }
+    case GroupKey::Modified: {
+      switch (id) {
+        case 0:  return L"오늘";
+        case 1:  return L"어제";
+        case 2:  return L"이번 주";
+        case 3:  return L"이번 달";
+        case 4:  return L"올해";
+        default: return L"더 오래전";
+      }
+    }
+    case GroupKey::Type: {
+      if (id == 0) return L"폴더";
+      if (id == 1) return L"파일";
+      // id >= 2: find an exemplar entry with this hashed id, format via cache.
+      // Tests pass nullptr — fall back to a safe label rather than crashing.
+      if (store == nullptr || cache == nullptr) {
+        return L"파일";
+      }
+      // FormatCache::typeForEntry is non-const (it mutates the LRU on miss),
+      // so we have to drop the const to call it. The cache itself is a
+      // UI-thread-only mutable cache; the const here is only for declaration
+      // hygiene.
+      auto* mutableCache =
+          const_cast<fast_explorer::ui::FormatCache*>(cache);
+      const std::size_t count = store->displayedCount();
+      for (std::size_t i = 0; i < count; ++i) {
+        const auto& entry = store->visibleAt(i);
+        if (groupIdForEntry(GroupKey::Type, entry, 0) == id) {
+          return mutableCache->typeForEntry(entry);
+        }
+      }
+      return L"파일";
+    }
+  }
+  return std::wstring{};
 }
 
 }  // namespace fast_explorer::core

@@ -4,11 +4,14 @@
 #include <string>
 #include <vector>
 
+namespace fast_explorer::ui {
+class FormatCache;
+}  // namespace fast_explorer::ui
+
 namespace fast_explorer::core {
 
 struct FileEntry;
 class FileModelStore;
-class FormatCache;
 
 enum class GroupKey : uint8_t {
   None     = 0,
@@ -32,5 +35,13 @@ enum class GroupKey : uint8_t {
     GroupKey key,
     const FileModelStore& store,
     uint64_t nowFiletime);
+
+// Returns the Korean header string for a given (key, id). For Type
+// groups (id >= 2), reads the extension's display name via `cache`.
+// Caller owns the returned wstring. Never returns empty for valid IDs.
+[[nodiscard]] std::wstring groupTitleForId(
+    GroupKey key, int32_t id,
+    const FileModelStore* store,
+    const fast_explorer::ui::FormatCache* cache);
 
 }  // namespace fast_explorer::core

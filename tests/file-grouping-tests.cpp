@@ -8,6 +8,7 @@
 using fast_explorer::core::FileEntry;
 using fast_explorer::core::GroupKey;
 using fast_explorer::core::groupIdForEntry;
+using fast_explorer::core::groupTitleForId;
 using fast_explorer::core::kNoExtension;
 
 namespace {
@@ -269,4 +270,34 @@ FE_TEST_CASE(enumerate_type_folders_first_then_files_sorted_by_id) {
   // 0 (folders) must appear first since two folders are present.
   FE_ASSERT_TRUE(ids.size() >= 3u);
   FE_ASSERT_EQ(ids[0], 0);
+}
+
+FE_TEST_CASE(title_name_choseong_uses_jamo_glyph) {
+  FE_ASSERT_WSTREQ(groupTitleForId(GroupKey::Name, 0, nullptr, nullptr), L"ㄱ");
+  FE_ASSERT_WSTREQ(groupTitleForId(GroupKey::Name, 6, nullptr, nullptr), L"ㅁ");
+  FE_ASSERT_WSTREQ(groupTitleForId(GroupKey::Name, 18, nullptr, nullptr), L"ㅎ");
+}
+
+FE_TEST_CASE(title_name_latin_uses_letter) {
+  FE_ASSERT_WSTREQ(groupTitleForId(GroupKey::Name, 19, nullptr, nullptr), L"A");
+  FE_ASSERT_WSTREQ(groupTitleForId(GroupKey::Name, 44, nullptr, nullptr), L"Z");
+}
+
+FE_TEST_CASE(title_name_digit_and_other) {
+  FE_ASSERT_WSTREQ(groupTitleForId(GroupKey::Name, 45, nullptr, nullptr), L"0 - 9");
+  FE_ASSERT_WSTREQ(groupTitleForId(GroupKey::Name, 46, nullptr, nullptr), L"기타");
+}
+
+FE_TEST_CASE(title_modified_korean_labels) {
+  FE_ASSERT_WSTREQ(groupTitleForId(GroupKey::Modified, 0, nullptr, nullptr), L"오늘");
+  FE_ASSERT_WSTREQ(groupTitleForId(GroupKey::Modified, 1, nullptr, nullptr), L"어제");
+  FE_ASSERT_WSTREQ(groupTitleForId(GroupKey::Modified, 2, nullptr, nullptr), L"이번 주");
+  FE_ASSERT_WSTREQ(groupTitleForId(GroupKey::Modified, 3, nullptr, nullptr), L"이번 달");
+  FE_ASSERT_WSTREQ(groupTitleForId(GroupKey::Modified, 4, nullptr, nullptr), L"올해");
+  FE_ASSERT_WSTREQ(groupTitleForId(GroupKey::Modified, 5, nullptr, nullptr), L"더 오래전");
+}
+
+FE_TEST_CASE(title_type_folder_and_unknown) {
+  FE_ASSERT_WSTREQ(groupTitleForId(GroupKey::Type, 0, nullptr, nullptr), L"폴더");
+  FE_ASSERT_WSTREQ(groupTitleForId(GroupKey::Type, 1, nullptr, nullptr), L"파일");
 }
