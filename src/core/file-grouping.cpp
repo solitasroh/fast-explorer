@@ -185,7 +185,10 @@ std::vector<int32_t> enumerateGroups(GroupKey key,
                                      uint64_t nowFiletime) {
   std::vector<int32_t> result;
   if (key == GroupKey::None) return result;
-  const std::size_t count = store.publishedCount();
+  // displayedCount() == subset size when a filter is active; falls
+  // back to publishedCount() otherwise. publishedCount() would OOB
+  // visibleAt under an active subset.
+  const std::size_t count = store.displayedCount();
   if (count == 0) return result;
   std::unordered_set<int32_t> seen;
   seen.reserve(count);
