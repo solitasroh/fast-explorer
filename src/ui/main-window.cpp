@@ -1819,6 +1819,38 @@ LRESULT MainWindow::onSize(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 
 LRESULT MainWindow::onCommand(HWND hwnd, UINT msg, WPARAM wParam,
                               LPARAM lParam) {
+  // 분류 방법 submenu (Task 15) appends raw kMenuGroupBy* IDs that are
+  // NOT packed with a pane index, so they must be intercepted before
+  // the packed-id decode below — unpackButton(380) would otherwise
+  // yield bogus btn/pane values. The active pane is the target since
+  // the submenu is shown from the active list-view's context menu.
+  if (HIWORD(wParam) == 0) {
+    const WORD id = LOWORD(wParam);
+    if (id == kMenuGroupByNone || id == kMenuGroupByName ||
+        id == kMenuGroupByModified || id == kMenuGroupByType) {
+      if (!paneManager_) return 0;
+      const std::size_t idx = paneManager_->activeIndex();
+      if (idx >= paneManager_->count()) return 0;
+      using fast_explorer::core::GroupKey;
+      GroupKey gk = GroupKey::None;
+      switch (id) {
+        case kMenuGroupByName:     gk = GroupKey::Name;     break;
+        case kMenuGroupByModified: gk = GroupKey::Modified; break;
+        case kMenuGroupByType:     gk = GroupKey::Type;     break;
+        default:                   gk = GroupKey::None;     break;
+      }
+      // setGroupBy → requestSort. For sync sorts (under the worker
+      // threshold) finalizeSortApply must be called explicitly so the
+      // group-header visual lands immediately; the async path posts
+      // kWmFeSortComplete which routes through onSortComplete →
+      // finalizeSortApply → applyListViewGroups on its own.
+      const auto dispatch = paneManager_->at(idx).setGroupBy(gk);
+      if (dispatch == fast_explorer::ui::SortDispatch::AppliedSync) {
+        finalizeSortApply(idx);
+      }
+      return 0;
+    }
+  }
   // Nav toolbar buttons (T2) + hamburger (T4) + menu items (T5/T6/T7).
   // LOWORD is packed `(id << 8) | pane`; the notification code from a
   // regular toolbar click, BS_PUSHBUTTON click, or menu selection is
