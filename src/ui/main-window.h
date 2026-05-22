@@ -166,6 +166,9 @@ class MainWindow {
   // group view). Caller invokes after sort completes so visibleOrder
   // is already group-clustered.
   void applyListViewGroups(std::size_t paneIdx);
+  // Builds and tracks the empty-area popup (currently just the
+  // "분류 방법" submenu). Synchronous TrackPopupMenuEx.
+  void showGroupByContextMenu(std::size_t paneIdx, POINT screenPt);
   void handleColumnClick(NMHDR* hdr);
   void handleItemActivate(NMHDR* hdr);
   // LVN_ODFINDITEM under LVS_OWNERDATA — Win Explorer parity type-to-

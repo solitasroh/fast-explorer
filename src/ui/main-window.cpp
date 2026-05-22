@@ -2637,6 +2637,25 @@ void MainWindow::handleListViewRightClick(NMHDR* hdr) {
   if (folderPath.empty()) return;
 
   auto* nmia = reinterpret_cast<NMITEMACTIVATE*>(hdr);
+  if (nmia->iItem < 0) {
+    // Mouse right-click on empty area, or keyboard Shift+F10 over
+    // empty area. Route to the lightweight "분류 방법" popup instead
+    // of the shell folder-background menu (Phase C). The full shell
+    // background menu may come back as a child of this popup in a
+    // later task.
+    POINT emptyPt = nmia->ptAction;
+    if (emptyPt.x == -1 && emptyPt.y == -1) {
+      // Keyboard-invoked → anchor to listview origin in screen coords.
+      RECT lvRect{};
+      GetWindowRect(hdr->hwndFrom, &lvRect);
+      emptyPt.x = lvRect.left;
+      emptyPt.y = lvRect.top;
+    } else {
+      ClientToScreen(hdr->hwndFrom, &emptyPt);
+    }
+    showGroupByContextMenu(paneIdx, emptyPt);
+    return;
+  }
   POINT screenPt = nmia->ptAction;
   // ptAction is (-1, -1) for keyboard-invoked context menus (Shift+F10
   // / VK_APPS). Anchor to the focused row's rect in that case, or the
@@ -2893,6 +2912,29 @@ void MainWindow::applyListViewGroups(std::size_t paneIdx) {
   if (count > 0) {
     ListView_RedrawItems(lv, 0, count - 1);
   }
+}
+
+void MainWindow::showGroupByContextMenu(std::size_t paneIdx, POINT screenPt) {
+  if (!paneManager_ || paneIdx >= paneManager_->count()) return;
+  const auto cur = paneManager_->at(paneIdx).groupBy();
+  HMENU root = CreatePopupMenu();
+  HMENU sub  = CreatePopupMenu();
+  AppendMenuW(sub, MF_STRING, kMenuGroupByNone,     L"(없음)");
+  AppendMenuW(sub, MF_STRING, kMenuGroupByName,     L"이름");
+  AppendMenuW(sub, MF_STRING, kMenuGroupByModified, L"수정한 날짜");
+  AppendMenuW(sub, MF_STRING, kMenuGroupByType,     L"유형");
+  const UINT curId =
+      cur == fast_explorer::core::GroupKey::Name     ? kMenuGroupByName
+    : cur == fast_explorer::core::GroupKey::Modified ? kMenuGroupByModified
+    : cur == fast_explorer::core::GroupKey::Type     ? kMenuGroupByType
+    :                                                  kMenuGroupByNone;
+  CheckMenuRadioItem(sub, kMenuGroupByNone, kMenuGroupByType,
+                     curId, MF_BYCOMMAND);
+  AppendMenuW(root, MF_POPUP, reinterpret_cast<UINT_PTR>(sub),
+              L"분류 방법");
+  TrackPopupMenuEx(root, TPM_RIGHTBUTTON, screenPt.x, screenPt.y,
+                   hwnd_, nullptr);
+  DestroyMenu(root);  // also destroys the submenu
 }
 
 LRESULT MainWindow::handleOdFindItem(NMHDR* hdr) {
