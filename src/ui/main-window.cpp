@@ -402,6 +402,22 @@ void showFolderProperties(const std::wstring& path, HWND owner) noexcept {
   ShellExecuteExW(&info);
 }
 
+// Ctrl+C/X/V are registered as global accelerators (file-clipboard ops)
+// so TranslateAcceleratorW would otherwise eat them before an Edit
+// control (address bar, in-place rename) sees them. When focus is on
+// a plain Edit, forward the equivalent standard WM_* clipboard message
+// to it and report it as handled. Returns false to let the file-level
+// handler run.
+bool routeEditClipboardIfFocused(UINT editMsg) noexcept {
+  HWND focused = GetFocus();
+  if (focused == nullptr) return false;
+  wchar_t cls[8] = {0};
+  if (GetClassNameW(focused, cls, ARRAYSIZE(cls)) == 0) return false;
+  if (_wcsicmp(cls, L"Edit") != 0) return false;
+  SendMessageW(focused, editMsg, 0, 0);
+  return true;
+}
+
 }  // namespace
 
 MainWindow::MainWindow(fast_explorer::core::ProcessMemoryService& memory,
@@ -2070,13 +2086,19 @@ LRESULT MainWindow::onCommand(HWND hwnd, UINT msg, WPARAM wParam,
         return 0;
       }
       case kAccelCopy:
-        handleClipboardCopy(false);
+        if (!routeEditClipboardIfFocused(WM_COPY)) {
+          handleClipboardCopy(false);
+        }
         return 0;
       case kAccelCut:
-        handleClipboardCopy(true);
+        if (!routeEditClipboardIfFocused(WM_CUT)) {
+          handleClipboardCopy(true);
+        }
         return 0;
       case kAccelPaste:
-        handleClipboardPaste();
+        if (!routeEditClipboardIfFocused(WM_PASTE)) {
+          handleClipboardPaste();
+        }
         return 0;
       case kAccelPaneSwitch:
         if (paneManager_ && (paneManager_->count() > 1)) {
@@ -2555,6 +2577,8 @@ LRESULT MainWindow::handleListViewNotify(NMHDR* hdr) {
     }
     case LVN_ODCACHEHINT:
       return 0;
+    case LVN_ODFINDITEMW:
+      return handleOdFindItem(hdr);
     case LVN_ODSTATECHANGED: {
       // LVS_OWNERDATA reports batch deselects of previously-selected
       // rows via this notification, NOT per-row LVN_ITEMCHANGED.
@@ -2818,6 +2842,68 @@ void MainWindow::handleGetDispInfoBody(NMHDR* hdr) {
     default:
       break;
   }
+}
+
+LRESULT MainWindow::handleOdFindItem(NMHDR* hdr) {
+  if (hdr == nullptr || !paneManager_) {
+    return -1;
+  }
+  auto* nmf = reinterpret_cast<NMLVFINDITEMW*>(hdr);
+  // LVFI_STRING covers both prefix (LVFI_PARTIAL) and exact searches.
+  // Without a string we have nothing to match against.
+  if ((nmf->lvfi.flags & LVFI_STRING) == 0 || nmf->lvfi.psz == nullptr) {
+    return -1;
+  }
+  std::size_t paneIdx = 0;
+  if (!paneIndexFromListView(hdr->hwndFrom, paneIdx) ||
+      paneIdx >= paneManager_->count()) {
+    return -1;
+  }
+  const auto& store = paneManager_->at(paneIdx).store();
+  const std::size_t total = store.publishedCount();
+  if (total == 0) {
+    return -1;
+  }
+  const wchar_t* needle = nmf->lvfi.psz;
+  const int needleLen = static_cast<int>(std::wcslen(needle));
+  if (needleLen <= 0) {
+    return -1;
+  }
+  // iStart is the row AFTER which to begin searching for non-wrap calls;
+  // common-controls passes the focused row. We always wrap so a fresh
+  // letter keystroke that no longer matches the current row still finds
+  // the next item from row 0 onward (Win Explorer behaviour).
+  std::size_t start = 0;
+  if (nmf->iStart >= 0 &&
+      static_cast<std::size_t>(nmf->iStart) < total) {
+    start = static_cast<std::size_t>(nmf->iStart);
+  }
+  for (std::size_t step = 0; step < total; ++step) {
+    const std::size_t row = (start + step) % total;
+    const auto& entry = store.visibleAt(row);
+    auto view = fast_explorer::core::nameView(entry);
+    // Mirror handleGetDispInfoBody's extension-strip so typing matches
+    // what the user actually sees in the Name column.
+    if (!showExtensions_ && !fast_explorer::core::isDirectory(entry) &&
+        entry.extensionOffset != fast_explorer::core::kNoExtension &&
+        entry.extensionOffset < view.size()) {
+      view = view.substr(0, entry.extensionOffset);
+    }
+    if (static_cast<int>(view.size()) < needleLen) {
+      continue;
+    }
+    // CompareStringW handles Unicode, IME-composed Korean syllables,
+    // and half/full-width forms; locale-aware so the user's regional
+    // collation drives ordering of equivalent code points.
+    const int cmp = CompareStringW(
+        LOCALE_USER_DEFAULT, NORM_IGNORECASE | NORM_IGNOREWIDTH,
+        view.data(), needleLen,
+        needle, needleLen);
+    if (cmp == CSTR_EQUAL) {
+      return static_cast<LRESULT>(row);
+    }
+  }
+  return -1;
 }
 
 void MainWindow::handleItemActivate(NMHDR* hdr) {

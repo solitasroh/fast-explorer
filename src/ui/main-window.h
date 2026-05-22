@@ -163,6 +163,12 @@ class MainWindow {
   void handleGetDispInfoBody(NMHDR* hdr);
   void handleColumnClick(NMHDR* hdr);
   void handleItemActivate(NMHDR* hdr);
+  // LVN_ODFINDITEM under LVS_OWNERDATA — Win Explorer parity type-to-
+  // navigate. Common-controls handles the keystroke accumulator and
+  // ~1s reset; we return the row index whose displayed Name column
+  // text starts with `lvfi.psz` (case- and width-insensitive), or -1
+  // if nothing matches.
+  LRESULT handleOdFindItem(NMHDR* hdr);
   // Shared tail of every sort-apply path: refresh the column-header
   // arrow, repaint the selection, and force LVN_GETDISPINFO to fetch
   // cells in the new order. Used by both the synchronous click path
