@@ -1066,6 +1066,28 @@ void MainWindow::updateNavButtonStates(std::size_t paneIdx) noexcept {
   // Refresh (slot 3) stays always-enabled; no setter call needed.
 }
 
+namespace {
+
+// Undocumented but stable since Windows 10 1809: uxtheme.dll ordinal 133
+// is AllowDarkModeForWindow(HWND, BOOL). SetPreferredAppMode (ord 135)
+// at process start enables dark themes globally, but the scrollbar
+// children of a listview ignore the parent's SetWindowTheme cascade
+// and stay light unless their HWND is also explicitly flagged via
+// this per-window opt-in. Resolved lazily, cached for the process.
+using AllowDarkModeForWindow_t = BOOL(WINAPI*)(HWND, BOOL);
+AllowDarkModeForWindow_t resolveAllowDarkModeForWindow() noexcept {
+  static AllowDarkModeForWindow_t pfn = []() -> AllowDarkModeForWindow_t {
+    HMODULE ux = LoadLibraryExW(L"uxtheme.dll", nullptr,
+                                LOAD_LIBRARY_SEARCH_SYSTEM32);
+    if (ux == nullptr) return nullptr;
+    return reinterpret_cast<AllowDarkModeForWindow_t>(
+        GetProcAddress(ux, MAKEINTRESOURCEA(133)));
+  }();
+  return pfn;
+}
+
+}  // namespace
+
 void MainWindow::applyListViewTheme(HWND lv) noexcept {
   if (lv == nullptr) return;
   const bool dark = systemPrefersDarkMode();
@@ -1076,6 +1098,16 @@ void MainWindow::applyListViewTheme(HWND lv) noexcept {
   // of the accent-tinted dim caption colour. Falls back to "Explorer"
   // in light mode to keep the standard hot-track + hover pill.
   SetWindowTheme(lv, dark ? L"DarkMode_ItemsView" : L"Explorer", nullptr);
+  // SetWindowTheme on the listview only themes the rows + header; the
+  // internal vertical/horizontal scrollbar children stay on the system
+  // light theme until each scrollbar HWND is individually opted into
+  // dark mode via uxtheme ordinal 133. WM_THEMECHANGED then forces the
+  // scrollbar non-client area to re-evaluate against the new flag and
+  // repaint with the dark track/thumb instead of the white default.
+  if (auto pfn = resolveAllowDarkModeForWindow()) {
+    pfn(lv, dark ? TRUE : FALSE);
+    SendMessageW(lv, WM_THEMECHANGED, 0, 0);
+  }
   // Per-cell text colour. The active-pane background is set later
   // in applyActivePaneAppearance; we set ours here so that if the
   // pane is inactive (dual mode) the background colour still
