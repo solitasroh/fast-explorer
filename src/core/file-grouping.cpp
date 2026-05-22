@@ -1,8 +1,8 @@
 #include "core/file-grouping.h"
 
-#include "core/file-entry.h"
-
 #include <windows.h>
+
+#include "core/file-entry.h"
 
 namespace fast_explorer::core {
 
