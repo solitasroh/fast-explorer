@@ -3,9 +3,12 @@
 #include <cstdint>
 #include <cstdio>
 #include <cwchar>
+#include <string>
 #include <string_view>
+#include <vector>
 
 #include "core/file-entry.h"
+#include "core/file-grouping.h"
 #include "core/file-model-store.h"
 #include "core/file-sort.h"
 #include "core/name-arena.h"
@@ -13,6 +16,7 @@
 
 using fast_explorer::core::FileEntry;
 using fast_explorer::core::FileModelStore;
+using fast_explorer::core::GroupKey;
 using fast_explorer::core::NameArena;
 using fast_explorer::core::SortDirection;
 using fast_explorer::core::SortKey;
@@ -167,4 +171,30 @@ FE_TEST_CASE(PaneSortCoordinator_SyncAfterDispatch_DropsStalePending) {
   fx.coord.applyPendingSort(dispatchedGen);
   FE_ASSERT_EQ(static_cast<int>(fx.coord.currentSortSpec().key),
                static_cast<int>(SortKey::Size));
+}
+
+FE_TEST_CASE(sort_coord_group_by_name_clusters_by_choseong) {
+  SortFixture fx(0);  // empty store; fill manually
+  for (auto name : {L"Banana", L"가나", L"하늘", L"Apple", L"강물", L"Apricot"}) {
+    fx.store.appendEntry(makeEntry(name, fx.backing));
+  }
+  fx.store.publish(static_cast<std::uint32_t>(fx.store.itemCount()));
+
+  FE_ASSERT_EQ(
+      static_cast<int>(fx.coord.requestSort(
+          SortKey::Name, false, GroupKey::Name, 0)),
+      static_cast<int>(SortDispatch::AppliedSync));
+
+  std::vector<std::wstring> names;
+  for (std::size_t i = 0; i < fx.store.publishedCount(); ++i) {
+    const auto& e = fx.store.visibleAt(i);
+    names.emplace_back(e.namePtr, e.nameLength);
+  }
+  // First two: group 0 (가/강), then group 18 (하), then group 19 (Apple/Apricot/Banana).
+  FE_ASSERT_TRUE(names[0] == L"가나" || names[0] == L"강물");
+  FE_ASSERT_TRUE(names[1] == L"가나" || names[1] == L"강물");
+  FE_ASSERT_WSTREQ(names[2], L"하늘");
+  FE_ASSERT_WSTREQ(names[3], L"Apple");
+  FE_ASSERT_WSTREQ(names[4], L"Apricot");
+  FE_ASSERT_WSTREQ(names[5], L"Banana");
 }

@@ -7,6 +7,7 @@
 #include <thread>
 #include <vector>
 
+#include "core/file-grouping.h"
 #include "core/file-model-store.h"
 #include "core/file-sort.h"
 
@@ -50,7 +51,10 @@ class PaneSortCoordinator {
   // result becoming visible only after applyPendingSort(gen) commits
   // it on the UI thread (typically from kWmFeSortComplete).
   SortDispatch requestSort(fast_explorer::core::SortKey key,
-                           bool enumerationActive);
+                           bool enumerationActive,
+                           fast_explorer::core::GroupKey groupBy =
+                               fast_explorer::core::GroupKey::None,
+                           uint64_t nowFiletime = 0);
 
   // UI-thread commit of a pending background sort. Joins sortWorker_,
   // validates that the captured generation matches the live store
@@ -62,6 +66,10 @@ class PaneSortCoordinator {
   fast_explorer::core::SortSpec currentSortSpec() const noexcept {
     return sortSpec_;
   }
+  fast_explorer::core::GroupKey currentGroupBy() const noexcept {
+    return groupBy_;
+  }
+  uint64_t currentNowFiletime() const noexcept { return nowFiletime_; }
   bool hasSortApplied() const noexcept { return sorted_; }
 
   // Aborts any in-flight sort and discards the pending permutation.
@@ -89,6 +97,9 @@ class PaneSortCoordinator {
       fast_explorer::core::SortKey::Name,
       fast_explorer::core::SortDirection::Ascending};
   bool sorted_ = false;
+  fast_explorer::core::GroupKey groupBy_ =
+      fast_explorer::core::GroupKey::None;
+  uint64_t nowFiletime_ = 0;
   std::uint32_t sortThresholdRows_ = kDefaultSortThresholdRows;
   // Written by sortWorker_ when it finishes a background sort; read
   // by applyPendingSort on the UI thread. Synchronization is the

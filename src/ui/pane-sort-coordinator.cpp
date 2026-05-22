@@ -17,11 +17,14 @@ PaneSortCoordinator::PaneSortCoordinator(
 PaneSortCoordinator::~PaneSortCoordinator() = default;
 
 SortDispatch PaneSortCoordinator::requestSort(
-    fast_explorer::core::SortKey key, bool enumerationActive) {
+    fast_explorer::core::SortKey key, bool enumerationActive,
+    fast_explorer::core::GroupKey groupBy, uint64_t nowFiletime) {
   using fast_explorer::core::SortDirection;
   if (enumerationActive) {
     return SortDispatch::Rejected;
   }
+  groupBy_ = groupBy;
+  nowFiletime_ = nowFiletime;
   stopAndJoin(sortWorker_);
   // Any leftover pending order from a prior background sort that
   // never made it through applyPendingSort (e.g. its kWmFeSortComplete
@@ -45,17 +48,42 @@ SortDispatch PaneSortCoordinator::requestSort(
     sortSpec_.direction = SortDirection::Ascending;
   }
   if (count < sortThresholdRows_) {
-    store_.sort(sortSpec_);
+    if (groupBy_ == fast_explorer::core::GroupKey::None) {
+      // Fast path preserved bit-for-bit for the non-grouped case:
+      // delegate to store_.sort which sorts the visibleOrder buffer
+      // in place. compareWithGroup would short-circuit to the same
+      // result, but going through the store keeps the existing
+      // codepath untouched and avoids an extra vector allocation.
+      store_.sort(sortSpec_);
+    } else {
+      std::vector<std::uint32_t> order;
+      order.resize(count);
+      for (std::uint32_t i = 0; i < count; ++i) {
+        order[i] = i;
+      }
+      const auto spec = sortSpec_;
+      const auto gk = groupBy_;
+      const auto now = nowFiletime_;
+      std::sort(order.begin(), order.end(),
+                [this, spec, gk, now](std::uint32_t a, std::uint32_t b) {
+                  return fast_explorer::core::compareWithGroup(
+                             store_.entryAt(a), store_.entryAt(b), spec,
+                             gk, now) < 0;
+                });
+      store_.applySortedOrder(std::move(order));
+    }
     sorted_ = true;
     return SortDispatch::AppliedSync;
   }
 
   const auto spec = sortSpec_;
+  const auto gk = groupBy_;
+  const auto now = nowFiletime_;
   const HWND host = host_;
   const auto gen = store_.generation();
   const std::size_t paneIdx = paneIndex_;
   pendingSortGen_ = gen;
-  sortWorker_ = std::jthread([this, host, spec, count, gen, paneIdx](
+  sortWorker_ = std::jthread([this, host, spec, gk, now, count, gen, paneIdx](
                                  std::stop_token tok) {
     std::vector<std::uint32_t> order;
     order.resize(count);
@@ -66,9 +94,10 @@ SortDispatch PaneSortCoordinator::requestSort(
       return;
     }
     std::sort(order.begin(), order.end(),
-              [this, spec](std::uint32_t a, std::uint32_t b) {
-                return fast_explorer::core::lessEntries(
-                    store_.entryAt(a), store_.entryAt(b), spec);
+              [this, spec, gk, now](std::uint32_t a, std::uint32_t b) {
+                return fast_explorer::core::compareWithGroup(
+                           store_.entryAt(a), store_.entryAt(b), spec,
+                           gk, now) < 0;
               });
     if (tok.stop_requested()) {
       return;
