@@ -161,6 +161,11 @@ class MainWindow {
   PaneController* paneForWParam(WPARAM wParam) const;
   void handleGetDispInfo(NMHDR* hdr);
   void handleGetDispInfoBody(NMHDR* hdr);
+  // Rebuilds the LVS_OWNERDATA ListView's group definitions to match
+  // the pane's current groupBy. No-op for GroupKey::None (disables
+  // group view). Caller invokes after sort completes so visibleOrder
+  // is already group-clustered.
+  void applyListViewGroups(std::size_t paneIdx);
   void handleColumnClick(NMHDR* hdr);
   void handleItemActivate(NMHDR* hdr);
   // LVN_ODFINDITEM under LVS_OWNERDATA — Win Explorer parity type-to-

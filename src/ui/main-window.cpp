@@ -2856,6 +2856,44 @@ void MainWindow::handleGetDispInfoBody(NMHDR* hdr) {
   }
 }
 
+void MainWindow::applyListViewGroups(std::size_t paneIdx) {
+  if (!paneManager_ || paneIdx >= paneManager_->count() ||
+      paneIdx >= listViews_.size() || listViews_[paneIdx] == nullptr) {
+    return;
+  }
+  HWND lv = listViews_[paneIdx];
+  PaneController& pane = paneManager_->at(paneIdx);
+  const auto gk = pane.groupBy();
+  // Defensive: turn group view off before mutating definitions, so
+  // common-controls doesn't try to render in a half-rebuilt state.
+  ListView_EnableGroupView(lv, FALSE);
+  ListView_RemoveAllGroups(lv);
+  if (gk == fast_explorer::core::GroupKey::None) {
+    return;  // grouping disabled
+  }
+  const auto ids = fast_explorer::core::enumerateGroups(
+      gk, pane.store(), pane.groupNow());
+  for (const int32_t id : ids) {
+    LVGROUP grp{};
+    grp.cbSize    = sizeof(grp);
+    grp.mask      = LVGF_GROUPID | LVGF_HEADER | LVGF_STATE;
+    grp.iGroupId  = id;
+    grp.stateMask = LVGS_COLLAPSIBLE;
+    grp.state     = LVGS_COLLAPSIBLE;
+    std::wstring header = fast_explorer::core::groupTitleForId(
+        gk, id, &pane.store(), formatCache_.get());
+    grp.pszHeader = const_cast<wchar_t*>(header.c_str());
+    grp.cchHeader = static_cast<int>(header.size());
+    ListView_InsertGroup(lv, -1, &grp);  // -1 = append
+  }
+  ListView_EnableGroupView(lv, TRUE);
+  // Force dispinfo re-fetch so newly-rendered rows pick up iGroupId.
+  const int count = ListView_GetItemCount(lv);
+  if (count > 0) {
+    ListView_RedrawItems(lv, 0, count - 1);
+  }
+}
+
 LRESULT MainWindow::handleOdFindItem(NMHDR* hdr) {
   if (hdr == nullptr || !paneManager_) {
     return -1;
