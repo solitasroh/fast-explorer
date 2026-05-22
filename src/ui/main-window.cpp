@@ -1108,6 +1108,15 @@ void MainWindow::applyListViewTheme(HWND lv) noexcept {
     pfn(lv, dark ? TRUE : FALSE);
     SendMessageW(lv, WM_THEMECHANGED, 0, 0);
   }
+  // DarkMode_ItemsView themes the body (rows + group-header band) but
+  // leaves the NC scrollbar drawing on the light theme. Layer a part-
+  // specific DarkMode_Explorer/ScrollBar override on the same HWND so
+  // SCROLLBAR theme parts pick up the dark track/thumb without losing
+  // the ItemsView body theme. The third arg of SetWindowTheme is a
+  // CLSID list scoping the theme to that part only.
+  if (dark) {
+    SetWindowTheme(lv, L"DarkMode_Explorer", L"ScrollBar");
+  }
   // Per-cell text colour. The active-pane background is set later
   // in applyActivePaneAppearance; we set ours here so that if the
   // pane is inactive (dual mode) the background colour still
