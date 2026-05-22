@@ -90,8 +90,6 @@ set(FE_APP_SOURCES
   src/ui/clipboard-ops.h
   src/ui/cut-state-tracker.cpp
   src/ui/cut-state-tracker.h
-  src/ui/dark-scrollbar-subclass.cpp
-  src/ui/dark-scrollbar-subclass.h
   src/ui/drop-source.cpp
   src/ui/drop-source.h
   src/ui/drop-target.cpp
