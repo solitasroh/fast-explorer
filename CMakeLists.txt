@@ -105,6 +105,8 @@ set(FE_APP_SOURCES
   src/core/file-model-store.h
   src/core/file-sort.cpp
   src/core/file-sort.h
+  src/core/file-grouping.cpp
+  src/core/file-grouping.h
   src/core/fs-backend.h
   src/core/fs-watcher.cpp
   src/core/fs-watcher.h
@@ -248,6 +250,7 @@ add_executable(core-tests
   tests/status-text-tests.cpp
   tests/stall-probe-tests.cpp
   tests/file-sort-tests.cpp
+  tests/file-grouping-tests.cpp
   tests/extension-icon-cache-tests.cpp
   tests/folder-name-tests.cpp
   tests/icon-cache-tests.cpp
@@ -330,6 +333,8 @@ add_executable(core-tests
   src/core/file-model-store.h
   src/core/file-sort.cpp
   src/core/file-sort.h
+  src/core/file-grouping.cpp
+  src/core/file-grouping.h
   src/core/fs-backend.h
   src/core/fs-watcher.cpp
   src/core/fs-watcher.h
