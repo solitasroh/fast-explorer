@@ -2,6 +2,7 @@
 
 #include "bench-fs-helper.h"
 #include "bench/dataset-generator.h"
+#include "core/file-grouping.h"
 #include "core/file-sort.h"
 #include "core/path-utils.h"
 #include "test-harness.h"
@@ -10,6 +11,7 @@
 using fast_explorer::bench::generateDataset;
 using fast_explorer::bench::GenerateError;
 using fast_explorer::bench::PresetKind;
+using fast_explorer::core::GroupKey;
 using fast_explorer::core::SortDirection;
 using fast_explorer::core::SortKey;
 using fast_explorer::tests::TempDir;
@@ -606,4 +608,33 @@ FE_TEST_CASE(PaneController_RenameItem_ValidRow_RenamesOnDisk) {
   pane.shellWorkerForTest().waitForProcessedForTest(1);
   FE_ASSERT_FALSE(diskPathExists(before));
   FE_ASSERT_TRUE(diskPathExists(after));
+}
+
+// ---------------------------------------------------------------------------
+// setGroupBy / groupBy / groupNow
+// ---------------------------------------------------------------------------
+
+FE_TEST_CASE(PaneController_Default_GroupByIsNone) {
+  PaneController pc(nullptr);
+  FE_ASSERT_EQ(static_cast<int>(pc.groupBy()),
+               static_cast<int>(GroupKey::None));
+}
+
+FE_TEST_CASE(PaneController_SetGroupBy_StoresKey) {
+  PaneController pc(nullptr);
+  pc.setGroupBy(GroupKey::Modified);
+  FE_ASSERT_EQ(static_cast<int>(pc.groupBy()),
+               static_cast<int>(GroupKey::Modified));
+  // Wall-clock 'now' should be non-zero after setGroupBy with non-None key.
+  FE_ASSERT_TRUE(pc.groupNow() != 0);
+}
+
+FE_TEST_CASE(PaneController_SetGroupBy_None_LeavesNowMonotonic) {
+  PaneController pc(nullptr);
+  pc.setGroupBy(GroupKey::Modified);   // captures now
+  const uint64_t firstNow = pc.groupNow();
+  pc.setGroupBy(GroupKey::None);       // captures again — non-decreasing
+  FE_ASSERT_EQ(static_cast<int>(pc.groupBy()),
+               static_cast<int>(GroupKey::None));
+  FE_ASSERT_TRUE(pc.groupNow() >= firstNow);
 }

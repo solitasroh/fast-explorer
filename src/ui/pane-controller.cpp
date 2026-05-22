@@ -259,6 +259,20 @@ std::vector<int> PaneController::selectedRowsUnderCurrentOrder() const {
   return rows;
 }
 
+SortDispatch PaneController::setGroupBy(
+    fast_explorer::core::GroupKey key) {
+  groupBy_ = key;
+  // Capture wall-clock once; the same `now` is used by both the sort
+  // comparator and any subsequent enumerateGroups call.
+  FILETIME ft{};
+  GetSystemTimeAsFileTime(&ft);
+  ULARGE_INTEGER ui{};
+  ui.LowPart  = ft.dwLowDateTime;
+  ui.HighPart = ft.dwHighDateTime;
+  groupNow_ = ui.QuadPart;
+  return requestSort(sortCoord_.currentSortSpec().key);
+}
+
 bool PaneController::navigateInternal(const std::wstring& path) {
   using fast_explorer::core::DirectoryEnumerator;
   using fast_explorer::core::EnumerationError;

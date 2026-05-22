@@ -9,6 +9,7 @@
 #include <unordered_set>
 #include <vector>
 
+#include "core/file-grouping.h"
 #include "core/file-model-store.h"
 #include "core/file-sort.h"
 #include "core/fs-watcher.h"
@@ -94,8 +95,18 @@ class PaneController {
   // restart policy and the synchronous-vs-background split.
   SortDispatch requestSort(fast_explorer::core::SortKey key) {
     return sortCoord_.requestSort(
-        key, workerActive_.load(std::memory_order_acquire));
+        key,
+        workerActive_.load(std::memory_order_acquire),
+        groupBy_, groupNow_);
   }
+
+  fast_explorer::core::GroupKey groupBy() const noexcept { return groupBy_; }
+  uint64_t groupNow() const noexcept { return groupNow_; }
+
+  // Sets the grouping key, captures `now`, and triggers a re-sort with
+  // the current sort spec. Returns the SortDispatch from the underlying
+  // requestSort so the caller can react to async vs sync sort completion.
+  SortDispatch setGroupBy(fast_explorer::core::GroupKey key);
   void applyPendingSort(std::uint32_t gen) {
     if (workerActive_.load(std::memory_order_acquire)) {
       return;
@@ -276,6 +287,9 @@ class PaneController {
   FilterPattern currentFilter_;
   PaneSortCoordinator sortCoord_;
   ShellWorker shellWorker_;
+  fast_explorer::core::GroupKey groupBy_ =
+      fast_explorer::core::GroupKey::None;
+  uint64_t groupNow_ = 0;
   std::jthread worker_;
 };
 
