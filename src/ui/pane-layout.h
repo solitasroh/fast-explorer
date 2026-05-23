@@ -71,8 +71,6 @@ struct PaneLayoutResult {
 // Computes a full layout result (pane slots + splitter descriptors) for
 // the given preset and splitter ratios. reservedTop/reservedBottom are
 // pixel heights excluded from the pane area (address bar / status bar).
-// Tri_* and Quad_* cases are unimplemented and return an empty result
-// until the corresponding later tasks fill them in.
 [[nodiscard]] PaneLayoutResult computePaneLayout(
     fast_explorer::core::LayoutPreset preset,
     const SplitterRatios& ratios,
