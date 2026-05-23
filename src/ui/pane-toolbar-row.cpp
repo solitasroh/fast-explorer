@@ -237,18 +237,7 @@ LRESULT CALLBACK addressEditNcPaddingSubclass(
       // visually contiguous with the text bg. PaneToolbarRow's
       // WM_CTLCOLOREDIT returns RGB(40,40,40) in dark mode and
       // system COLOR_WINDOW in light.
-      const bool dark = []() {
-        HKEY key = nullptr;
-        if (RegOpenKeyExW(HKEY_CURRENT_USER,
-                          L"Software\\Microsoft\\Windows\\CurrentVersion\\"
-                          L"Themes\\Personalize",
-                          0, KEY_READ, &key) != ERROR_SUCCESS) return false;
-        DWORD v = 1, sz = sizeof(v);
-        LONG r = RegQueryValueExW(key, L"AppsUseLightTheme", nullptr, nullptr,
-                                  reinterpret_cast<BYTE*>(&v), &sz);
-        RegCloseKey(key);
-        return r == ERROR_SUCCESS && v == 0;
-      }();
+      const bool dark = isAppInDarkMode();
       HBRUSH bg = CreateSolidBrush(
           dark ? RGB(40, 40, 40) : GetSysColor(COLOR_WINDOW));
       FillRect(dc, &outer, bg);
