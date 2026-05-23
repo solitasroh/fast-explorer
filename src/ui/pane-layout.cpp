@@ -1,9 +1,5 @@
 #include "ui/pane-layout.h"
 
-#include <algorithm>
-
-#include "ui/splitter-ratios.h"
-
 namespace {
 
 constexpr int kSplitterThicknessDip = 1;
