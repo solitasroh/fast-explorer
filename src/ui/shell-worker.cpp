@@ -7,51 +7,12 @@
 
 #include <utility>
 
+#include "ui/com-raii.h"
 #include "ui/messages.h"
 
 namespace fast_explorer::ui {
 
 namespace {
-
-// Minimal RAII wrapper for a COM interface pointer. Releases on
-// destruction so each helper can early-return from any HRESULT
-// failure without remembering to chain release calls. put() yields
-// a T** suitable for COM creation APIs (CoCreateInstance,
-// SHCreateItemFromParsingName).
-template <class T>
-class ComScope {
- public:
-  ComScope() = default;
-  ~ComScope() { reset(); }
-  ComScope(const ComScope&) = delete;
-  ComScope& operator=(const ComScope&) = delete;
-  ComScope(ComScope&& other) noexcept : p_(other.p_) { other.p_ = nullptr; }
-  ComScope& operator=(ComScope&& other) noexcept {
-    if (this != &other) {
-      reset();
-      p_ = other.p_;
-      other.p_ = nullptr;
-    }
-    return *this;
-  }
-
-  T* get() const noexcept { return p_; }
-  T* operator->() const noexcept { return p_; }
-  T** put() noexcept {
-    reset();
-    return &p_;
-  }
-  explicit operator bool() const noexcept { return p_ != nullptr; }
-  void reset() noexcept {
-    if (p_ != nullptr) {
-      p_->Release();
-      p_ = nullptr;
-    }
-  }
-
- private:
-  T* p_ = nullptr;
-};
 
 // FOF_ALLOWUNDO permits recycle-bin routing; FOFX_RECYCLEONDELETE
 // forces it even when the drive's recycle quota is exceeded, so a
@@ -66,8 +27,8 @@ constexpr DWORD kSilentRecycleFlags = FOF_ALLOWUNDO |
 
 // Creates an IFileOperation already configured for silent-recycle
 // behaviour. Returns empty scope on failure.
-ComScope<IFileOperation> makeFileOp() noexcept {
-  ComScope<IFileOperation> op;
+ComPtr<IFileOperation> makeFileOp() noexcept {
+  ComPtr<IFileOperation> op;
   HRESULT hr = CoCreateInstance(CLSID_FileOperation, nullptr,
                                 CLSCTX_INPROC_SERVER,
                                 IID_PPV_ARGS(op.put()));
@@ -83,8 +44,8 @@ ComScope<IFileOperation> makeFileOp() noexcept {
 
 // Resolves an IShellItem from an absolute Win32 path. Returns empty
 // scope when the shell cannot parse the path (missing parent, etc).
-ComScope<IShellItem> shellItem(const std::wstring& path) noexcept {
-  ComScope<IShellItem> item;
+ComPtr<IShellItem> shellItem(const std::wstring& path) noexcept {
+  ComPtr<IShellItem> item;
   HRESULT hr = SHCreateItemFromParsingName(path.c_str(), nullptr,
                                            IID_PPV_ARGS(item.put()));
   if (FAILED(hr)) {
