@@ -1,4 +1,4 @@
-#include "ui/pane-splitter.h"
+#include "winui_lite/chrome/pane-splitter.h"
 
 #include <windowsx.h>
 
