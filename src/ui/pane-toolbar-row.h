@@ -118,13 +118,13 @@ class PaneToolbarRow {
   HWND addressDropdownBtn_ = nullptr;
   HWND navToolbar_ = nullptr;
   HWND hamburger_ = nullptr;
-  // mdl2Font_ holds the Lucide icon font (name is historical from
-  // the earlier MDL2 iteration; kept to avoid noise in this commit).
+  // iconFont_ holds the Lucide / Segoe Fluent Icons polyfill font used
+  // for the navigation toolbar and hamburger glyphs.
   // rowFont_ is the system text font applied to the address-bar
   // ComboBoxEx so its visible textbox is a comfortable size — the
   // layout() measurement then uses that textbox height as the
   // common innerH for the rest of the row.
-  HFONT mdl2Font_ = nullptr;
+  HFONT iconFont_ = nullptr;
   HFONT rowFont_ = nullptr;
   std::size_t paneIdx_ = 0;
 };

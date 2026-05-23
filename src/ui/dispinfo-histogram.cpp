@@ -3,7 +3,6 @@
 #include <stdio.h>
 #include <wchar.h>
 
-#include <climits>
 #include <limits>
 
 namespace fast_explorer::ui {

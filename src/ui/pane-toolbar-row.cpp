@@ -349,7 +349,7 @@ bool PaneToolbarRow::create(HWND parent, HINSTANCE instance,
       0, 0, 0, 0, parent, nullptr, instance, this);
   if (hwnd_ == nullptr) return false;
   enableProcessDarkMode();  // one-shot per process; harmless if repeated
-  mdl2Font_ = createIconFont(GetDpiForWindow(hwnd_));
+  iconFont_ = createIconFont(GetDpiForWindow(hwnd_));
   rowFont_ = createRowFont(GetDpiForWindow(hwnd_));
   if (!createNavToolbar(instance)) {
     // Toolbar creation is non-fatal; the address bar can still own
@@ -383,9 +383,9 @@ bool PaneToolbarRow::createHamburger(HINSTANCE instance) {
       reinterpret_cast<HMENU>(static_cast<UINT_PTR>(
           packCmd(kTbHamburger, paneIdx_))),
       instance, nullptr);
-  if (hamburger_ != nullptr && mdl2Font_ != nullptr) {
+  if (hamburger_ != nullptr && iconFont_ != nullptr) {
     SendMessageW(hamburger_, WM_SETFONT,
-                 reinterpret_cast<WPARAM>(mdl2Font_), TRUE);
+                 reinterpret_cast<WPARAM>(iconFont_), TRUE);
   }
   return hamburger_ != nullptr;
 }
@@ -463,9 +463,9 @@ bool PaneToolbarRow::createNavToolbar(HINSTANCE instance) {
   SendMessageW(navToolbar_, TB_ADDBUTTONS,
                static_cast<WPARAM>(kNavButtonCount),
                reinterpret_cast<LPARAM>(btns));
-  if (mdl2Font_ != nullptr) {
+  if (iconFont_ != nullptr) {
     SendMessageW(navToolbar_, WM_SETFONT,
-                 reinterpret_cast<WPARAM>(mdl2Font_), TRUE);
+                 reinterpret_cast<WPARAM>(iconFont_), TRUE);
   }
   // TB_AUTOSIZE intentionally omitted — with CCS_NORESIZE +
   // explicit TB_SETBUTTONSIZE the toolbar already has all its
@@ -489,9 +489,9 @@ void PaneToolbarRow::destroy() {
   }
   // Destroy the fonts after the children so any WM_SETFONT
   // handle reference is released first via the cascade above.
-  if (mdl2Font_ != nullptr) {
-    DeleteObject(mdl2Font_);
-    mdl2Font_ = nullptr;
+  if (iconFont_ != nullptr) {
+    DeleteObject(iconFont_);
+    iconFont_ = nullptr;
   }
   if (rowFont_ != nullptr) {
     DeleteObject(rowFont_);
@@ -534,11 +534,11 @@ LRESULT PaneToolbarRow::handleNavToolbarCustomDraw(LPARAM lParam) {
       const WORD btnId = unpackButton(
           static_cast<WORD>(cd->nmcd.dwItemSpec));
       const wchar_t* glyph = glyphForButtonId(btnId);
-      if (glyph == nullptr || mdl2Font_ == nullptr) {
+      if (glyph == nullptr || iconFont_ == nullptr) {
         return CDRF_DODEFAULT;
       }
       HDC hdc = cd->nmcd.hdc;
-      HGDIOBJ oldFont = SelectObject(hdc, mdl2Font_);
+      HGDIOBJ oldFont = SelectObject(hdc, iconFont_);
       const int oldBkMode = SetBkMode(hdc, TRANSPARENT);
       const RowTheme theme = currentRowTheme();
       const COLORREF color = (cd->nmcd.uItemState & CDIS_DISABLED)
@@ -574,8 +574,8 @@ void PaneToolbarRow::drawHamburgerItem(LPARAM lParam) {
     FrameRect(hdc, &dis->rcItem, frame);
     DeleteObject(frame);
   }
-  if (mdl2Font_ != nullptr) {
-    HGDIOBJ oldFont = SelectObject(hdc, mdl2Font_);
+  if (iconFont_ != nullptr) {
+    HGDIOBJ oldFont = SelectObject(hdc, iconFont_);
     const int oldBkMode = SetBkMode(hdc, TRANSPARENT);
     const COLORREF color = (dis->itemState & ODS_DISABLED)
                                ? theme.disabledText
@@ -671,9 +671,9 @@ void PaneToolbarRow::onDpiChanged(UINT newDpi) {
   // the HFONT — controls hold the raw handle until told otherwise.
   HFONT newIcon = createIconFont(newDpi);
   HFONT newText = createRowFont(newDpi);
-  HFONT oldIcon = mdl2Font_;
+  HFONT oldIcon = iconFont_;
   HFONT oldText = rowFont_;
-  mdl2Font_ = newIcon;
+  iconFont_ = newIcon;
   rowFont_ = newText;
   if (navToolbar_ != nullptr && newIcon != nullptr) {
     SendMessageW(navToolbar_, WM_SETFONT,
@@ -881,7 +881,7 @@ LRESULT PaneToolbarRow::handleMessage(HWND hwnd, UINT msg, WPARAM wParam,
         // Use the Segoe Fluent icon font for crisp Win11-style chevron;
         // fall back to the row text font (then a Unicode chevron) if
         // the icon font failed to load.
-        HFONT useFnt = mdl2Font_ != nullptr ? mdl2Font_ : rowFont_;
+        HFONT useFnt = iconFont_ != nullptr ? iconFont_ : rowFont_;
         HGDIOBJ oldFnt = useFnt != nullptr
                              ? SelectObject(dis->hDC, useFnt)
                              : nullptr;
