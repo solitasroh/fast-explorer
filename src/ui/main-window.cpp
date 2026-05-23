@@ -33,7 +33,7 @@
 #include "ui/messages.h"
 #include "ui/pane-controller.h"
 #include "winui_lite/chrome/pane-layout.h"
-#include "ui/pane-manager.h"
+#include "winui_lite/chrome/pane-manager.h"
 #include "winui_lite/chrome/pane-splitter.h"
 #include "../../resources/resource-ids.h"
 #include "ui/clipboard-ops.h"
@@ -745,7 +745,7 @@ void MainWindow::enterLayout(fast_explorer::core::LayoutPreset target) {
 
   // Grow.
   while (paneManager_->count() < targetCount &&
-         paneManager_->count() < PaneManager::kMaxPanes) {
+         paneManager_->count() < PaneManager<PaneController>::kMaxPanes) {
     const std::wstring fallback = paneManager_->active().currentPath();
     paneManager_->openPane(hwnd_, L"");  // create slot only
     const std::size_t newIdx = paneManager_->count() - 1;
@@ -890,7 +890,7 @@ void MainWindow::restoreLayoutFromSession(
   // from state.panePaths[0] / lastPath). Open slots 1..targetCount-1
   // with their persisted paths.
   for (std::size_t i = 1;
-       i < targetCount && i < PaneManager::kMaxPanes; ++i) {
+       i < targetCount && i < PaneManager<PaneController>::kMaxPanes; ++i) {
     paneManager_->openPane(hwnd_, L"");  // create slot
     if (!installPaneAt(i)) {
       paneManager_->closePane();
@@ -1666,7 +1666,7 @@ LRESULT MainWindow::onCreate(HWND hwnd) {
     addressBarPopup_ = std::make_unique<AddressBarPopup>(hwnd);
     searchPopup_ = std::make_unique<SearchPopup>(hwnd);
   }
-  paneManager_ = std::make_unique<PaneManager>();
+  paneManager_ = std::make_unique<PaneManager<PaneController>>();
   paneManager_->openInitial(hwnd);
   pane_ = &paneManager_->active();
   {

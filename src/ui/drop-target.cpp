@@ -7,7 +7,7 @@
 #include "core/file-entry.h"
 #include "core/file-model-store.h"
 #include "ui/pane-controller.h"
-#include "ui/pane-manager.h"
+#include "winui_lite/chrome/pane-manager.h"
 #include "ui/shell-bind.h"
 
 namespace fast_explorer::ui {
@@ -23,7 +23,8 @@ std::wstring joinPath(const std::wstring& base, std::wstring_view leaf) {
 
 }  // namespace
 
-PaneDropTarget::PaneDropTarget(HWND lv, PaneManager* paneManager,
+PaneDropTarget::PaneDropTarget(HWND lv,
+                                PaneManager<PaneController>* paneManager,
                                 std::size_t paneIdx) noexcept
     : lv_(lv), paneManager_(paneManager), paneIdx_(paneIdx) {}
 

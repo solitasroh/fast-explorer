@@ -68,8 +68,6 @@ set(FE_APP_SOURCES
   src/ui/search-popup.h
   src/ui/pane-controller.cpp
   src/ui/pane-controller.h
-  src/ui/pane-manager.cpp
-  src/ui/pane-manager.h
   src/ui/pane-sort-coordinator.cpp
   src/ui/pane-sort-coordinator.h
   src/ui/result-channel.h
@@ -187,6 +185,7 @@ add_library(winui_lite STATIC
   lib/winui_lite/chrome/layout-preset.h
   lib/winui_lite/chrome/pane-layout.cpp
   lib/winui_lite/chrome/pane-layout.h
+  lib/winui_lite/chrome/pane-manager.h
   lib/winui_lite/chrome/pane-splitter.cpp
   lib/winui_lite/chrome/pane-splitter.h
   lib/winui_lite/chrome/splitter-ratios.h
@@ -328,8 +327,6 @@ add_executable(core-tests
   src/ui/search-popup.h
   src/ui/pane-controller.cpp
   src/ui/pane-controller.h
-  src/ui/pane-manager.cpp
-  src/ui/pane-manager.h
   src/ui/pane-sort-coordinator.cpp
   src/ui/pane-sort-coordinator.h
   src/ui/result-channel.h
