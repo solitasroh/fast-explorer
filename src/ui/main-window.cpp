@@ -34,7 +34,7 @@
 #include "ui/pane-controller.h"
 #include "winui_lite/chrome/pane-layout.h"
 #include "ui/pane-manager.h"
-#include "ui/pane-splitter.h"
+#include "winui_lite/chrome/pane-splitter.h"
 #include "../../resources/resource-ids.h"
 #include "ui/clipboard-ops.h"
 #include "winui_lite/chrome/com-raii.h"

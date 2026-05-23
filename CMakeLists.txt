@@ -62,7 +62,6 @@ set(FE_APP_SOURCES
   src/ui/listview-group-callback.h
   src/ui/shell-worker.cpp
   src/ui/shell-worker.h
-  src/ui/splitter-resize.h
   src/ui/filter-pattern.cpp
   src/ui/filter-pattern.h
   src/ui/search-popup.cpp
@@ -71,8 +70,6 @@ set(FE_APP_SOURCES
   src/ui/pane-controller.h
   src/ui/pane-manager.cpp
   src/ui/pane-manager.h
-  src/ui/pane-splitter.cpp
-  src/ui/pane-splitter.h
   src/ui/pane-sort-coordinator.cpp
   src/ui/pane-sort-coordinator.h
   src/ui/result-channel.h
@@ -190,7 +187,10 @@ add_library(winui_lite STATIC
   lib/winui_lite/chrome/layout-preset.h
   lib/winui_lite/chrome/pane-layout.cpp
   lib/winui_lite/chrome/pane-layout.h
+  lib/winui_lite/chrome/pane-splitter.cpp
+  lib/winui_lite/chrome/pane-splitter.h
   lib/winui_lite/chrome/splitter-ratios.h
+  lib/winui_lite/chrome/splitter-resize.h
 )
 
 target_include_directories(winui_lite PUBLIC lib)
@@ -322,7 +322,6 @@ add_executable(core-tests
   src/ui/label-edit-controller.h
   src/ui/shell-worker.cpp
   src/ui/shell-worker.h
-  src/ui/splitter-resize.h
   src/ui/filter-pattern.cpp
   src/ui/filter-pattern.h
   src/ui/search-popup.cpp

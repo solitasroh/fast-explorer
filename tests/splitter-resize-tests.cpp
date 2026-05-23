@@ -1,6 +1,6 @@
 #include "test-harness.h"
-#include "ui/pane-splitter.h"
-#include "ui/splitter-resize.h"
+#include "winui_lite/chrome/pane-splitter.h"
+#include "winui_lite/chrome/splitter-resize.h"
 
 using fast_explorer::ui::computeNewRatio;
 using fast_explorer::ui::computeNewCumulativeRatio;
