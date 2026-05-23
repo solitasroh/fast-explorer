@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>UI 부품을 라이브러리로 빼는 계획</title>
+<title>winui_lite — 셸을 갈아 끼울 수 있는 UI 라이브러리</title>
 <style>
   :root {
     --bg: #fafaf7;
@@ -12,6 +12,7 @@
     --line: #e3e3dc;
     --accent: #2c5d8a;
     --accent-2: #2d7a3d;
+    --accent-3: #7a4e9c;
     --warn: #b25600;
     --code-bg: #f0efe9;
   }
@@ -23,6 +24,7 @@
       --line: #3a3a3a;
       --accent: #74a8d6;
       --accent-2: #7bbf8a;
+      --accent-3: #c099e0;
       --warn: #e29550;
       --code-bg: #2a2a2a;
     }
@@ -34,13 +36,13 @@
     font-family: -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo",
                  "Malgun Gothic", "Segoe UI", sans-serif;
     line-height: 1.7;
-    max-width: 780px;
+    max-width: 800px;
     margin: 0 auto;
     padding: 24px 20px 64px;
     font-size: 16px;
   }
   h1 {
-    font-size: 1.6rem;
+    font-size: 1.55rem;
     margin: 0 0 8px;
     padding-bottom: 12px;
     border-bottom: 2px solid var(--line);
@@ -101,6 +103,7 @@
     white-space: nowrap;
   }
   .tag-lib { background: rgba(45, 122, 61, 0.15); color: var(--accent-2); }
+  .tag-port { background: rgba(122, 78, 156, 0.15); color: var(--accent-3); }
   .tag-app { background: rgba(44, 93, 138, 0.15); color: var(--accent); }
   .step {
     background: var(--code-bg);
@@ -110,6 +113,7 @@
     border-radius: 0 6px 6px 0;
   }
   .step.lib { border-left-color: var(--accent-2); }
+  .step.port { border-left-color: var(--accent-3); }
   .step .num {
     display: inline-block;
     background: var(--accent);
@@ -123,6 +127,7 @@
     font-weight: 700;
   }
   .step.lib .num { background: var(--accent-2); }
+  .step.port .num { background: var(--accent-3); }
   .note {
     background: rgba(178, 86, 0, 0.08);
     border-left: 3px solid var(--warn);
@@ -137,371 +142,409 @@
     margin: 10px 0;
     border-radius: 0 6px 6px 0;
   }
+  .keyidea {
+    background: rgba(122, 78, 156, 0.08);
+    border-left: 3px solid var(--accent-3);
+    padding: 12px 16px;
+    margin: 16px 0;
+    border-radius: 0 6px 6px 0;
+  }
   .muted { color: var(--muted); font-size: 0.92em; }
   .check { color: var(--accent); font-weight: 700; }
 </style>
 </head>
 <body>
 
-<h1>UI 부품을 가벼운 라이브러리로 빼는 계획</h1>
-<p>메인 윈도우 한 파일(3,242줄)을 쪼개되, 그 김에 <b>"다른 윈도우 앱에서도 그대로 가져다 쓸 수 있는 부품"</b>은 따로 폴더로 빼서 작은 라이브러리로 만듭니다. 파일 탐색기 전용 코드와 분리됩니다.</p>
+<h1>winui_lite — 셸을 갈아 끼울 수 있는 가벼운 UI 라이브러리</h1>
+<p>메인 윈도우를 쪼개는 김에, 일반 UI 부품을 <span class="file">winui_lite</span>라는 별도 라이브러리로 빼냅니다. 셸에 묶인 부분도 "빈 칸" 형태로 라이브러리에 정의해 두고, 앱이 그 빈 칸을 셸 부품으로 채웁니다. 다른 종류의 데이터(가짜 데이터, 로그, 메모리)로도 같은 UI가 동작합니다.</p>
 
 <h2>한눈에 보기</h2>
 <p>지금:</p>
 <pre>FastExplorer (실행 파일)
-└─ src/ui/  (3,242줄짜리 main-window.cpp + 67개 파일이 한 덩어리)</pre>
+└─ src/ui/  (3,242줄짜리 main-window.cpp + 67개 파일이 한 덩어리)
+   ↑ 셸 코드와 UI 코드가 같은 곳에 섞여 있음</pre>
 <p>바꾸려는 모양:</p>
-<pre>fast_ui (작은 라이브러리, 파일 탐색기 개념을 모름)
-└─ lib/ui/  창 만들기, 패널 배치, 스플리터, 툴바, 테마/DPI, COM 도우미...
+<pre>winui_lite (라이브러리)
+├─ chrome   창/패널/스플리터/툴바/상태바/명령 라우터
+├─ ports    "이런 일은 누가 해줘야 합니다" 빈 칸들
+└─ widgets  주소 입력칸 같은 일반 입력 부품
 
-FastExplorer (실행 파일, fast_ui를 가져다 씀)
-└─ src/ui/  주소창, 파일 목록, 클립보드, 폴더 열기 등 탐색기 전용</pre>
+FastExplorer (실행 파일, winui_lite를 가져다 씀)
+└─ src/explorer/
+   ├─ adapters/  빈 칸을 셸 부품으로 채움
+   └─ main-window  winui_lite + 셸 부품들을 조립
+
+winui_lite_demo (작은 실행 파일)
+└─ examples/minimal-window/
+   ├─ in-memory-source  빈 칸을 "가짜 데이터"로 채움
+   └─ main  실행하면 같은 UI가 가짜 데이터로 동작</pre>
+
+<div class="keyidea">
+<b>핵심 아이디어 — "빈 칸"이 뭔가?</b><br><br>
+라이브러리에는 셸을 직접 부르는 코드는 한 줄도 없습니다. 대신 <b>"누군가 이런 일을 해줘야 함"</b>이라는 빈 칸을 만들어 둡니다.<br>
+예를 들어:
+<ul>
+  <li>"이 폴더 안의 아이템 목록을 알려줘" (ItemSource)</li>
+  <li>"이 아이템을 클립보드에 복사해줘" (ClipboardBackend)</li>
+  <li>"이 설정을 어딘가에 저장해줘" (SettingsStore)</li>
+  <li>"이 폴더 안에서 뭐가 바뀌면 알려줘" (ChangeNotifier)</li>
+</ul>
+빈 칸 자체는 라이브러리에 있고, 빈 칸을 채우는 <b>실제로 일하는 부품</b>은 앱에 있습니다. 앱은 시작할 때 "이 빈 칸은 이 부품으로 채워주세요" 하고 라이브러리에 알려줍니다.
+</div>
+
+<h2>왜 빈 칸까지 만드나 (그냥 폴더 분리 말고)</h2>
+<ul>
+  <li><b>UI가 셸에서 풀려남.</b> 라이브러리 코드는 "셸"이라는 개념을 모르고도 컴파일됩니다.</li>
+  <li><b>가짜 데이터로 UI 테스트 가능.</b> 클릭해서 동작이 맞는지 확인하는 데 진짜 파일이 필요 없습니다 → 자동 테스트가 쉬움.</li>
+  <li><b>다른 데이터로 같은 UI 재사용.</b> 나중에 "로그 항목 뷰어"를 만든다면, winui_lite는 그대로 두고 빈 칸을 로그 부품으로 채우면 됩니다. 새 UI 코드는 거의 0줄.</li>
+  <li><b>셸 호출이 한 곳에 모임.</b> 지금은 셸 API가 여러 파일에 흩어져 있음 → adapters 폴더 한 곳으로 모임. 셸 관련 버그가 한 곳에서 잡힘.</li>
+</ul>
 
 <h2>지금 상태</h2>
 <ul>
   <li><span class="file">src/ui/main-window.cpp</span> = 3,242줄, 함수 56개.</li>
-  <li><span class="file">src/ui/</span> 폴더 = 67개 파일. 일부는 이미 거의 독립적인 부품 (예: <span class="file">com-raii.h</span>, <span class="file">pane-layout.{h,cpp}</span>, <span class="file">splitter-ratios.{h,cpp}</span>, <span class="file">dispinfo-histogram.{h,cpp}</span>) — 사실상 라이브러리 후보.</li>
-  <li>나머지는 파일 탐색기 전용 (셸 API, 폴더 경로, 파일 복사 등).</li>
-  <li>지금은 둘이 같은 폴더에 섞여 있어서 어떤 게 재사용 가능한지 눈으로 구분 안 됨.</li>
+  <li><span class="file">src/ui/</span> 폴더 = 67개 파일. 절반쯤은 이미 거의 독립적, 나머지는 셸 의존.</li>
+  <li>셸 API 호출이 약 25개 파일에 흩어져 있음 (clipboard-ops, shell-worker, drop-source/target, address-bar-popup, navigation-cache 등).</li>
 </ul>
 
-<h2>왜 라이브러리로 빼나</h2>
-<ul>
-  <li><b>경계가 눈에 보임.</b> "이건 어떤 윈도우 앱이든 쓸 수 있는 부품" / "이건 우리 탐색기 전용" 이 폴더로 갈라집니다.</li>
-  <li><b>섞여 들어갈 일이 줄어듬.</b> 라이브러리 쪽 파일에서 "폴더", "파일", "셸" 같은 단어를 못 쓰게 막으면 자연스럽게 깔끔해집니다.</li>
-  <li><b>재사용 가능.</b> 나중에 다른 작은 도구 (예: 로그 뷰어, 데이터 비교 툴) 만들 때 이 라이브러리만 가져다 쓰면 창/패널 분할/툴바가 이미 동작합니다.</li>
-  <li><b>테스트가 쉬워짐.</b> 라이브러리는 파일 탐색기 없이도 빌드되고 단위 테스트 가능. 의존성이 적으니 빌드도 빠릅니다.</li>
-  <li><b>큰 비용 없이 가능.</b> 사실 절반 정도는 이미 독립적입니다. 폴더만 옮기고 빌드 타깃만 추가하면 됩니다.</li>
-</ul>
+<h2>세 층으로 나눈다</h2>
 
-<h2>어떤 부품이 어디로 가나</h2>
-
-<h3><span class="tag tag-lib">라이브러리</span> lib/ui/ — 어떤 Win32 앱이든 쓸 수 있는 부품</h3>
+<h3><span class="tag tag-lib">chrome</span> winui_lite/chrome — UI 부품 (셸을 모름)</h3>
 <table>
-  <thead>
-    <tr><th>부품</th><th>지금 파일</th><th>하는 일</th></tr>
-  </thead>
+  <thead><tr><th>부품</th><th>하는 일</th></tr></thead>
   <tbody>
-    <tr>
-      <td>COM 도우미</td>
-      <td><span class="file">com-raii.h</span></td>
-      <td>COM 객체 자동 정리 (이미 일반 부품)</td>
-    </tr>
-    <tr>
-      <td>스플리터 + 패널 배치</td>
-      <td><span class="file">pane-layout.{h,cpp}</span><br><span class="file">splitter-ratios.{h,cpp}</span></td>
-      <td>1/2/3/4 패널 위치 계산, 비율 저장 (이미 순수 계산만 함)</td>
-    </tr>
-    <tr>
-      <td>스플리터 드래그</td>
-      <td>(지금 main-window에 박혀 있음)</td>
-      <td>스플리터를 마우스로 끌어서 패널 크기 조절</td>
-    </tr>
-    <tr>
-      <td>테마 감지</td>
-      <td>(여러 파일에 흩어져 있음)</td>
-      <td>다크/라이트 모드 읽기, 바뀌면 알려주기</td>
-    </tr>
-    <tr>
-      <td>DPI 도우미</td>
-      <td><span class="file">dpi-scale.h</span></td>
-      <td>DPI 변경 처리, 픽셀 변환</td>
-    </tr>
-    <tr>
-      <td>창 뼈대</td>
-      <td>(지금 main-window 안)</td>
-      <td>창 만들기, 윈도우 메시지를 받아서 등록된 핸들러로 보냄</td>
-    </tr>
-    <tr>
-      <td>툴바 한 줄</td>
-      <td><span class="file">pane-toolbar-row.{h,cpp}</span>의 일반 부분</td>
-      <td>다크모드 대응 툴바, 커스텀 그리기, NC 패딩</td>
-    </tr>
-    <tr>
-      <td>명령 라우터</td>
-      <td>(지금 onCommand의 거대 switch)</td>
-      <td>메뉴 ID/단축키 → 함수 호출 매핑</td>
-    </tr>
-    <tr>
-      <td>상태바</td>
-      <td>(지금 main-window 안)</td>
-      <td>상태바 칸 나누기, 텍스트 갱신</td>
-    </tr>
-    <tr>
-      <td>성능 측정</td>
-      <td><span class="file">dispinfo-histogram.{h,cpp}</span></td>
-      <td>지연 시간 분포 기록 (이미 일반 부품)</td>
-    </tr>
-    <tr>
-      <td>스크롤바 다크</td>
-      <td><span class="file">dark-scrollbar-hook.{h,cpp}</span></td>
-      <td>다크모드 스크롤바</td>
-    </tr>
+    <tr><td>window-base</td><td>창 만들기, 윈도우 메시지 디스패치</td></tr>
+    <tr><td>pane-manager + splitter</td><td>1/2/3/4 패널 배치, 스플리터 드래그</td></tr>
+    <tr><td>toolbar-row</td><td>다크모드 대응 툴바, 커스텀 그리기</td></tr>
+    <tr><td>status-bar</td><td>상태바 칸 나누기, 텍스트 갱신</td></tr>
+    <tr><td>command-router</td><td>메뉴 ID/단축키 → 함수 매핑</td></tr>
+    <tr><td>theme-watcher</td><td>다크/라이트 감지 + 변경 알림</td></tr>
+    <tr><td>dpi-helpers</td><td>DPI 변환</td></tr>
+    <tr><td>com-raii, dispinfo-histogram, dark-scrollbar</td><td>이미 거의 독립적인 부품들</td></tr>
   </tbody>
 </table>
 
-<h3><span class="tag tag-app">앱 전용</span> src/ui/ — 파일 탐색기에서만 쓰는 코드</h3>
+<h3><span class="tag tag-port">ports</span> winui_lite/ports — 빈 칸 (앱이 채워야 함)</h3>
 <table>
-  <thead><tr><th>부품</th><th>왜 앱에 남나</th></tr></thead>
+  <thead><tr><th>빈 칸 이름</th><th>책임</th><th>탐색기에서 누가 채우나</th></tr></thead>
   <tbody>
-    <tr><td>주소창 (경로 입력, 자동완성)</td><td>셸 경로를 알아야 함</td></tr>
-    <tr><td>파일 목록 (ListView + 셸 dispinfo)</td><td>셸 폴더/파일 개념에 묶임</td></tr>
-    <tr><td>아이콘 캐시</td><td>셸 아이콘 시스템 사용</td></tr>
-    <tr><td>클립보드 (CF_HDROP, 잘라내기)</td><td>파일 경로 포맷</td></tr>
-    <tr><td>드래그 / 드롭</td><td>IDataObject + 파일 경로</td></tr>
-    <tr><td>폴더 열기 / 폴더 변경 감지</td><td>파일시스템 API</td></tr>
-    <tr><td>필터 팝업, 메뉴 항목 정의</td><td>탐색기 메뉴 ID</td></tr>
-    <tr><td>메인 윈도우</td><td>위 부품들을 라이브러리 부품 위에 조립</td></tr>
+    <tr><td>ItemSource</td><td>"이 위치의 아이템 목록 알려줘"</td><td>ShellItemSource (셸 폴더 열거)</td></tr>
+    <tr><td>ItemDispatcher</td><td>"이 아이템의 이름/크기/날짜/아이콘 알려줘"</td><td>ShellDispatcher (셸 dispinfo)</td></tr>
+    <tr><td>ItemActivator</td><td>"이 아이템 더블클릭 시 뭐 해야 해?"</td><td>ShellActivator (폴더면 들어가고, 파일이면 실행)</td></tr>
+    <tr><td>ClipboardBackend</td><td>"이 아이템을 복사/잘라내기 해줘"</td><td>ShellClipboard (CF_HDROP 등)</td></tr>
+    <tr><td>DragDropBackend</td><td>"드래그 시작/드롭 받기"</td><td>ShellDragDrop (IDataObject)</td></tr>
+    <tr><td>ChangeNotifier</td><td>"이 위치 안의 변경 알려줘"</td><td>ShellChangeNotifier (fs watcher)</td></tr>
+    <tr><td>SettingsStore</td><td>"이 설정 저장/읽기"</td><td>RegistrySettingsStore</td></tr>
+    <tr><td>ContextMenu</td><td>"이 아이템 우클릭 시 메뉴 항목 알려줘"</td><td>ShellContextMenu</td></tr>
+  </tbody>
+</table>
+
+<h3><span class="tag tag-app">app</span> src/explorer — 셸 부품 + 조립</h3>
+<table>
+  <thead><tr><th>덩어리</th><th>역할</th></tr></thead>
+  <tbody>
+    <tr><td>adapters/shell-*.{h,cpp}</td><td>위 빈 칸들을 셸 API로 채우는 실제 부품들</td></tr>
+    <tr><td>main-window.{h,cpp} (얇아짐)</td><td>winui_lite chrome + 셸 어댑터들을 시작할 때 묶음. 약 300줄.</td></tr>
+    <tr><td>menu-actions.{h,cpp}</td><td>"새 폴더", "이름 바꾸기" 같은 탐색기 전용 명령 동작</td></tr>
+    <tr><td>address-completion.{h,cpp}</td><td>경로 자동완성 (셸 의존)</td></tr>
   </tbody>
 </table>
 
 <h2>폴더 구조</h2>
 <pre>fast-explorer/
-├─ lib/                        ← 새로 만드는 폴더
-│  └─ ui/
-│     ├─ com-raii.h
-│     ├─ dpi-scale.h
-│     ├─ theme-watcher.{h,cpp}     ← 새로 묶음
-│     ├─ window-base.{h,cpp}       ← 새로 빼냄
-│     ├─ pane-layout.{h,cpp}       ← src/ui/ 에서 이동
-│     ├─ splitter-ratios.{h,cpp}   ← 이동
-│     ├─ splitter-drag.{h,cpp}     ← main-window에서 빼냄
-│     ├─ toolbar-row.{h,cpp}       ← pane-toolbar-row 일반 부분
-│     ├─ command-router.{h,cpp}    ← onCommand 골격
-│     ├─ status-bar.{h,cpp}        ← main-window에서 빼냄
-│     ├─ dispinfo-histogram.{h,cpp}← 이동
-│     └─ dark-scrollbar-hook.{h,cpp}← 이동
+├─ lib/
+│  └─ winui_lite/
+│     ├─ chrome/
+│     │  ├─ window-base.{h,cpp}
+│     │  ├─ pane-manager.{h,cpp}
+│     │  ├─ splitter.{h,cpp}
+│     │  ├─ pane-layout.{h,cpp}        ← src/ui/에서 이동
+│     │  ├─ splitter-ratios.{h,cpp}    ← 이동
+│     │  ├─ toolbar-row.{h,cpp}        ← pane-toolbar-row의 일반 부분
+│     │  ├─ status-bar.{h,cpp}
+│     │  ├─ command-router.{h,cpp}
+│     │  ├─ theme-watcher.{h,cpp}
+│     │  ├─ dpi-scale.h                ← 이동
+│     │  ├─ com-raii.h                 ← 이동
+│     │  ├─ dispinfo-histogram.{h,cpp} ← 이동
+│     │  └─ dark-scrollbar-hook.{h,cpp}← 이동
+│     ├─ ports/
+│     │  ├─ item-source.h
+│     │  ├─ item-dispatcher.h
+│     │  ├─ item-activator.h
+│     │  ├─ clipboard-backend.h
+│     │  ├─ drag-drop-backend.h
+│     │  ├─ change-notifier.h
+│     │  ├─ settings-store.h
+│     │  └─ context-menu.h
+│     └─ widgets/
+│        └─ address-input.{h,cpp}      ← 일반 입력 부품
 │
-├─ src/                        ← 지금처럼 앱 코드
-│  └─ ui/
-│     ├─ main-window.{h,cpp}      ← 약 400~500줄로 줄어듬
-│     ├─ shell-listview.{h,cpp}   ← 파일 목록 + 셸 dispinfo
-│     ├─ address-bar.{h,cpp}      ← 경로 입력
-│     ├─ pane-navigation.{h,cpp}  ← 폴더 열기 + fs 변경
-│     ├─ clipboard-ops.{h,cpp}    ← (이미 있음)
-│     ├─ drop-source/target...    ← 그대로
-│     └─ (기타 파일 탐색기 전용)
+├─ src/
+│  └─ explorer/                        ← src/ui/에서 이름 바뀜
+│     ├─ adapters/
+│     │  ├─ shell-item-source.{h,cpp}
+│     │  ├─ shell-dispatcher.{h,cpp}
+│     │  ├─ shell-activator.{h,cpp}
+│     │  ├─ shell-clipboard.{h,cpp}
+│     │  ├─ shell-drag-drop.{h,cpp}
+│     │  ├─ shell-change-notifier.{h,cpp}
+│     │  ├─ registry-settings-store.{h,cpp}
+│     │  └─ shell-context-menu.{h,cpp}
+│     ├─ main-window.{h,cpp}          ← 약 300줄로 줄어듬
+│     ├─ menu-actions.{h,cpp}
+│     ├─ address-completion.{h,cpp}
+│     └─ (기존 탐색기 전용 파일들)
 │
-├─ examples/                   ← 새로 추가 (선택)
+├─ examples/
 │  └─ minimal-window/
-│     └─ main.cpp              ← lib/ui만 써서 빈 창 + 4분할 패널 띄움
+│     ├─ in-memory-source.{h,cpp}      ← 가짜 데이터 (메모리에 아이템 10개)
+│     ├─ noop-clipboard.{h,cpp}        ← 아무것도 안 하는 가짜
+│     ├─ memory-settings.{h,cpp}       ← std::map에 저장
+│     └─ main.cpp                      ← winui_lite + 위 가짜들로 띄움
 │
-└─ CMakeLists.txt              ← 빌드 타깃 추가</pre>
+└─ CMakeLists.txt</pre>
 
-<h2>빌드 모양</h2>
-<p>지금 CMake 빌드 타깃:</p>
+<h2>빌드 타깃</h2>
 <ul>
-  <li><span class="file">FastExplorer</span> (실행 파일)</li>
-  <li><span class="file">core-tests</span> (테스트)</li>
-  <li><span class="file">FastExplorerBench</span> (성능 측정)</li>
-</ul>
-<p>바뀐 후:</p>
-<ul>
-  <li><span class="tag tag-lib">새로 추가</span> <span class="file">fast_ui</span> (정적 라이브러리, lib/ui 안의 파일들로 만듦)</li>
-  <li><span class="file">FastExplorer</span> → fast_ui를 가져다 씀</li>
-  <li><span class="file">core-tests</span> → fast_ui도 같이 테스트</li>
-  <li><span class="tag tag-lib">새로 추가</span> <span class="file">fast_ui_demo</span> (작은 데모 실행 파일, fast_ui만 사용)</li>
+  <li><span class="tag tag-lib">새로 추가</span> <span class="file">winui_lite</span> (정적 라이브러리)</li>
+  <li><span class="file">FastExplorer</span> → winui_lite + adapters 사용</li>
+  <li><span class="tag tag-lib">새로 추가</span> <span class="file">winui_lite_demo</span> (작은 실행 파일, in-memory 부품으로 동작)</li>
+  <li><span class="file">core-tests</span> → winui_lite도 테스트</li>
+  <li><span class="tag tag-lib">새로 추가</span> <span class="file">winui_lite_tests</span> (라이브러리 단위 테스트, 가짜 부품으로)</li>
 </ul>
 
 <h2>꼭 지킬 약속</h2>
 
 <div class="rule">
-<b>1. 라이브러리는 앱 코드를 못 봄.</b><br>
-lib/ui 안의 파일이 <span class="file">src/</span>의 무엇이든 <code>#include</code> 하면 안 됩니다. 한 방향으로만 의존합니다 (앱 → 라이브러리).
+<b>1. winui_lite는 src/explorer/를 못 봄.</b><br>
+한 방향 의존. lib → src 참조 발견 즉시 빌드 실패하도록 CMake 설정.
 </div>
 
 <div class="rule">
-<b>2. 라이브러리에는 "파일 탐색기" 단어가 안 나옴.</b><br>
-"폴더", "경로", "셸", "파일", "탐색기" 같은 말이 라이브러리 코드/주석/이름에 들어가면 그건 앱에 있어야 할 코드입니다. 검사용 grep 한 줄로 확인 가능합니다.
+<b>2. winui_lite 안에 "셸/탐색기/폴더/파일" 단어 금지.</b><br>
+"item", "location", "value" 같은 일반 용어만 사용. grep 한 줄로 검사.
 </div>
 
 <div class="rule">
-<b>3. 라이브러리는 Win32 + 표준 C++만 씀.</b><br>
-프로젝트의 다른 어떤 라이브러리도 안 가져옵니다 (단, COM/Shell 헤더는 OK — 그건 OS가 주는 것).
+<b>3. winui_lite는 셸/Shell32/ShellAPI 헤더 include 금지.</b><br>
+Win32 기본 헤더 + 표준 C++만. (objbase.h 같은 COM 기반은 OK)
 </div>
 
 <div class="rule">
-<b>4. 앱은 라이브러리 부품에 "콜백"을 끼워 넣는 식으로 씀.</b><br>
-예: 라이브러리의 "스플리터를 드래그함" 이벤트가 발생하면, 앱이 등록한 함수가 호출되어 패널 재배치를 함. 라이브러리가 앱 함수를 직접 부르지 않습니다.
+<b>4. 빈 칸은 작게 유지.</b><br>
+한 빈 칸에 함수 5개 이상이면 두 개로 나눔. 메서드가 1~3개인 게 이상적.
 </div>
 
-<h2>단계</h2>
-<p>위쪽이 라이브러리 만들기, 아래쪽이 앱 정리입니다. 한 단계 = 한 commit이 기본.</p>
+<div class="rule">
+<b>5. 빈 칸 결과는 항상 동기 또는 콜백.</b><br>
+ItemSource가 폴더를 비동기로 읽으면, 결과를 콜백으로 던집니다. winui_lite는 스레드를 만들지 않습니다 — 누가 어떻게 비동기로 처리할지는 채우는 쪽이 정함.
+</div>
+
+<h2>단계 (15단계)</h2>
+<p>색 = 어디 작업: <span class="tag tag-lib">lib chrome</span> <span class="tag tag-port">lib ports</span> <span class="tag tag-app">app</span></p>
 
 <div class="step lib">
-  <span class="num">1</span><b>준비 — 폴더와 빌드 타깃 만들기 (코드 0줄 이동)</b>
+  <span class="num">1</span><b>준비 — 폴더, CMake 타깃, 빌드 통과</b>
   <ul>
-    <li><span class="file">lib/ui/</span> 폴더 생성 (비어있음)</li>
-    <li>CMakeLists에 <span class="file">fast_ui</span> 정적 라이브러리 타깃 추가 (소스 0개)</li>
-    <li>FastExplorer가 fast_ui를 link하도록 연결</li>
-    <li>빌드 통과 확인</li>
+    <li><span class="file">lib/winui_lite/{chrome,ports,widgets}/</span> 빈 폴더 생성</li>
+    <li>CMake에 <span class="file">winui_lite</span> 정적 라이브러리 타깃 추가 (소스 0개로 시작)</li>
+    <li>FastExplorer가 link만 함</li>
+    <li>"lib → src 참조 금지" CMake 검증 규칙 추가</li>
   </ul>
 </div>
 
 <div class="step lib">
-  <span class="num">2</span><b>이미 일반적인 부품들 이동 (이건 진짜 그냥 이동)</b>
+  <span class="num">2</span><b>이미 일반적인 부품들 이동</b>
   <ul>
-    <li><span class="file">com-raii.h</span>, <span class="file">dispinfo-histogram.{h,cpp}</span>, <span class="file">pane-layout.{h,cpp}</span>, <span class="file">splitter-ratios.{h,cpp}</span>, <span class="file">dpi-scale.h</span>, <span class="file">dark-scrollbar-hook.{h,cpp}</span></li>
-    <li>이 파일들은 이미 거의 독립적임 → 위치만 옮기고 include 경로만 갱신</li>
-    <li>빌드 통과 + 테스트 통과 확인</li>
+    <li>com-raii, dpi-scale, pane-layout, splitter-ratios, dispinfo-histogram, dark-scrollbar-hook을 lib/winui_lite/chrome/으로</li>
+    <li>include 경로 갱신, 빌드 통과 확인</li>
   </ul>
 </div>
 
 <div class="step lib">
-  <span class="num">3</span><b>테마 감지 묶음 만들기</b>
+  <span class="num">3</span><b>테마/DPI 묶음</b>
   <ul>
-    <li>다크/라이트 읽기 코드가 여러 파일에 흩어져 있음 → <span class="file">lib/ui/theme-watcher.{h,cpp}</span>로 묶기</li>
-    <li>WM_SETTINGCHANGE 알림도 같이</li>
-    <li>이전 commit에서 이미 dedupe했던 <span class="file">isAppInDarkMode()</span>가 여기로 옮겨감</li>
+    <li>다크/라이트 감지 코드 흩어진 것 모아서 theme-watcher로</li>
+    <li>WM_SETTINGCHANGE 처리도 같이</li>
   </ul>
 </div>
 
 <div class="step lib">
-  <span class="num">4</span><b>창 뼈대 빼내기</b>
+  <span class="num">4</span><b>창 뼈대 (window-base)</b>
   <ul>
-    <li>WndProc, RegisterClass, 메시지 디스패치 표 → <span class="file">lib/ui/window-base.{h,cpp}</span></li>
-    <li>MainWindow는 이 뼈대를 상속하거나 들고 있도록 변경</li>
-    <li>가장 신중하게 — 모든 메시지가 여기 통과하므로</li>
+    <li>WndProc, RegisterClass, 메시지 디스패치를 추출</li>
+    <li>MainWindow가 이를 사용하도록 변경 (아직 동작 변경 없음)</li>
   </ul>
 </div>
 
 <div class="step lib">
-  <span class="num">5</span><b>스플리터 드래그 + 상태바 + 명령 라우터</b>
+  <span class="num">5</span><b>스플리터 + 상태바 + 명령 라우터</b>
   <ul>
-    <li>각각 lib/ui/ 안에 새 파일로 추출</li>
-    <li>스플리터 드래그는 마우스 캡처 + 비율 갱신, 결과는 콜백으로 알림</li>
-    <li>명령 라우터는 (메뉴ID, 단축키) → 함수 매핑 표만 들고 있음</li>
+    <li>각각 lib/winui_lite/chrome/에 새 파일로</li>
+    <li>스플리터 드래그 결과는 콜백으로 통지</li>
+    <li>명령 라우터는 (ID, 함수) 등록표만 들고 있음</li>
   </ul>
 </div>
 
 <div class="step lib">
-  <span class="num">6</span><b>툴바 한 줄 — 일반 부분만 분리</b>
+  <span class="num">6</span><b>툴바 chrome + 주소 입력 widget</b>
   <ul>
-    <li>현재 <span class="file">pane-toolbar-row</span>에서 다크모드 그리기/NC 패딩/툴팁 같은 일반 부분 → <span class="file">lib/ui/toolbar-row.{h,cpp}</span></li>
-    <li>주소창과 햄버거 메뉴는 앱에 남김 (셸 의존)</li>
+    <li>pane-toolbar-row의 다크모드/패딩/그리기 부분만 chrome으로</li>
+    <li>address bar의 입력 칸 자체는 widgets/address-input으로 (셸 자동완성은 제외)</li>
+  </ul>
+</div>
+
+<div class="step port">
+  <span class="num">7</span><b>빈 칸 정의 — ItemSource, ItemDispatcher, ItemActivator</b>
+  <ul>
+    <li>헤더만 작성 (인터페이스, 가상 함수 3~5개씩)</li>
+    <li>chrome 쪽 코드 중 셸을 부르던 부분을 이 빈 칸 호출로 바꿈</li>
+    <li>아직 채우는 부품 없음 → FastExplorer가 임시로 더미 채움 (빌드만 통과)</li>
+  </ul>
+</div>
+
+<div class="step app">
+  <span class="num">8</span><b>셸 어댑터 — ShellItemSource + ShellDispatcher</b>
+  <ul>
+    <li>현재 셸 enumerator/dispinfo 코드를 그대로 가져와서 어댑터로 감쌈</li>
+    <li>FastExplorer 시작 시 winui_lite에 이 어댑터를 등록</li>
+    <li>여기서부터 실제 폴더 보기가 다시 동작해야 함 <span class="check">✓</span></li>
+  </ul>
+</div>
+
+<div class="step port">
+  <span class="num">9</span><b>빈 칸 — ClipboardBackend + DragDropBackend + 셸 어댑터</b>
+  <ul>
+    <li>빈 칸 정의 후 ShellClipboard / ShellDragDrop 어댑터 작성</li>
+    <li>기존 clipboard-ops, drop-source, drop-target 코드를 어댑터 안으로 옮김</li>
+    <li>복사/붙여넣기/드래그가 다시 동작해야 함 <span class="check">✓</span></li>
+  </ul>
+</div>
+
+<div class="step port">
+  <span class="num">10</span><b>빈 칸 — ChangeNotifier + SettingsStore + 셸 어댑터</b>
+  <ul>
+    <li>ChangeNotifier 빈 칸 + ShellChangeNotifier (fs watcher 코드 이동)</li>
+    <li>SettingsStore 빈 칸 + RegistrySettingsStore (registry 코드 이동)</li>
+    <li>외부 폴더 변경 감지 + 설정 저장 다시 동작 <span class="check">✓</span></li>
+  </ul>
+</div>
+
+<div class="step port">
+  <span class="num">11</span><b>빈 칸 — ContextMenu + 셸 어댑터</b>
+  <ul>
+    <li>우클릭 메뉴 항목을 빈 칸 호출로</li>
+    <li>ShellContextMenu가 IShellContextMenu 호출 결과를 반환</li>
+  </ul>
+</div>
+
+<div class="step app">
+  <span class="num">12</span><b>메인 윈도우 마지막 정리</b>
+  <ul>
+    <li>이 시점에 main-window.cpp가 약 300~400줄로 줄어 있음</li>
+    <li>onCommand의 거대 switch를 menu-actions로 옮김</li>
+    <li>안 쓰는 멤버/include 제거</li>
+  </ul>
+</div>
+
+<div class="step lib">
+  <span class="num">13</span><b>데모 앱 — in-memory 부품 + 작은 실행 파일</b>
+  <ul>
+    <li>examples/minimal-window/ 안에 InMemoryItemSource, NoopClipboard, MemorySettings 작성</li>
+    <li>main.cpp가 winui_lite + 위 부품들로 창을 띄움</li>
+    <li>실행하면 가짜 아이템 10개가 4분할 패널에 보이고, 스플리터 드래그/패널 전환 동작</li>
+    <li>이게 동작 = 빈 칸 설계가 진짜 일반적이라는 증거 <span class="check">✓</span></li>
+  </ul>
+</div>
+
+<div class="step lib">
+  <span class="num">14</span><b>winui_lite 단위 테스트</b>
+  <ul>
+    <li>가짜 부품으로 명령 라우터 / 스플리터 비율 / 패널 배치 등 테스트</li>
+    <li>FastExplorer 없이 빌드+테스트 통과해야 함</li>
   </ul>
 </div>
 
 <div class="step">
-  <span class="num">7</span><b>앱 쪽 — 상태바 + 클립보드 분리</b>
+  <span class="num">15</span><b>최종 점검</b>
   <ul>
-    <li>main-window에 남은 상태바 호출부 → lib/ui의 상태바 부품을 사용하도록 정리</li>
-    <li>클립보드/잘라내기 관련 함수를 앱 안에서 별도 파일로</li>
+    <li>약속 1~5 자동 검사 (CMake/CI 스크립트)</li>
+    <li>탐색기 앱 켜서 주요 동작 다 눌러봄</li>
+    <li>데모 앱 켜서 동작 확인</li>
+    <li>winui_lite 폴더 줄 수 + 어댑터 줄 수 측정해서 기록</li>
   </ul>
 </div>
-
-<div class="step">
-  <span class="num">8</span><b>앱 쪽 — 파일 목록 이벤트 분리</b>
-  <ul>
-    <li>리스트뷰 알림 처리 (notify, customdraw, dispinfo) → <span class="file">shell-listview.{h,cpp}</span></li>
-  </ul>
-</div>
-
-<div class="step">
-  <span class="num">9</span><b>앱 쪽 — 폴더 열기 + fs 변경 분리</b>
-  <ul>
-    <li>주소창 입력 → 폴더 열기, 백그라운드 결과 처리, 외부 변경 감지 → <span class="file">pane-navigation.{h,cpp}</span></li>
-  </ul>
-</div>
-
-<div class="step">
-  <span class="num">10</span><b>앱 쪽 — 패널 배치 분리</b>
-  <ul>
-    <li>패널 생성/삭제, 활성 패널 → <span class="file">pane-manager.{h,cpp}</span></li>
-    <li>이 단계까지 끝나면 main-window는 "lib/ui 부품들 + 앱 부품들 조립"만 남음</li>
-  </ul>
-</div>
-
-<div class="step lib">
-  <span class="num">11</span><b>재사용 증명 — 데모 앱</b>
-  <ul>
-    <li><span class="file">examples/minimal-window/main.cpp</span> 만들기</li>
-    <li>fast_ui만 사용해서 빈 창 + 4분할 패널 + 더미 툴바 띄움</li>
-    <li>실행 파일 크기 작아야 함 (수백 KB 수준)</li>
-    <li>이게 동작하면 라이브러리가 진짜 독립적이라는 증거</li>
-  </ul>
-</div>
-
-<div class="step">
-  <span class="num">12</span><b>마무리</b>
-  <ul>
-    <li>안 쓰는 include, 안 쓰는 멤버 제거</li>
-    <li>약속 1~3 검사: lib/ui 안에 src/ 참조 / "탐색기" 단어가 있나 grep으로 확인</li>
-    <li>앱 전체 실행 + 주요 동작 다 눌러봄 <span class="check">✓</span></li>
-  </ul>
-</div>
-
-<h2>각 단계마다 매번 하는 일</h2>
-<ol>
-  <li>옮길/만들 파일 정함</li>
-  <li>코드 이동 또는 추출 (몸통은 바꾸지 않음)</li>
-  <li>include 경로 / CMake 파일 목록 갱신</li>
-  <li>빌드 통과 확인</li>
-  <li>앱 켜서 해당 부분 동작 확인</li>
-  <li>commit 1개 (왜 + 무엇)</li>
-</ol>
 
 <h2>까다로운 부분</h2>
 
-<h3>1. 멤버 변수 공유</h3>
-<p>예전 계획과 같은 문제. 메인 윈도우의 <span class="file">panes_</span> 같은 데이터를 여러 부품이 봐야 함.</p>
-<p><b>해결:</b> 라이브러리 부품은 "데이터를 들지 않음" 원칙. 필요한 정보는 호출할 때 인자로 받거나, 콜백으로 앱이 넘겨줌. 라이브러리 부품끼리는 데이터 공유 안 함.</p>
+<h3>1. ListView dispinfo가 핫패스라 가상 함수 호출 비용 우려</h3>
+<p>스크롤 시 매 행마다 dispinfo가 호출됨. 가상 함수가 너무 비싸면 프레임이 떨어질 수 있음.</p>
+<p><b>해결:</b> ItemDispatcher 빈 칸은 한 번에 여러 행을 받는 batch 함수도 둠. 또는 측정 후 진짜 문제면 그 한 함수만 함수 포인터 + 캐시로 바꿈.</p>
 
-<h3>2. 메시지 디스패치를 두 층으로 나누는 비용</h3>
-<p>지금은 <span class="file">handleMessage</span>에서 바로 처리. 라이브러리로 빼면 한 단계 더 거침 → 콜백 호출 비용 살짝 추가.</p>
-<p><b>해결:</b> 핫패스(자주 호출되는 메시지)는 inline 함수 또는 std::function 대신 함수 포인터 사용. 측정 후 실제 차이 있으면 그때 최적화.</p>
+<h3>2. 셸 비동기 결과를 콜백으로 받기</h3>
+<p>셸 폴더 열거는 백그라운드 스레드에서 진행. winui_lite는 스레드를 모름.</p>
+<p><b>해결:</b> 어댑터가 자체 스레드를 만들고, 결과를 PostMessage로 메인 스레드에 던진 다음, 거기서 winui_lite의 콜백 호출. 라이브러리는 스레드 안 만듦.</p>
 
-<h3>3. "거의 일반적인데 살짝 탐색기 색이 묻은" 부품</h3>
-<p>예: 툴바 row. 일반 그리기 부분과 탐색기 단축키 처리가 한 파일에 섞임.</p>
-<p><b>해결:</b> 단계 6에서 일반 부분만 추출하고, 탐색기 단축키 처리는 앱에 남김. 라이브러리는 "툴바를 그릴 줄 알지만 어떤 버튼을 둘지는 모름" 상태가 됨.</p>
+<h3>3. 빈 칸 너무 많아져서 등록 코드가 길어짐</h3>
+<p>8개 빈 칸 × 등록 줄 → main-window 시작 코드가 길어짐.</p>
+<p><b>해결:</b> winui_lite에 "환경" 묶음 구조를 두고 한 번에 모든 빈 칸을 채워서 전달. 등록은 8줄이 아니라 1줄.</p>
 
-<h3>4. onCommand의 거대 switch</h3>
-<p>330줄짜리 switch가 라이브러리(라우터)와 앱(각 케이스의 실제 동작)으로 갈라짐.</p>
-<p><b>해결:</b> 단계 5에서 라우터 골격만 라이브러리에 둠. 앱이 시작할 때 (메뉴ID, 람다) 쌍을 라우터에 등록. 케이스의 몸통은 앱에 남음.</p>
+<h3>4. 컨텍스트 메뉴는 셸 의존이 깊음</h3>
+<p>IContextMenu가 직접 그리고 명령도 직접 실행. 빈 칸으로 깔끔히 추상화하기 까다로움.</p>
+<p><b>해결:</b> ContextMenu 빈 칸은 "메뉴 항목 목록 + 선택 시 콜백"만 반환. 셸 메뉴는 어댑터가 자체적으로 처리하고 결과만 보냄.</p>
+
+<h3>5. onCommand의 거대 switch</h3>
+<p>330줄. 명령 라우터로 옮기면 case마다 별도 함수가 됨.</p>
+<p><b>해결:</b> 단계 12에서 menu-actions.cpp에 한 함수씩 작성, 시작 시 라우터에 등록. 한 케이스씩 옮기면서 동작 확인.</p>
 
 <h2>예상 시간</h2>
 <table>
   <tr><th>단계</th><th>예상 시간</th></tr>
-  <tr><td>1. 폴더 + 빌드 타깃</td><td>30분</td></tr>
+  <tr><td>1. 폴더 + 빌드 타깃</td><td>45분</td></tr>
   <tr><td>2. 일반 부품 이동</td><td>30분</td></tr>
-  <tr><td>3. 테마 감지</td><td>30분</td></tr>
+  <tr><td>3. 테마/DPI</td><td>30분</td></tr>
   <tr><td>4. 창 뼈대</td><td>1시간 30분</td></tr>
-  <tr><td>5. 스플리터 드래그 + 상태바 + 라우터</td><td>1시간 30분</td></tr>
-  <tr><td>6. 툴바 한 줄</td><td>1시간</td></tr>
-  <tr><td>7. 상태바 + 클립보드 (앱)</td><td>45분</td></tr>
-  <tr><td>8. 파일 목록 이벤트 (앱)</td><td>1시간</td></tr>
-  <tr><td>9. 폴더 열기 + fs (앱)</td><td>1시간</td></tr>
-  <tr><td>10. 패널 배치 (앱)</td><td>1시간</td></tr>
-  <tr><td>11. 데모 앱</td><td>45분</td></tr>
-  <tr><td>12. 마무리</td><td>30분</td></tr>
-  <tr><th>합계</th><th>약 10~11시간</th></tr>
+  <tr><td>5. 스플리터 + 상태바 + 라우터</td><td>1시간 30분</td></tr>
+  <tr><td>6. 툴바 + 입력 widget</td><td>1시간</td></tr>
+  <tr><td>7. ItemSource/Dispatcher/Activator 빈 칸</td><td>1시간 30분</td></tr>
+  <tr><td>8. 셸 어댑터 (Source/Dispatcher)</td><td>2시간</td></tr>
+  <tr><td>9. Clipboard/DragDrop 빈 칸 + 어댑터</td><td>2시간</td></tr>
+  <tr><td>10. ChangeNotifier/Settings 빈 칸 + 어댑터</td><td>1시간 30분</td></tr>
+  <tr><td>11. ContextMenu 빈 칸 + 어댑터</td><td>1시간 30분</td></tr>
+  <tr><td>12. 메인 윈도우 마지막 정리</td><td>1시간 30분</td></tr>
+  <tr><td>13. 데모 앱</td><td>1시간 30분</td></tr>
+  <tr><td>14. 단위 테스트</td><td>1시간</td></tr>
+  <tr><td>15. 최종 점검</td><td>30분</td></tr>
+  <tr><th>합계</th><th>약 18~20시간</th></tr>
 </table>
-<p class="muted">이전 계획(약 6시간 30분)보다 3~4시간 더 듭니다. 추가 비용은 "라이브러리 경계 정리 + 데모 앱". 그 대가로 재사용 가능 + 경계 명확 + 다음 앱 만들 때 절반 무료.</p>
+<p class="muted">이전 두 단계(파일 분리: 6시간 30분, 가벼운 라이브러리: 10~11시간)보다 두 배 가깝게 듭니다. 추가 비용은 빈 칸 설계 + 어댑터 작성 + 가짜 부품. 그 대가로 UI 코드가 셸에서 완전히 풀려납니다.</p>
 
 <h2>이번에 안 할 것</h2>
 <ul>
   <li><b>사용자 동작 변경 없음.</b> 단축키, 메뉴, 화면, 성능 다 똑같이.</li>
   <li>새 기능 추가 없음.</li>
-  <li>버그 수정 없음 (눈에 띄어도 별도 commit으로 미룸).</li>
-  <li>라이브러리를 별도 git 저장소로 분리 안 함 (당분간 같은 저장소 안의 폴더).</li>
-  <li>라이브러리를 다른 빌드 시스템 (vcpkg, conan) 패키지로 만들지 않음.</li>
-  <li>WinUI/XAML 같은 새 UI 기술 도입 안 함.</li>
+  <li>버그 수정 없음 (눈에 띄어도 별도 commit).</li>
+  <li>winui_lite를 별도 git 저장소로 분리 안 함 (당분간 같은 저장소 안).</li>
+  <li>vcpkg/conan 패키지로 만들지 않음.</li>
+  <li>WinUI/XAML 같은 다른 UI 기술로 갈아엎지 않음.</li>
+  <li>크로스 플랫폼화 안 함 (winui_lite는 Win32 전용 유지).</li>
 </ul>
 
-<h2>나중에 (이 계획 후에) 가능해지는 것</h2>
+<h2>나중에 가능해지는 것</h2>
 <ul>
-  <li><b>두 번째 작은 앱.</b> 예: 로그 파일 비교 뷰어 — fast_ui만 가져다 쓰면 창/4분할/스플리터/툴바가 즉시 동작.</li>
-  <li><b>fast_ui 별도 저장소로 분리.</b> 안정되면 git submodule이나 패키지로 분리 가능.</li>
-  <li><b>각 부품 단위 테스트 강화.</b> 라이브러리 부품은 앱 없이도 테스트 가능 → 빌드/테스트 빠름.</li>
+  <li><b>로그/메모리/DB 뷰어 같은 작은 도구.</b> winui_lite + 새 ItemSource만 작성 → 창/패널/툴바 그대로 재사용.</li>
+  <li><b>UI 자동 테스트.</b> 가짜 데이터로 시나리오 돌리기 가능.</li>
+  <li><b>WinUI 마이그레이션이 쉬워짐.</b> chrome 한 층만 갈아 끼우면 됨 (셸 어댑터는 그대로).</li>
+  <li><b>winui_lite 분리 배포.</b> 안정되면 별도 저장소 / 패키지로.</li>
 </ul>
 
 <div class="note">
 <b>확인 부탁:</b>
 <ol>
-  <li>이 라이브러리 분리 방향 자체는 OK인가요? (단계가 6시간 → 10시간으로 늘어남)</li>
-  <li>"무엇이 라이브러리에 가나" 표 (위쪽)에서 빼거나 더하고 싶은 부품이 있나요?</li>
-  <li>라이브러리 이름 <span class="file">fast_ui</span> 가 좋을지, 다른 이름이 좋을지 (예: <span class="file">winui_lite</span>, <span class="file">pane_ui</span>, <span class="file">desktop_ui</span> 등)</li>
-  <li>데모 앱(단계 11)을 진짜 만들까요, 아니면 "약속 검사 grep"만으로 충분할까요?</li>
+  <li>이 15단계 계획대로 진행해도 될까요? (총 18~20시간)</li>
+  <li>지금 첫 commit을 단계 1(폴더 + 빌드 타깃 + lib→src 참조 금지 규칙)부터 시작할까요?</li>
+  <li>아니면 그 전에 더 손보고 싶은 부분(빈 칸 이름, 어댑터 분류, 약속 추가/삭제)이 있나요?</li>
 </ol>
 </div>
 
