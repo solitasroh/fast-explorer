@@ -6,7 +6,7 @@
 #include <string>
 #include <vector>
 
-#include "ui/dispinfo-histogram.h"
+#include "winui_lite/chrome/dispinfo-histogram.h"
 
 using fast_explorer::ui::DispInfoHistogram;
 using fast_explorer::ui::dumpDispInfoHistogram;

@@ -6,9 +6,9 @@
 #include <cstddef>
 #include <cstdint>
 
-#include "core/layout-orientation.h"
-#include "core/layout-preset.h"
-#include "ui/splitter-ratios.h"
+#include "winui_lite/chrome/layout-orientation.h"
+#include "winui_lite/chrome/layout-preset.h"
+#include "winui_lite/chrome/splitter-ratios.h"
 
 namespace fast_explorer::ui {
 

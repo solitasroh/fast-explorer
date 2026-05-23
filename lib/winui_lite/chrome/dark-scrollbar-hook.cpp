@@ -20,7 +20,7 @@
 // - Once installed the trampoline is leaked intentionally — uxtheme +
 //   comctl32 are pinned for the life of the process anyway.
 
-#include "ui/dark-scrollbar-hook.h"
+#include "winui_lite/chrome/dark-scrollbar-hook.h"
 
 #include <windows.h>
 #include <delayimp.h>

@@ -3,7 +3,7 @@
 #include <commctrl.h>
 #include <shlobj.h>
 
-#include "ui/com-raii.h"
+#include "winui_lite/chrome/com-raii.h"
 
 namespace fast_explorer::ui {
 

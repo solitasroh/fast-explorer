@@ -2,7 +2,7 @@
 
 #include <shellapi.h>
 
-#include "ui/dpi-scale.h"
+#include "winui_lite/chrome/dpi-scale.h"
 
 namespace fast_explorer::ui {
 

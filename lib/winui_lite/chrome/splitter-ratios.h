@@ -3,7 +3,7 @@
 #include <array>
 #include <cstddef>
 
-#include "core/layout-preset.h"
+#include "winui_lite/chrome/layout-preset.h"
 
 namespace fast_explorer::ui {
 

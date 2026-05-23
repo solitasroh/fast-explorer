@@ -4,7 +4,7 @@
 #include <shellapi.h>
 #include <shlobj.h>
 
-#include "ui/com-raii.h"
+#include "winui_lite/chrome/com-raii.h"
 #include "ui/shell-bind.h"
 
 namespace fast_explorer::ui {

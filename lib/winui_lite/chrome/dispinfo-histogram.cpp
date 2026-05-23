@@ -1,4 +1,4 @@
-#include "ui/dispinfo-histogram.h"
+#include "winui_lite/chrome/dispinfo-histogram.h"
 
 #include <stdio.h>
 #include <wchar.h>
