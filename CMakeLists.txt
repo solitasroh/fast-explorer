@@ -43,9 +43,6 @@ set(FE_APP_SOURCES
   src/ui/messages.h
   src/ui/column-formatter.cpp
   src/ui/column-formatter.h
-  src/ui/dispinfo-histogram.cpp
-  src/ui/dispinfo-histogram.h
-  src/ui/dpi-scale.h
   src/ui/extension-icon-cache.cpp
   src/ui/extension-icon-cache.h
   src/ui/folder-name.cpp
@@ -65,7 +62,6 @@ set(FE_APP_SOURCES
   src/ui/listview-group-callback.h
   src/ui/shell-worker.cpp
   src/ui/shell-worker.h
-  src/ui/splitter-ratios.h
   src/ui/splitter-resize.h
   src/ui/filter-pattern.cpp
   src/ui/filter-pattern.h
@@ -73,8 +69,6 @@ set(FE_APP_SOURCES
   src/ui/search-popup.h
   src/ui/pane-controller.cpp
   src/ui/pane-controller.h
-  src/ui/pane-layout.cpp
-  src/ui/pane-layout.h
   src/ui/pane-manager.cpp
   src/ui/pane-manager.h
   src/ui/pane-splitter.cpp
@@ -90,8 +84,6 @@ set(FE_APP_SOURCES
   src/ui/clipboard-ops.h
   src/ui/cut-state-tracker.cpp
   src/ui/cut-state-tracker.h
-  src/ui/dark-scrollbar-hook.cpp
-  src/ui/dark-scrollbar-hook.h
   src/ui/drop-source.cpp
   src/ui/drop-source.h
   src/ui/drop-target.cpp
@@ -128,8 +120,6 @@ set(FE_APP_SOURCES
   src/core/crash-handler.h
   src/core/process-memory.cpp
   src/core/process-memory.h
-  src/core/layout-orientation.h
-  src/core/layout-preset.h
   src/core/settings-store.cpp
   src/core/settings-store.h
   src/core/text-utf.cpp
@@ -188,12 +178,19 @@ set(FE_RESOURCES
 # explorers, the shell, or this app's domain. Consumed by FastExplorer and
 # (later) by examples/minimal-window. See docs/refactor-plan.html for the
 # port/adapter layout being built up step by step.
-#
-# Empty at step 1 of the refactor; only carries _placeholder.cpp so the
-# static lib has a translation unit. Real chrome sources move in at step 2.
 # ---------------------------------------------------------------------------
 add_library(winui_lite STATIC
-  lib/winui_lite/chrome/_placeholder.cpp
+  lib/winui_lite/chrome/com-raii.h
+  lib/winui_lite/chrome/dark-scrollbar-hook.cpp
+  lib/winui_lite/chrome/dark-scrollbar-hook.h
+  lib/winui_lite/chrome/dispinfo-histogram.cpp
+  lib/winui_lite/chrome/dispinfo-histogram.h
+  lib/winui_lite/chrome/dpi-scale.h
+  lib/winui_lite/chrome/layout-orientation.h
+  lib/winui_lite/chrome/layout-preset.h
+  lib/winui_lite/chrome/pane-layout.cpp
+  lib/winui_lite/chrome/pane-layout.h
+  lib/winui_lite/chrome/splitter-ratios.h
 )
 
 target_include_directories(winui_lite PUBLIC lib)
@@ -308,9 +305,6 @@ add_executable(core-tests
   src/ui/messages.h
   src/ui/column-formatter.cpp
   src/ui/column-formatter.h
-  src/ui/dispinfo-histogram.cpp
-  src/ui/dispinfo-histogram.h
-  src/ui/dpi-scale.h
   src/ui/extension-icon-cache.cpp
   src/ui/extension-icon-cache.h
   src/ui/folder-name.cpp
@@ -328,7 +322,6 @@ add_executable(core-tests
   src/ui/label-edit-controller.h
   src/ui/shell-worker.cpp
   src/ui/shell-worker.h
-  src/ui/splitter-ratios.h
   src/ui/splitter-resize.h
   src/ui/filter-pattern.cpp
   src/ui/filter-pattern.h
@@ -336,8 +329,6 @@ add_executable(core-tests
   src/ui/search-popup.h
   src/ui/pane-controller.cpp
   src/ui/pane-controller.h
-  src/ui/pane-layout.cpp
-  src/ui/pane-layout.h
   src/ui/pane-manager.cpp
   src/ui/pane-manager.h
   src/ui/pane-sort-coordinator.cpp
@@ -382,8 +373,6 @@ add_executable(core-tests
   src/core/process-memory.h
   src/core/ring-logger.cpp
   src/core/ring-logger.h
-  src/core/layout-orientation.h
-  src/core/layout-preset.h
   src/core/settings-store.cpp
   src/core/settings-store.h
   src/core/text-utf.cpp

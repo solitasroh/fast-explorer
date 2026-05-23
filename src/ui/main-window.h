@@ -7,11 +7,11 @@
 #include <memory>
 #include <string>
 
-#include "core/layout-preset.h"
+#include "winui_lite/chrome/layout-preset.h"
 #include "ui/cut-state-tracker.h"
-#include "ui/pane-layout.h"
+#include "winui_lite/chrome/pane-layout.h"
 #include "ui/search-popup.h"
-#include "ui/splitter-ratios.h"
+#include "winui_lite/chrome/splitter-ratios.h"
 
 namespace fast_explorer::core {
 class ProcessMemoryService;

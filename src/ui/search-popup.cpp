@@ -6,7 +6,7 @@
 
 #include <algorithm>
 
-#include "ui/dpi-scale.h"
+#include "winui_lite/chrome/dpi-scale.h"
 #include "ui/messages.h"
 
 #pragma comment(lib, "dwmapi.lib")

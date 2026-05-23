@@ -1,8 +1,8 @@
 #include <windows.h>
 
 #include "test-harness.h"
-#include "ui/pane-layout.h"
-#include "ui/splitter-ratios.h"
+#include "winui_lite/chrome/pane-layout.h"
+#include "winui_lite/chrome/splitter-ratios.h"
 
 using fast_explorer::ui::LayoutAction;
 using fast_explorer::ui::LayoutOrientation;

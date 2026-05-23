@@ -8,10 +8,10 @@
 #include <string_view>
 #include <vector>
 
-#include "core/layout-preset.h"
+#include "winui_lite/chrome/layout-preset.h"
 #include "core/path-utils.h"
 #include "core/text-utf.h"
-#include "ui/splitter-ratios.h"
+#include "winui_lite/chrome/splitter-ratios.h"
 
 namespace fast_explorer::core {
 

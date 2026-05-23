@@ -1,5 +1,5 @@
 #include "test-harness.h"
-#include "ui/splitter-ratios.h"
+#include "winui_lite/chrome/splitter-ratios.h"
 
 using fast_explorer::core::LayoutPreset;
 using fast_explorer::ui::defaultRatiosFor;

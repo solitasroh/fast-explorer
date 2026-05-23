@@ -7,7 +7,7 @@
 
 #include <utility>
 
-#include "ui/com-raii.h"
+#include "winui_lite/chrome/com-raii.h"
 #include "ui/messages.h"
 
 namespace fast_explorer::ui {
