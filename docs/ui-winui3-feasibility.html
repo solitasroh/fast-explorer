@@ -1,0 +1,2478 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="light dark">
+<title>Fast Explorer · WinUI 3 마이그레이션 성능 검토</title>
+<style>
+* { box-sizing: border-box; }
+:root {
+  --bg: #0d1117;
+  --surface: #161b22;
+  --surface-2: #1f2937;
+  --border: #30363d;
+  --fg: #e6edf3;
+  --muted: #8b949e;
+  --link: #58a6ff;
+  --code-bg: #1f2937;
+  --accent: #f78166;
+  --warn: #d29922;
+  --shadow: 0 4px 12px rgba(0,0,0,.4);
+}
+@media (prefers-color-scheme: light) {
+  :root {
+    --bg: #ffffff;
+    --surface: #f6f8fa;
+    --surface-2: #eaeef2;
+    --border: #d0d7de;
+    --fg: #1f2328;
+    --muted: #59636e;
+    --link: #0969da;
+    --code-bg: #eaeef2;
+    --accent: #cf222e;
+    --warn: #9a6700;
+    --shadow: 0 4px 12px rgba(0,0,0,.12);
+  }
+}
+html {
+  background: var(--bg);
+  color: var(--fg);
+  -webkit-text-size-adjust: 100%;
+  font: 16px/1.65 -apple-system, BlinkMacSystemFont, "Segoe UI", "Pretendard", "Apple SD Gothic Neo", "Noto Sans KR", sans-serif;
+}
+body {
+  max-width: 880px;
+  margin: 0 auto;
+  padding: 1rem 1.1rem 5rem;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+}
+header.title {
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 1.2rem;
+  margin-bottom: 1.5rem;
+}
+header.title h1 {
+  font-size: 1.5rem;
+  margin: .35rem 0 .5rem;
+  letter-spacing: -0.01em;
+  line-height: 1.3;
+}
+header.title p { margin: .35rem 0; color: var(--muted); font-size: .92rem; }
+header.title .tag {
+  display: inline-block;
+  font-size: .68rem;
+  letter-spacing: .05em;
+  text-transform: uppercase;
+  background: var(--surface);
+  color: var(--muted);
+  border: 1px solid var(--border);
+  border-radius: .35rem;
+  padding: .18rem .45rem;
+  margin-right: .25rem;
+  font-weight: 600;
+}
+.tldr {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-left: 4px solid var(--accent);
+  border-radius: .5rem;
+  padding: 1rem 1.15rem;
+  margin: 1.5rem 0;
+  font-size: .96rem;
+  line-height: 1.6;
+}
+.tldr strong { color: var(--accent); }
+nav.toc {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: .55rem;
+  padding: .9rem 1.1rem;
+  margin: 1.5rem 0 2.4rem;
+  font-size: .95rem;
+}
+nav.toc h2 {
+  font-size: .82rem;
+  margin: 0 0 .55rem;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: .07em;
+  border: none;
+  padding: 0;
+}
+nav.toc ol { margin: 0; padding-left: 1.3rem; }
+nav.toc li { padding: .28rem 0; }
+nav.toc a { color: var(--link); text-decoration: none; }
+nav.toc a:hover { text-decoration: underline; }
+h2 {
+  font-size: 1.4rem;
+  margin: 2.8rem 0 1rem;
+  padding-bottom: .45rem;
+  border-bottom: 1px solid var(--border);
+  scroll-margin-top: .5rem;
+  line-height: 1.3;
+}
+h3 {
+  font-size: 1.1rem;
+  margin: 1.9rem 0 .75rem;
+  color: var(--fg);
+  scroll-margin-top: .5rem;
+}
+h4 {
+  font-size: .98rem;
+  margin: 1.3rem 0 .55rem;
+  color: var(--fg);
+}
+p, li { font-size: .98rem; }
+ul, ol { padding-left: 1.4rem; }
+li + li { margin-top: .25rem; }
+code {
+  font-family: ui-monospace, "SF Mono", "JetBrains Mono", Consolas, Menlo, monospace;
+  background: var(--code-bg);
+  padding: .12em .38em;
+  border-radius: .25rem;
+  font-size: .86em;
+  word-break: break-all;
+}
+pre {
+  background: var(--code-bg);
+  border: 1px solid var(--border);
+  border-radius: .45rem;
+  padding: .8rem .9rem;
+  overflow-x: auto;
+  font-size: .85rem;
+  line-height: 1.55;
+  -webkit-overflow-scrolling: touch;
+}
+pre code {
+  background: transparent;
+  padding: 0;
+  border-radius: 0;
+  font-size: inherit;
+  word-break: normal;
+  white-space: pre;
+}
+.table-wrap {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  margin: 1rem 0 1.4rem;
+  border: 1px solid var(--border);
+  border-radius: .4rem;
+}
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: .9rem;
+}
+table thead { background: var(--surface); }
+table th, table td {
+  text-align: left;
+  padding: .55rem .7rem;
+  border-bottom: 1px solid var(--border);
+  border-right: 1px solid var(--border);
+  vertical-align: top;
+  min-width: 7rem;
+}
+table th:last-child, table td:last-child { border-right: none; }
+table tr:last-child td { border-bottom: none; }
+table th {
+  color: var(--muted);
+  font-weight: 600;
+  font-size: .78rem;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+  white-space: nowrap;
+}
+.scope {
+  background: var(--surface);
+  border-left: 3px solid var(--accent);
+  padding: .6rem .85rem;
+  border-radius: 0 .35rem .35rem 0;
+  margin: .25rem 0 1.5rem;
+  font-size: .88rem;
+  color: var(--muted);
+  line-height: 1.55;
+}
+.scope code { background: var(--surface-2); color: var(--fg); }
+section.module {
+  margin-top: 3rem;
+  padding-top: .5rem;
+}
+section.module:first-of-type { margin-top: 0; }
+a { color: var(--link); }
+a:hover { text-decoration: underline; }
+strong { font-weight: 600; color: var(--fg); }
+em { font-style: italic; color: var(--muted); }
+blockquote {
+  margin: 1rem 0;
+  padding: .5rem .9rem;
+  border-left: 3px solid var(--border);
+  color: var(--muted);
+  background: var(--surface);
+  border-radius: 0 .35rem .35rem 0;
+}
+footer.meta {
+  margin-top: 4rem;
+  padding-top: 1.5rem;
+  border-top: 1px solid var(--border);
+  color: var(--muted);
+  font-size: .82rem;
+  line-height: 1.6;
+}
+@media (max-width: 540px) {
+  body { padding: .8rem .85rem 4rem; font-size: 15px; }
+  header.title h1 { font-size: 1.22rem; }
+  h2 { font-size: 1.16rem; margin-top: 2.2rem; }
+  h3 { font-size: 1.02rem; margin-top: 1.5rem; }
+  h4 { font-size: .95rem; }
+  p, li { font-size: .94rem; }
+  pre { font-size: .78rem; padding: .65rem .7rem; }
+  table { font-size: .82rem; }
+  table th, table td { padding: .45rem .55rem; }
+  nav.toc { padding: .8rem .95rem; }
+  .tldr { padding: .85rem .95rem; }
+}
+.totop {
+  position: fixed;
+  bottom: 1rem;
+  right: 1rem;
+  width: 2.6rem;
+  height: 2.6rem;
+  border-radius: 50%;
+  background: var(--accent);
+  color: #fff !important;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-decoration: none !important;
+  font-size: 1.15rem;
+  font-weight: 700;
+  box-shadow: var(--shadow);
+  opacity: .9;
+}
+.totop:active { transform: scale(.95); }
+</style>
+</head>
+<body>
+<header class="title">
+  <p>
+    <span class="tag">Feasibility</span>
+    <span class="tag">WinUI 3</span>
+    <span class="tag">refactor/ui</span>
+  </p>
+  <h1>Fast Explorer · WinUI 3 마이그레이션 성능 검토</h1>
+  <p>"코드(C++ core + Shell COM)는 그대로, UI 도구만 WinUI 3로 교체" 시나리오에서 성능이 어느 수준으로 맞춰질지를 검토한 보고서입니다. 4명의 에이전트가 베이스라인 추출 · 프레임워크 리서치 · C++/WinRT 시나리오 · C# 시나리오를 병렬로 조사하고, 마지막 종합 섹션에서 비교했습니다.</p>
+  <p>대상 커밋 <code>92b999f</code> · 베이스라인 <a href="./ui-baseline.html">ui-baseline.html</a> 참조.</p>
+
+  <div class="tldr">
+    <p><strong>한 줄 결론.</strong> WinUI 3 best-case 시나리오에서도 현재 베이스라인(warm 21–36 ms / 100k 첫 배치 29.83 ms / 100k peak WS 9.39 MB)에 도달하기 어렵고, 일반적 구현은 microsoft/Files 수준(cold 3.6–5 s / navigation 1–3 s / 2000-item unresponsive)이 현실적 도달점. 두 시나리오 중 <strong>C++/WinRT</strong>가 100k 항목 GC 압력 부재로 더 안전.</p>
+  </div>
+</header>
+
+<nav class="toc">
+  <h2>목차</h2>
+  <ol>
+    <li><a href="#winui3-A">A. 현재 측정 베이스라인</a></li>
+    <li><a href="#winui3-B">B. WinUI 3 가상화·렌더 성능 특성</a></li>
+    <li><a href="#winui3-C">C. C++/WinRT 시나리오 — Shell COM 재사용성</a></li>
+    <li><a href="#winui3-D">D. C# / .NET 시나리오 — 인터롭과 GC 압력</a></li>
+    <li><a href="#winui3-E"><strong>E. 종합 비교 — 예상 성능 수준</strong></a></li>
+  </ol>
+</nav>
+
+<main>
+<section class="module" id="winui3-A">
+  <h2>A. 현재 측정 베이스라인 (Win32 Common Controls)</h2>
+  <p class="scope"><strong>출처:</strong> 코드 + <code>docs/05-report/</code> + <code>src/bench/</code></p>
+  <p>본 절의 모든 수치는 저장소에 커밋된 소스/문서에서 직접 추출한 값이며, 추정/외삽이 없는 경우 "source에 미측정"으로 명기한다.</p>
+
+  <h3>A.1 측정 인프라 개요</h3>
+  <ul>
+    <li><strong>PerfTracker (<code>src/core/perf-tracker.h:19</code>)</strong> — 잠금-free MPSC 링 버퍼. 용량 <code>kCapacity = 10'000</code> 이벤트 (<code>perf-tracker.h:21</code>), 슬롯 = 24 B (<code>perf-tracker.h:41</code> <code>static_assert(sizeof(Event) == 24, ...)</code>). 타임스탬프는 <code>QueryPerformanceCounter</code>로 캡처 (<code>perf-tracker.cpp:40</code>). 6개의 phase boundary 이벤트만 정의: <code>AppLaunchStart / AppInteractive / AppShutdownStart / PaneOpenStart / PaneFirstBatch / MemoryProbe</code> (<code>perf-tracker.h:23-32</code>). dump는 종료 시 <code>OutputDebugString</code> 또는 callback sink로 1회 수행 (<code>perf-tracker.cpp:76-133</code>). minidump의 user-stream에 raw slot buffer 첨부 가능 (<code>perf-tracker.h:71-72</code>).</li>
+    <li><strong>RingLogger (<code>src/core/ring-logger.h:27</code>)</strong> — MPSC 링, <code>kSlotCount = 512</code> · <code>kSlotBytes = 256</code> · <code>kMaxMessageBytes = 232</code> (= 256-24, <code>ring-logger.h:38-40</code>). 백그라운드 writer 스레드가 <code>kFlushIntervalMs = 100</code> ms 마다 또는 INFO+ 즉시 flush (<code>ring-logger.cpp:15, 189-190, 254</code>). 백프레셔 시 메시지는 fallback(ODS) + dropped 카운터 증가 (<code>ring-logger.h:22-26, 57-59</code>).</li>
+    <li><strong>StallProbe (<code>src/ui/stall-probe.h:9-53</code>)</strong> — UI 스레드 단일. <code>classifyStall</code>가 dispatch 갭을 <code>kStallInfoMicros=50'000 / kStallWarnMicros=100'000 / kStallErrorMicros=500'000</code> μs 임계와 비교 (<code>stall-probe.h:16-18</code>). 7-bucket 히스토그램 (§A.3 표 참조). 메시지 루프의 Translate/Dispatch 양쪽에 QPC bracket으로 통합 (<code>src/app/main.cpp:176-189</code>). Error 등급에서는 PerfTracker dump를 로거로 ejection (<code>main.cpp:152-154</code>).</li>
+    <li><strong>DispInfoHistogram (<code>src/ui/dispinfo-histogram.h:22-53</code>)</strong> — UI 스레드 단일. 7-bucket 마이크로초 히스토그램. <code>handleGetDispInfo</code>가 QPC bracket으로 every call 샘플 (<code>main-window.cpp:2968-2983</code>). p99 추정기는 ceil(0.99 × total) rank 기반 bucket-upper 보고 (<code>dispinfo-histogram.cpp:39-59</code>).</li>
+    <li><strong>ProcessMemoryService (<code>src/core/process-memory.h:35</code>)</strong> — <code>SetProcessWorkingSetSizeEx</code> hint (<code>kMinWorkingSet=8 MB / kMaxWorkingSet=128 MB</code>, <code>process-memory.cpp:17-18, 53-58</code>, 두 hint 모두 <code>QUOTA_LIMITS_HARDWS_*_DISABLE</code>로 advisory). LowMemoryResourceNotification 백그라운드 thread + 5 s re-arm (<code>kLowMemoryReArmIntervalMs=5000</code>, <code>process-memory.cpp:20, 217</code>).</li>
+    <li><strong>덤프 경로:</strong> <code>%LOCALAPPDATA%\FastExplorer\logs\fast-explorer-YYYYMMDD.log</code> (RingLogger 헤더 <code>ring-logger.h:11</code>) 또는 portable override. 종료 시 main 루프에서 PerfTracker → StallHistogram → DispInfoHistogram 순으로 logger sink로 dump (<code>src/app/main.cpp:386-390, 408</code>).</li>
+  </ul>
+
+  <h3>A.2 LVN_GETDISPINFO 파이프라인 비용</h3>
+  <p>핸들러 자체는 <code>MainWindow::handleGetDispInfoBody</code> (<code>main-window.cpp:2985-3066</code>)에서 pane resolve → <code>FileModelStore::visibleAt(row)</code> lookup → <code>FormatCache</code>로 size/type/modified 문자열 LRU 조회 → cell text 작성. LVS_OWNERDATA 가상화 가정. 모든 호출은 QPC bracketed (<code>main-window.cpp:2976-2982</code>) — overhead는 §11.4 design 노트로 ~10 ns/호출 = 50 µs gate의 0.02% (<code>design.md:1070</code>).</p>
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>지표</th><th>값</th><th>위치</th></tr></thead>
+    <tbody>
+      <tr><td>per-callback budget (§11)</td><td>≤ 50 µs / row</td><td><code>design.md:149</code>, <code>design.md:342</code>, <code>design.md:584</code></td></tr>
+      <tr><td>histogram bucket 상한 (μs)</td><td>1 · 5 · 20 · 50 · 100 · 500 (+∞)</td><td><code>dispinfo-histogram.h:26</code></td></tr>
+      <tr><td>p99 추정 알고리즘</td><td>ceil(0.99 × total) rank → bucket upper</td><td><code>dispinfo-histogram.cpp:39-59</code></td></tr>
+      <tr><td>실측 GETDISPINFO p99</td><td>인프라 준비 완료, 정량값은 1-hour soak 매뉴얼 실행 대기 (Amber)</td><td><code>report.md:208-210</code>, <code>design.md:1519</code></td></tr>
+      <tr><td>스크롤 frame p95 게이트</td><td>≤ 16.7 ms (60 Hz)</td><td><code>design.md:148, 1519</code></td></tr>
+      <tr><td>First-batch (M3 실측)</td><td>small 4.05 ms / medium 3.62 ms / 100k 29.83 ms</td><td><code>design.md:1391-1397</code>, <code>report.md:200-201, 386-387</code></td></tr>
+      <tr><td>UI stall events @ M3 측정 runs</td><td>0 (gate ≤ 50 ms)</td><td><code>design.md:1396</code>, <code>report.md:202</code></td></tr>
+      <tr><td>ImageList 1 요청 비용</td><td>placeholder: SHGetFileInfoW + SHGFI_USEFILEATTRIBUTES (디스크 미접근, 동기 fast path); 실제 아이콘은 워커가 비동기 처리 — source에 정량값 미측정</td><td><code>icon-cache.cpp:11-27</code>, <code>design.md:1463, 1476-1477</code></td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <h3>A.3 Stall 임계치</h3>
+  <p>임계는 <code>src/ui/stall-probe.h:16-18</code>에 하드코드. <code>classifyStall</code>는 한 dispatch 갭(μs)을 받아 None/Info/Warn/Error로 분류 (<code>stall-probe.cpp:8-13</code>).</p>
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>임계</th><th>값 (μs)</th><th>레벨</th><th>위치</th></tr></thead>
+    <tbody>
+      <tr><td><code>kStallInfoMicros</code></td><td>50 000</td><td>Info — 1 frame budget(60 Hz=16.7 ms) 초과</td><td><code>stall-probe.h:16</code></td></tr>
+      <tr><td><code>kStallWarnMicros</code></td><td>100 000</td><td>Warn</td><td><code>stall-probe.h:17</code></td></tr>
+      <tr><td><code>kStallErrorMicros</code></td><td>500 000</td><td>Error → PerfTracker dump 트리거</td><td><code>stall-probe.h:18</code>, <code>main.cpp:152-154</code></td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p>StallHistogram bucket 상계 (μs, exclusive): <code>{1 000, 5 000, 16 000, 50 000, 100 000, 500 000}</code> + 마지막 unbounded bucket = 총 7 (<code>stall-probe.h:34-37</code>). 단위 테스트가 boundary 정확성 잠금 (<code>tests/stall-probe-tests.cpp:22-34, 46-70</code>). M7 soak 게이트는 <strong>≥500 ms bucket = 0</strong> 유지 (<code>runbooks/m7-1hour-soak-checklist.md:16, 59</code>).</p>
+
+  <h3>A.4 캐시 성능 카운터</h3>
+  <p>소스에 hit/miss 누적 카운터는 <strong>존재하지 않는다</strong> (전체 src/ tree에 <code>hitCount/missCount/hits_/misses_/hitRatio</code> 그렙 0건). 캐시는 LRU 용량 캡 + 바이트 추정 probe만 제공.</p>
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>캐시</th><th>카운터/임계치</th><th>위치</th><th>현재 값/제한</th></tr></thead>
+    <tbody>
+      <tr><td>IconCache (per-window HIMAGELIST)</td><td>플레이스홀더 2 슬롯(<code>kInitialImageListSlots=2</code>) + 8-슬롯 그로우(<code>kImageListGrowSlots=8</code>); <code>byteSize()</code>=count × (color 4 B/px + mask 1 bit/px)</td><td><code>icon-cache.h:14-15, 50</code>, <code>icon-cache.cpp:29-30, 80-99</code></td><td>process-global cap ≤ 3 MB (design §11), 실측 ≈ 258 KB / 272 KB (<code>design.md:155, 1478</code>; <code>report.md:204-205</code>)</td></tr>
+      <tr><td>ExtensionIconCache (확장자→슬롯 LRU)</td><td><code>kDefaultCapacity = 256</code> 항목; eviction 시 evicted slot index를 caller에 회수 통지하여 HIMAGELIST 슬롯 재활용</td><td><code>extension-icon-cache.h:30-31, 46-47</code></td><td>256 항목 hard cap (LRU)</td></tr>
+      <tr><td>FormatCache (size/type/modified 컬럼)</td><td>3개의 LRU (<code>sizeLru_ / typeLru_ / modifiedLru_</code>), 각각 <code>kDefaultCapacity = 256</code>; pop_back when <code>entries.size() &gt; capacity</code></td><td><code>format-cache.h:22, 47-69, 84-86</code></td><td>3 × 256 = 768 항목 max</td></tr>
+      <tr><td>IconCacheCoordinator</td><td>per-pane (paneIndex), <code>onIconBatch</code>로 워커 결과 drain, <code>shrinkIconCache()</code>가 kWmFeLowMemory 응답 — ImageList 교체 + extension cache clear + visible row redraw</td><td><code>icon-cache-coordinator.h:20-60</code></td><td>kWmFeLowMemory 시 ImageList swap → placeholder-only로 축소 (정량 측정 M7 amber)</td></tr>
+      <tr><td>cache hit/miss 카운터</td><td><strong>source에 미존재</strong></td><td>—</td><td>—</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <h3>A.5 디렉터리 열거 성능</h3>
+  <ul>
+    <li><strong>batch flush 임계:</strong> <code>Config::batchSize = 256</code> 기본값 (<code>directory-enumerator.h:30</code>); <code>batch.size() &gt;= config_.batchSize</code> 도달 시 <code>flushBatch</code> 호출, 종료/취소/오류 시에도 flush (<code>directory-enumerator.cpp:94, 129-131, 98, 103, 122</code>). 이 256 값이 design §14.3의 <q>The DirectoryEnumerator batch boundary at 256 entries is what bounds this number</q> 진술의 근거 (<code>design.md:1400</code>).</li>
+    <li><strong>sharing violation 재시도:</strong> 기본 <code>sharingViolationRetryMs = 100</code> / <code>sharingViolationRetries = 1</code> (총 최대 2회 시도) (<code>directory-enumerator.h:31-32</code>). 재시도는 interruptible sleep으로 <code>kPollingQuantumMs = 10</code> ms 마다 stop_token poll (<code>directory-enumerator.cpp:37, 39-51</code>).</li>
+    <li><strong>FileModelStore 하드 한도:</strong> <code>kMaxEntries = 100'000</code> (<code>file-model-store.h:49</code>); 이 값이 100k 데이터셋 워킹셋/소액 게이트의 기준선 (<code>report.md:206-207, 388-389</code>). FileEntry는 정확히 40 B (<code>design.md:153, 399</code>, <code>file-entry</code> static_assert).</li>
+    <li><strong>backend 결정:</strong> FindFirstFileExW + <code>FIND_FIRST_EX_LARGE_FETCH</code> 채택; GetFileInformationByHandleEx vs 비교에서 100k 케이스 median 37.9 ms vs 60.7 ms로 후자가 60% 느려서 기각 (<code>design.md:1363-1370</code>).</li>
+    <li><strong>FsWatcher → UI 반영:</strong> <code>WM_FE_FS_CHANGE</code> → <code>SetTimer(kFsCoalesceMs = 100 ms)</code> → <code>WM_TIMER</code> → refresh (<code>main-window.cpp:57, 2517-2521</code>, <code>design.md:1418, 1426</code>). 100 ms coalesce는 design §14.4 "≤ 100 ms event→UI" 예산을 구조적으로 만족.</li>
+  </ul>
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>지표</th><th>실측</th><th>게이트</th><th>출처</th></tr></thead>
+    <tbody>
+      <tr><td>Enum median small (200)</td><td>0.176 ms</td><td>≤ 50 ms</td><td><code>design.md:1357</code>, <code>report.md:196, 386</code></td></tr>
+      <tr><td>Enum median medium (10k)</td><td>5.03 ms</td><td>≤ 100 ms</td><td><code>design.md:1358</code>, <code>report.md:197, 386</code></td></tr>
+      <tr><td>Enum 100k (headless)</td><td>43.8 ms (median, <code>report.md:198, 386</code>) / 37.9 ms (10-run median, <code>design.md:1367</code>)</td><td>informational</td><td>—</td></tr>
+      <tr><td>large-flat (100k) memory @ M2</td><td>6.43 MB</td><td>≤ 15 MB</td><td><code>design.md:1359</code></td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <h3>A.6 메모리 사용 패턴</h3>
+  <ul>
+    <li><strong>SetProcessWorkingSetSizeEx hint</strong>: min 8 MB / max 128 MB (advisory) at <code>start()</code> (<code>process-memory.cpp:17-18, 53-58</code>).</li>
+    <li><strong>EmptyWorkingSet 트리거</strong>: <code>notifyMinimized()</code> 단 한 곳; 1 초 throttle (<code>kEmptyWorkingSetThrottleMs = 1000</code>, <code>process-memory.cpp:19, 110</code>). <code>PROCESS_MODE_BACKGROUND_BEGIN</code> 진입 후 <code>EmptyWorkingSet</code> 호출, QPC bracket으로 callMicros/bytesBefore/bytesAfter 캡처 (<code>process-memory.cpp:119-140</code>). <code>notifyRestored()</code>는 <code>PROCESS_MODE_BACKGROUND_END</code>로 복귀만 함 — 실제 페이지 복구 latency는 측정하지 않음.</li>
+    <li><strong>LowMemoryResourceNotification</strong>: 백그라운드 스레드 + 5 s re-arm interval (<code>process-memory.cpp:20, 217</code>); 콜백 1회 호출당 logger.warn + 등록된 std::function 호출 (<code>process-memory.cpp:197-218</code>). UI 측은 <code>postLowMemoryToMainWindow</code>로 <code>kWmFeLowMemory</code> Post → <code>IconCacheCoordinator::shrinkIconCache()</code> (<code>main-window.cpp:1501, 1705</code>; <code>design.md:1480</code>).</li>
+    <li><strong>샘플링 cadence</strong>: <code>recordMemoryProbe</code>가 5개 사이트에서 호출 (<code>process-memory.h:33</code>; 사이트: <code>app/main.cpp:206</code> 런치 직후, <code>app/main.cpp:407</code> 종료 직전, <code>main-window.cpp:939</code> <code>openFolder</code> 시작, <code>main-window.cpp:2359</code> first batch, <code>main-window.cpp:2382</code> enum complete). 폴링이 아니라 phase-boundary 트리거.</li>
+    <li><strong>경계값</strong>: design §11 — process working-set target ≤ 50 MB / budget ≤ 100 MB at 100k (<code>design.md:151-152</code>). Per-pane FileModelStore total ≤ 10 MB (entries 4 MB + arena ~4.8 MB + visibleOrder 0.4 MB) (<code>design.md:154</code>). ImageList process-global cap ≤ 3 MB (<code>design.md:155</code>).</li>
+  </ul>
+
+  <h3>A.7 벤치마크 타겟 (src/bench)</h3>
+  <p>CMake 단일 실행 파일 <code>FastExplorerBench</code> (<code>CMakeLists.txt:381-392</code>). 입력 진입점 <code>src/bench/main.cpp</code>. CommandKind: <code>Help / Version / Generate / Enumerate / HeadToHead</code> (<code>bench-cli.h:10-17</code>).</p>
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>타겟</th><th>측정 대상</th><th>임계치/현재값</th></tr></thead>
+    <tbody>
+      <tr><td><code>generate</code> (<code>dataset-generator.cpp:261-297</code>)</td><td>7 preset 데이터셋 생성: Small=200, Medium=10 000, LargeFlat=100 000, MixedNames=50 000, MixedTypes=30 000, ManyDirs=20 000, DeepTree=25-level</td><td>—(생성만)</td></tr>
+      <tr><td><code>enumerate</code> (<code>enumeration-bench.h:48-67</code>)</td><td>다중 run 후 median/p95 마이크로초 + 항목수 + FileModelStore footprint + WorkingSetSamples envelope (baseline / peak / final / per-cycle / maxCycleDrift)</td><td>large-flat 100k 헤드리스: baseline 4.04 MB / peak 9.39 MB / final 4.46 MB; per-cycle drift trace c0=400 / c1-c9=404 KB (<code>design.md:1520-1521</code>, <code>report.md:206-207, 388-390</code>)</td></tr>
+      <tr><td><code>head-to-head</code> (<code>head-to-head-bench.h:11-29</code>)</td><td>FindFirstFileExW vs GetFileInformationByHandleEx — per-method 평균/p95 + 상대 속도(2-decimal fixed-point)</td><td>100k median 37.9 vs 60.7 ms — Find 채택 (<code>design.md:1363-1370</code>)</td></tr>
+      <tr><td><code>--format json</code> (<code>bench-json.h:12-37</code>)</td><td>machine info(arch, processor count, page size, OS major/minor/build) + args + timing.{median_us, p95_us, runs[]} + memory.working_set 전체</td><td>baseline-compare CI input (<code>design.md:1502</code>)</td></tr>
+      <tr><td><code>scripts/bench-compare.ps1</code></td><td>두 enumerate JSON 비교 — median/p95/peak_bytes에 tolerance 5% (default), <code>max_cycle_drift_bytes ≤ 5 MB</code> 절대 게이트</td><td>exit 0=PASS / 1=REGRESSION / 2=INPUT ERROR (<code>design.md:1503</code>)</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <h3>A.8 위탁된 perf 리포트</h3>
+  <p>단일 문서: <code>docs/05-report/features/fast-explorer-core.report.md</code> (M1–M9-A6+A7 closure). 핵심 측정값:</p>
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>Gate</th><th>Target</th><th>Measured</th><th>Margin</th><th>출처 (report)</th></tr></thead>
+    <tbody>
+      <tr><td>M2 small (1k) first visible</td><td>≤ 50 ms</td><td>0.176 ms (enum)</td><td>283×</td><td><code>report.md:196</code></td></tr>
+      <tr><td>M2 medium (10k) first visible</td><td>≤ 100 ms</td><td>5.03 ms (enum)</td><td>19.9×</td><td><code>report.md:197</code></td></tr>
+      <tr><td>M2 100k enumeration</td><td>(informational)</td><td>43.8 ms headless</td><td>baseline</td><td><code>report.md:198</code></td></tr>
+      <tr><td>M3 small first-batch UI</td><td>(informational)</td><td>4.05 ms</td><td>—</td><td><code>report.md:199</code></td></tr>
+      <tr><td>M3 medium first-batch UI</td><td>(informational)</td><td>3.62 ms</td><td>—</td><td><code>report.md:200</code></td></tr>
+      <tr><td>M3 100k first-batch UI</td><td>≤ 200 ms</td><td>29.83 ms</td><td>6.7×</td><td><code>report.md:201</code></td></tr>
+      <tr><td>M3 UI stall</td><td>≤ 50 ms</td><td>0 measured</td><td>gate met</td><td><code>report.md:202</code></td></tr>
+      <tr><td>M5 sort (10k Name asc)</td><td>≤ 50 ms</td><td>2.75 ms</td><td>18.2×</td><td><code>report.md:203</code></td></tr>
+      <tr><td>M6 icon batch quality</td><td>≤ 20% delayed</td><td>≤ 20% (SHGFI_USEFILEATTRIBUTES)</td><td>gate met</td><td><code>report.md:204</code></td></tr>
+      <tr><td>M6 ImageList memory</td><td>≤ 3 MB</td><td>258 KB</td><td>11.6×</td><td><code>report.md:205</code></td></tr>
+      <tr><td>M7 100k working-set</td><td>≤ 50 MB target / 100 MB budget</td><td>9.39 MB (peak, headless)</td><td>5.3× under target</td><td><code>report.md:206</code></td></tr>
+      <tr><td>M7 memory soak (10-cycle)</td><td>≤ 5 MB drift</td><td>404 KB</td><td>12.4× under gate</td><td><code>report.md:207</code></td></tr>
+      <tr><td>M7 full-UI stall (A1)</td><td>—</td><td>probe 통합, 매뉴얼 run 대기</td><td>🟡 amber</td><td><code>report.md:208</code></td></tr>
+      <tr><td>M7 GETDISPINFO p99 (A1)</td><td>≤ 50 µs</td><td>histogram 준비, 정량 미실행</td><td>🟡 amber</td><td><code>report.md:209</code></td></tr>
+      <tr><td>M7 EmptyWorkingSet latency (A2)</td><td>≤ 200 ms</td><td>call-latency probe 준비, restore half 미실행</td><td>🟡 amber</td><td><code>report.md:210</code></td></tr>
+      <tr><td>Warm launch (M1)</td><td>≤ 500 ms</td><td>21–36 ms</td><td>≥14×</td><td><code>design.md:1317</code></td></tr>
+      <tr><td>Startup working set (M1)</td><td>≤ 25 MB</td><td>10.3 MB</td><td>2.4×</td><td><code>design.md:1318</code></td></tr>
+      <tr><td>M2 large-flat (100k) memory</td><td>≤ 15 MB</td><td>6.43 MB</td><td>2.3×</td><td><code>design.md:1359</code></td></tr>
+      <tr><td>M3 100k pane working set delta</td><td>≤ 100 MB budget</td><td>9.6 → 20.3 MB (delta ~11 MB)</td><td>9×</td><td><code>design.md:1397</code></td></tr>
+      <tr><td>M9 dual-pane soak (50회 nav)</td><td>≤ 10 MB drift</td><td>runbook 준비, 미실행</td><td>🟡 amber</td><td><code>report.md:602</code>, <code>m9-dual-pane-soak-checklist.md:67</code></td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <h3>A.9 베이스라인 요약 (다른 에이전트가 참조할 핵심 숫자)</h3>
+  <ul>
+    <li><strong>GETDISPINFO budget</strong>: ≤ 50 µs / row (<code>design.md:149, 342</code>); histogram bucket boundary 일치 (1/5/20/50/100/500 µs).</li>
+    <li><strong>UI stall classification</strong>: 50 / 100 / 500 ms = Info / Warn / Error (<code>stall-probe.h:16-18</code>); 종료 dump의 "≥500 ms bucket = 0"이 1-hour soak 패스 기준.</li>
+    <li><strong>Frame budget</strong>: 60 Hz 기준 scroll p95 ≤ 16.7 ms (<code>design.md:148</code>).</li>
+    <li><strong>Enumeration batch flush</strong>: 256 entries / sharing-violation 100 ms 재시도 × 1 / kMaxEntries 100 000 (<code>directory-enumerator.h:30-32</code>, <code>file-model-store.h:49</code>).</li>
+    <li><strong>First batch latency (실측)</strong>: small 4.05 ms / medium 3.62 ms / 100k 29.83 ms — 모두 game gate(50/100/200 ms) 통과.</li>
+    <li><strong>100k working set (헤드리스)</strong>: baseline 4.04 MB → peak 9.39 MB → final 4.46 MB; 50 MB target의 18.8% (<code>design.md:1520</code>).</li>
+    <li><strong>10-cycle memory drift</strong>: 404 KB (5 MB 게이트의 8.1%; 1번째 사이클 이후 plateau, 누적 없음) (<code>design.md:1521</code>).</li>
+    <li><strong>Sort (10k Name asc)</strong>: 2.75 ms; 50 ms 게이트의 5.5% (<code>design.md:1448</code>).</li>
+    <li><strong>ImageList footprint</strong>: ExtensionIconCache 256 슬롯 + placeholder 2 → ≈ 258–272 KB (3 MB cap의 ≤ 10%) (<code>design.md:1478</code>).</li>
+    <li><strong>측정 인프라 capacity</strong>: PerfTracker 10 000 events · 24 B/event; RingLogger 512 슬롯 × 256 B, 100 ms flush; FsWatcher coalesce 100 ms; Selection summary debounce 80 ms; LowMemory re-arm 5 s; EmptyWorkingSet throttle 1 s.</li>
+    <li><strong>FileEntry sizeof</strong>: 정확히 40 B (static_assert, <code>design.md:153, 399</code>).</li>
+    <li><strong>측정 미달 (Amber)</strong>: ① LVN_GETDISPINFO p99 정량값 — 매뉴얼 1-hour soak 미실행 ② EmptyWorkingSet 200 ms 복구 게이트 — UI 자동화 필요 ③ dual-pane 50-nav 10 MB drift — 30분 매뉴얼 미실행. WinUI 3 비교 시 이 3개는 baseline number를 비교하는 게 아니라 "동일 protocol에서 신규 측정" 으로 처리해야 함.</li>
+  </ul>
+</section>
+<section class="module" id="winui3-B">
+  <h2>B. WinUI 3 가상화·렌더 파이프라인 성능 특성</h2>
+  <p class="scope"><strong>출처:</strong> Microsoft Learn 공식 문서, <code>microsoft/microsoft-ui-xaml</code> 및 <code>microsoft/WindowsAppSDK</code> GitHub 이슈/디스커션, <code>files-community/Files</code> 이슈 트래커, Windows Developer Blog, 커뮤니티 블로그 벤치마크. 본 보고는 fast-explorer가 현재 사용 중인 Win32 <code>LVS_OWNERDATA</code> Virtual ListView (10k–100k 항목, 60–120 Hz 스크롤)를 WinUI 3 컬렉션 컨트롤로 대체했을 때의 성능 리스크를 정량/정성 평가한다.</p>
+
+  <h3>B.1 ListView vs ItemsRepeater vs ItemsView 가상화 모델</h3>
+  <p>WinUI 3에서 대규모 컬렉션을 표시하기 위한 후보 컨트롤은 <strong>세 가지</strong>이며, 가상화 정책과 책임 분담이 서로 다르다.</p>
+
+  <div class="table-wrap">
+  <table>
+    <thead>
+      <tr><th>컨트롤</th><th>UI 가상화</th><th>스크롤 내장</th><th>선택/포커스</th><th>주요 사용 시나리오</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><code>ListView</code> / <code>GridView</code></td>
+        <td>O (<code>ItemsStackPanel</code>·<code>ItemsWrapGrid</code> 기본 패널)</td>
+        <td>O (내장 <code>ScrollViewer</code>)</td>
+        <td>O (Selector 파생)</td>
+        <td>완성도 높은 리스트가 필요한 대부분 시나리오 — fast-explorer가 가장 직접적으로 대체할 수 있는 컨트롤
+          <a href="https://learn.microsoft.com/en-us/windows/windows-app-sdk/api/winrt/microsoft.ui.xaml.controls.listview?view=windows-app-sdk-1.6">[Learn ListView]</a>
+        </td>
+      </tr>
+      <tr>
+        <td><code>ItemsRepeater</code></td>
+        <td>O (단, 호스트가 가상화 지원해야 함)</td>
+        <td>X (별도 <code>ScrollViewer</code>/<code>ScrollView</code>에 래핑 필수)</td>
+        <td>X (직접 구현)</td>
+        <td>완전 커스텀 컬렉션 UX의 빌딩 블록
+          <a href="https://learn.microsoft.com/en-us/windows/apps/design/controls/items-repeater">[Learn ItemsRepeater]</a>
+        </td>
+      </tr>
+      <tr>
+        <td><code>ItemsView</code> (WinAppSDK 1.4+)</td>
+        <td>O (내부적으로 <code>ItemsRepeater</code> 위에 구축)</td>
+        <td>O (<code>ScrollView</code> 기반, InteractionTracker 사용)</td>
+        <td>O (단, <code>SelectedItem</code> 읽기 전용·양방향 바인딩 불가)</td>
+        <td>ListView/GridView 후속 권장 컨트롤, Layout/Transition 교체 가능
+          <a href="https://learn.microsoft.com/en-us/windows/apps/develop/ui/controls/itemsview">[Learn ItemsView]</a>
+          <a href="https://xamlbrewer.wordpress.com/2023/10/20/migrating-from-listview-to-itemsview-in-winui-3/">[XAML Brewer migration]</a>
+        </td>
+      </tr>
+    </tbody>
+  </table>
+  </div>
+
+  <p><strong>대규모(50k+) 데이터셋에 대한 권고:</strong></p>
+  <ul>
+    <li><strong>ListView</strong>는 데이터 가상화(random-access)와 UI 가상화를 함께 지원하며, "100만 항목 컬렉션에서 100,000–100,050만 로드, 사용자가 처음으로 이동하면 1–50만 로드" 식의 스파스 액세스 패턴이 공식 가이드 문서에 명시되어 있다 <a href="https://learn.microsoft.com/en-us/windows/apps/develop/performance/listview-and-gridview-data-optimization">[Learn data virtualization]</a>.</li>
+    <li><strong>ItemsRepeater</strong>는 가상화는 하지만, "ItemsSource에 큰 컬렉션을 할당하는 것만으로 10초 이상 소요"되는 알려진 결함이 있다(<code>InspectingDataSource::WrapIterable</code>이 <code>AnnotatedScrollBarLabel</code> 컬렉션을 전수 순회) <a href="https://github.com/microsoft/microsoft-ui-xaml/issues/8888">[#8888 Closed]</a>. 100k 데이터셋을 다루는 fast-explorer 시나리오에서 직접 사용은 위험.</li>
+    <li><strong>ItemsView</strong>는 사실상 ItemsRepeater의 상위 래퍼이므로 동일 결함의 영향권일 수 있으나, ScrollView/InteractionTracker 통합으로 스크롤 부드러움이 향상된다 <a href="https://learn.microsoft.com/en-us/windows/apps/develop/ui/controls/itemsview">[Learn ItemsView]</a>.</li>
+    <li>비균등 항목 높이(variable row height)는 ItemsRepeater 가상화 가정과 충돌하며 layout pass 비용이 급증하여 "10 fps 미만"으로 떨어진 사례가 보고됨 <a href="https://github.com/microsoft/microsoft-ui-xaml/discussions/7514">[Discussion #7514]</a>. fast-explorer 듀얼-페인은 균일 행 높이라 이 결함은 회피 가능.</li>
+  </ul>
+
+  <h3>B.2 컨테이너 재활용과 ContainerContentChanging</h3>
+  <p>WinUI 3 ListView/GridView의 핵심 가상화 메커니즘은 <strong>container recycling</strong>이다. 스크롤로 화면 밖으로 나간 <code>ListViewItem</code>은 폐기되지 않고 recycle queue에 들어가 새 데이터에 재바인딩된다. Win32 LVS_OWNERDATA의 <code>LVN_GETDISPINFO</code> 콜백과 개념적으로 유사하나, 컨테이너 재사용 비용이 0이 아니라는 점에서 차이가 있다.</p>
+
+  <ul>
+    <li><strong><code>ContainerContentChanging</code> 이벤트</strong>는 컨테이너가 새 데이터로 채워지거나 recycle queue에 들어갈 때마다 발생하며, <code>InRecycleQueue</code>/<code>Phase</code>/<code>ItemIndex</code> 인자를 제공한다. Phase 0에서 placeholder/Opacity 0 처리 후, <code>RegisterUpdateCallback</code>으로 다음 phase를 예약하는 점진적 렌더링 패턴이 권장된다 <a href="https://learn.microsoft.com/en-us/uwp/api/windows.ui.xaml.controls.listviewbase.containercontentchanging?view=winrt-22621">[Learn ContainerContentChanging]</a>.</li>
+    <li><strong>최대 성능을 위해서는 마크업 바인딩을 제거하고 코드비하인드에서 직접 값을 대입</strong>해야 한다(공식 권고) <a href="https://learn.microsoft.com/en-us/windows/uwp/debug-test-perf/optimize-gridview-and-listview">[Learn Optimize ListView]</a>. — 이는 x:Bind보다도 더 절약 가능하다는 의미.</li>
+    <li><strong>전제 조건:</strong> ContainerContentChanging은 ItemsPanel이 <code>ItemsStackPanel</code> 또는 <code>ItemsWrapGrid</code>일 때만 발생한다. 패널을 교체하면 이벤트가 사라지므로 fast-explorer가 커스텀 패널을 쓰려면 별도 진행률 렌더링 전략이 필요 <a href="https://learn.microsoft.com/en-us/windows/uwp/debug-test-perf/optimize-gridview-and-listview">[Learn Optimize ListView]</a>.</li>
+    <li><strong>패널 캐시 길이:</strong> <code>ItemsStackPanel.CacheLength</code> / <code>ItemsWrapGrid.CacheLength</code> 기본값은 데스크톱 4, 모바일 2. 4 = "뷰포트의 4배"만큼 선행/후행 컨테이너를 materialize → 100k 행 중 약 viewport*5 개만 실제 트리에 존재 <a href="https://learn.microsoft.com/en-us/archive/blogs/alainza/listview-basics-and-virtualization-concepts">[ListView basics & virtualization]</a>.</li>
+    <li><strong>GetContainerForItemOverride 비용:</strong> 새 컨테이너 생성 시 호출되며, recycling이 깨지면 매 행마다 호출되어 가상화가 사실상 무력화된다 — <code>ChoosingItemContainer</code>·<code>ItemTemplateSelector</code> 오용으로 발생하는 회귀가 다수 보고됨 <a href="https://github.com/microsoft/microsoft-ui-xaml/issues/9307">[#9307 closed]</a> <a href="https://github.com/microsoft/microsoft-ui-xaml/issues/9189">[#9189 closed]</a>.</li>
+  </ul>
+
+  <p><strong>fast-explorer 매핑:</strong> 현재의 113-슬롯 dummy vtable + <code>IListView_FE::SetOwnerDataCallback</code> 트릭은 WinUI 3에는 직접 대응이 없다. 대신 (a) ContainerContentChanging Phase 분할 + (b) Phase 0에서 텍스트/이름만 채우고 (c) Phase 1+에서 아이콘·확장자 색상 등을 점진 채우는 패턴으로 같은 효과(불필요한 ImageList 조회 억제)를 달성할 수 있다.</p>
+
+  <h3>B.3 DataTemplate 선택과 x:Bind / x:Phase</h3>
+
+  <h4>x:Bind vs Binding</h4>
+  <ul>
+    <li><strong>x:Bind</strong>는 컴파일 타임에 partial class 코드를 생성해 reflection 없이 직접 프로퍼티 접근. 공식 문서는 "compile-time validation, breakpoint 가능, 우수한 성능" 으로 권장 <a href="https://learn.microsoft.com/en-us/windows/apps/develop/platform/xaml/x-bind-markup-extension">[Learn x:Bind]</a>.</li>
+    <li><strong>{Binding}</strong>은 런타임 reflection 기반. 커뮤니티 자료(<em>주의: 정량 수치 출처는 비공식 블로그</em>)에 따르면 property access가 최대 5배 정도 빠르다고 보고되나, Microsoft 공식 벤치마크는 발견되지 않음 <a href="https://chriscodes.net/notes/_net/user-interfaces/winui-3/xaml/mvvm-pattern/x-bind-vs-binding/">[chriscodes blog, non-Microsoft]</a>.</li>
+    <li>x:Bind 기본 모드는 <strong>OneTime</strong>(Binding은 OneWay). OneTime은 change-detection 훅 코드를 생성하지 않아 더 가볍다 <a href="https://learn.microsoft.com/en-us/windows/uwp/xaml-platform/x-bind-markup-extension">[Learn x:Bind markup]</a>.</li>
+  </ul>
+
+  <h4>x:Phase (점진 렌더링)</h4>
+  <ul>
+    <li><code>x:Phase</code>는 x:Bind 바인딩과 함께 쓰여, "스크롤 중에는 placeholder만 그리고, 사용자가 멈추면 후속 phase를 렌더링" 하는 점진 업데이트를 마크업만으로 표현 가능. WinUI 3에서도 동일하게 동작한다 <a href="https://learn.microsoft.com/en-us/windows/uwp/debug-test-perf/optimize-gridview-and-listview">[Learn Optimize ListView]</a>.</li>
+    <li><strong>한계:</strong> Phase는 x:Bind 전용. {Binding} 또는 코드비하인드 setter에는 적용되지 않는다. 또한 Phase는 그려질 순서를 약속할 뿐, 실제 binding 실행은 idle 시점에 합쳐질 수 있어 정밀한 시간 제어는 불가 (공식 문서가 구체 latency 보장을 제시하지 않음) — <em>no public number found</em>.</li>
+  </ul>
+
+  <h4>ItemTemplateSelector vs ChoosingItemContainer</h4>
+  <ul>
+    <li><code>ItemTemplateSelector</code>는 최대 <strong>5개의 후보 컨테이너</strong>만 비교해서 재사용 여부를 결정한다 — fast-explorer가 폴더/파일/심볼릭링크/숨김파일 등 다중 템플릿을 쓰면 5개를 넘는 순간 가상화가 깨질 위험 <a href="https://learn.microsoft.com/en-us/windows/uwp/debug-test-perf/optimize-gridview-and-listview">[Learn Optimize ListView]</a>.</li>
+    <li>WinUI 3에서 <code>ItemTemplateSelector</code>는 ListView/GridView/TreeView에서 컨테이너 재활용 시 호환 안 되는 컨테이너를 선택해 깨지는 결함이 보고됨 <a href="https://github.com/microsoft/microsoft-ui-xaml/issues/9189">[#9189 closed]</a>. <code>ChoosingItemContainer</code>이벤트 사용이 권장 경로.</li>
+  </ul>
+
+  <h3>B.4 이미지/아이콘 렌더링 비용</h3>
+  <p>fast-explorer는 행마다 16×16 또는 32×32 셸 아이콘을 표시한다. WinUI 3 셀에서 이를 구현할 때의 비용:</p>
+  <ul>
+    <li><strong>BitmapImage</strong>: 디코딩과 GPU 업로드를 XAML이 자동 수행. <code>DecodePixelWidth</code> / <code>DecodePixelHeight</code>를 설정하지 않으면 <em>풀 사이즈로 캐싱</em>되어 메모리 폭발(예: 3800×3000 JPG → ~43 MB 디코드, 10 MB 원본 대비 4배) <a href="https://learn.microsoft.com/en-us/windows/apps/develop/ui/controls/images-imagebrushes">[Learn Images]</a>. 행마다 다른 아이콘이라도 16/32px decode를 강제하는 것이 필수.</li>
+    <li><strong>StorageFile.GetThumbnailAsync</strong>: Windows 썸네일 디스크 캐시(<code>thumbcache_*.db</code>)를 이용해 가장 빠른 경로. <em>OneDrive 클라우드-온리</em> 파일은 placeholder만 반환됨 <a href="https://learn.microsoft.com/en-us/uwp/api/windows.storage.storagefile.getthumbnailasync?view=winrt-26100">[Learn GetThumbnailAsync]</a> <a href="https://github.com/microsoft/WindowsAppSDK/issues/1874">[#1874 OneDrive thumbnail]</a>. fast-explorer가 기존에 사용하는 <code>IShellItemImageFactory::GetImage</code> 경로(C++ COM)는 보존하는 편이 비용·동작 모두 우월.</li>
+    <li><strong>WinUI에는 WPF의 <code>Imaging.CreateBitmapSourceFromHIcon</code>에 1:1 대응되는 API가 없음</strong>. <code>HICON</code>/<code>HBITMAP</code>을 XAML 이미지 소스로 올리려면 픽셀을 메모리 스트림으로 복사 후 <code>SoftwareBitmap</code>으로 래핑하는 추가 비용 발생 <a href="https://github.com/microsoft/microsoft-ui-xaml/discussions/7943">[Discussion #7943]</a>.</li>
+    <li><strong>SoftwareBitmapSource</strong>: BGRA8 픽셀 버퍼를 직접 받아 GPU 업로드. <code>BitmapImage</code>보다 디코딩 단계가 없어 초기 비용은 낮지만, 매 행마다 IPC를 거쳐 셸로부터 비트맵을 받는 디자인이면 결국 동일 — caching 전략이 핵심.</li>
+    <li><strong>권고:</strong> C++ 코어가 만든 <code>HBITMAP</code> ImageList 캐시를 유지하고, WinUI 행은 thumbnail key(예: file-type SHFILEINFO icon index)를 통해 메모리 매핑된 동일 SoftwareBitmap을 공유. row당 신규 alloc 금지.</li>
+  </ul>
+
+  <h3>B.5 스크롤·합성(Composition) 파이프라인</h3>
+  <ul>
+    <li><strong>XAML <code>ScrollViewer</code> 는 UI 스레드에 종속</strong>. 큰 layout pass(예: variable-height items, heavy template)가 UI 스레드를 점유하면 스크롤이 즉시 stutter. Microsoft 공식 문서: "frame이 길게 실행되면 디스플레이 업데이트뿐 아니라 input 처리도 막힌다" <a href="https://learn.microsoft.com/en-us/windows/apps/performance/winui-perf">[Learn WinUI perf]</a>.</li>
+    <li><strong>InteractionTracker</strong>는 독립 input 스레드에서 manipulation을 처리해 UI 스레드 부하와 무관하게 60+ fps 스크롤을 유지. <code>ScrollView</code>(신규 컨트롤)와 <code>ItemsView</code>는 내부적으로 InteractionTracker를 사용 <a href="https://learn.microsoft.com/en-us/windows/apps/develop/composition/input-driven-animations">[Learn Input-driven animations]</a> <a href="https://github.com/microsoft/microsoft-ui-xaml/issues/108">[#108 ScrollView spec, Open]</a>.</li>
+    <li><strong>Composition thread</strong>는 UI 스레드와 분리되어 visual tree의 transform·opacity·brush 등을 합성. 그러나 컨텐츠 변경(텍스트 변경, 신규 컨테이너 materialize)은 여전히 UI 스레드 통과 — 가상화 콜백 비용이 16.6 ms 예산을 넘으면 빈 칸이 보인다 <a href="https://learn.microsoft.com/en-us/windows/apps/develop/composition/visual-layer">[Learn Visual layer]</a>.</li>
+    <li><strong>알려진 stutter 원인:</strong>
+      <ul>
+        <li>WinUI 3 빈 윈도우에서 <strong>프레임당 29–31 ms</strong> 측정(UWP는 ~0.5 ms) — 60×차이 보고 <a href="https://github.com/microsoft/microsoft-ui-xaml/issues/6031">[#6031 closed]</a>. (현재는 회귀 수정됨)</li>
+        <li>마우스 이벤트는 ~1000 Hz로 발사되지만 UI 함수 실행은 <strong>~30 fps에 cap</strong>되는 회귀 <a href="https://github.com/microsoft/microsoft-ui-xaml/issues/7290">[#7290 closed, fixed in WinAppSDK 1.3]</a>.</li>
+        <li>고주사율 모니터에서 애니메이션이 lag/non-smooth <a href="https://github.com/microsoft/microsoft-ui-xaml/issues/7373">[#7373 closed]</a>.</li>
+        <li>WinUI 3 Win32에서 정밀 터치패드 scrolling personality가 UWP 대비 열등(bounce·glide 누락) <a href="https://github.com/microsoft/microsoft-ui-xaml/issues/2513">[#2513 closed]</a>.</li>
+      </ul>
+    </li>
+    <li><strong>120 Hz 대응:</strong> WinUI 3는 명시적 120 Hz 보장 문구가 없으며, 위 회귀 사례들로 보아 vsync-aligned high-refresh-rate 스크롤은 보장되지 않는다. 현재 Win32 ListView도 GDI/DWM에 의존하므로 동일하나, fast-explorer가 "60–120 Hz 스크롤"을 요구사항으로 두면 InteractionTracker 기반 컨트롤(ItemsView/ScrollView) 채택이 필수.</li>
+  </ul>
+
+  <h3>B.6 시작 시간 / 메모리 풋프린트</h3>
+  <ul>
+    <li><strong>Native AOT (Windows App SDK 1.6+)</strong>: Microsoft 샘플 Contoso Camera 앱 측정 결과 <strong>start time 50% 단축</strong>, 패키지 크기 framework-package 시 ~8×, self-contained 시 ~2× 감소 <a href="https://blogs.windows.com/windowsdeveloper/2024/09/04/whats-new-in-windows-app-sdk-1-6/">[Windows Dev Blog WASDK 1.6]</a>. 단, "모든 타입이 trimming-safe하게 root되도록 개발자가 보장해야 함" — reflection 기반 {Binding} 타깃이 위험 (1.6 단계에서는 자동화 없음).</li>
+    <li><strong>WinUI 3 unpackaged 앱 메모리:</strong> 최소 템플릿 앱에서도 추가 메모리 비용이 크다는 이슈가 Open 상태로 추적 중 <a href="https://github.com/microsoft/microsoft-ui-xaml/issues/8736">[#8736 Open]</a>. 정확한 수치는 스크린샷에만 존재(텍스트로 캡처 안 됨) — <em>no clean public number found</em>.</li>
+    <li><strong>Win32 비교 직접 수치:</strong> Microsoft Learn의 startup performance 문서는 절대 ms 수치를 공개하지 않는다 <a href="https://learn.microsoft.com/en-us/windows/apps/develop/performance/app-startup-performance">[Learn startup perf]</a>. 일부 3rd-party 블로그/뉴스가 File Explorer 콜드 launch 2.7 s → 1.4 s, Notepad 1.1 s → 0.4 s 등을 인용하나, 출처가 windowsnews.ai 같은 2차 매체이므로 본 보고에서는 "1차 소스 미확인, 참고 수치"로 기록한다 <a href="https://windowsnews.ai/article/winui-3-performance-push-file-explorer-and-notepad-benchmarks-improve.418403">[windowsnews.ai 2차]</a>.</li>
+    <li><strong>실측 비교점(fast-explorer 관점):</strong> 현재 Win32 fast-explorer는 모듈 자체가 native이며 cold launch는 통상 100 ms 이내(가정). WinUI 3 + .NET 8 unpackaged + AOT 미적용 시 초기 XAML 파싱/JIT 비용으로 <strong>500 ms~1.5 s 추가 부담</strong>이 예상되며, AOT 적용 시 절반 정도 회수 가능하다는 시나리오가 합리적 (직접 측정치 없음).</li>
+  </ul>
+
+  <h3>B.7 알려진 성능 이슈 (GitHub 인용)</h3>
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>이슈</th><th>증상</th><th>상태</th><th>링크</th></tr></thead>
+    <tbody>
+      <tr>
+        <td>#6031</td>
+        <td>WinUI 3 빈 윈도우 프레임 29–31 ms (~33 fps), UWP 대비 ~60× 느림. 고사양 PC에서 재현</td>
+        <td>Closed (WinAppSDK 1.3 milestone)</td>
+        <td><a href="https://github.com/microsoft/microsoft-ui-xaml/issues/6031">microsoft-ui-xaml#6031</a></td>
+      </tr>
+      <tr>
+        <td>#7290</td>
+        <td>UI thread dispatcher가 ~30 fps에 cap, mouse는 ~1000 Hz지만 UI 함수가 따라가지 못함</td>
+        <td>Closed (WinAppSDK 1.3 milestone)</td>
+        <td><a href="https://github.com/microsoft/microsoft-ui-xaml/issues/7290">microsoft-ui-xaml#7290</a></td>
+      </tr>
+      <tr>
+        <td>#7373</td>
+        <td>Low frame rate / 애니메이션 stutter, 고주사율 모니터 영향. WinUI 2에는 없음</td>
+        <td>Closed</td>
+        <td><a href="https://github.com/microsoft/microsoft-ui-xaml/issues/7373">microsoft-ui-xaml#7373</a></td>
+      </tr>
+      <tr>
+        <td>#2513</td>
+        <td>WinUI 3 Win32 정밀 터치패드 스크롤이 UWP 대비 열등(bounce/glide 누락, Synaptics 비기능)</td>
+        <td>Closed</td>
+        <td><a href="https://github.com/microsoft/microsoft-ui-xaml/issues/2513">microsoft-ui-xaml#2513</a></td>
+      </tr>
+      <tr>
+        <td>#8888</td>
+        <td>ItemsRepeater.ItemsSource에 100k 컬렉션 할당 시 10초+ 소요. <code>AnnotatedScrollBarLabel</code> 컬렉션 순회 결함</td>
+        <td>Closed</td>
+        <td><a href="https://github.com/microsoft/microsoft-ui-xaml/issues/8888">microsoft-ui-xaml#8888</a></td>
+      </tr>
+      <tr>
+        <td>#9189</td>
+        <td>ItemTemplateSelector가 ListView/GridView/TreeView 재활용 중 호환 안 되는 컨테이너 선택 → 크래시·바인딩 실패</td>
+        <td>Closed</td>
+        <td><a href="https://github.com/microsoft/microsoft-ui-xaml/issues/9189">microsoft-ui-xaml#9189</a></td>
+      </tr>
+      <tr>
+        <td>#9307</td>
+        <td>다중 ItemTemplate 사용 시 ChoosingItemContainer recycle queue 매칭 실패 → 가상화 무력화</td>
+        <td>Closed</td>
+        <td><a href="https://github.com/microsoft/microsoft-ui-xaml/issues/9307">microsoft-ui-xaml#9307</a></td>
+      </tr>
+      <tr>
+        <td>Discussion #7514</td>
+        <td>ItemsRepeater + 10-element template 스크롤 시 fps &lt; 10. Layout(measure/arrange)이 병목</td>
+        <td>Open discussion</td>
+        <td><a href="https://github.com/microsoft/microsoft-ui-xaml/discussions/7514">microsoft-ui-xaml#7514</a></td>
+      </tr>
+      <tr>
+        <td>#8651</td>
+        <td>ListView가 동일 항목에 대해 컨테이너 2개 생성 (recycling 비정상)</td>
+        <td>Open</td>
+        <td><a href="https://github.com/microsoft/microsoft-ui-xaml/issues/8651">microsoft-ui-xaml#8651</a></td>
+      </tr>
+      <tr>
+        <td>#8736</td>
+        <td>WinUI 3 unpackaged 앱 최소 템플릿의 메모리 사용량 과다</td>
+        <td>Open</td>
+        <td><a href="https://github.com/microsoft/microsoft-ui-xaml/issues/8736">microsoft-ui-xaml#8736</a></td>
+      </tr>
+      <tr>
+        <td>#2990</td>
+        <td>ScrollViewer 컨텐츠가 ManipulationDelta 사용 시 panning 중 lag</td>
+        <td>Open</td>
+        <td><a href="https://github.com/microsoft/microsoft-ui-xaml/issues/2990">microsoft-ui-xaml#2990</a></td>
+      </tr>
+    </tbody>
+  </table>
+  </div>
+
+  <h3>B.8 microsoft/Files 케이스 스터디</h3>
+  <p>files-community/Files는 WinUI 3로 작성된 가장 성숙한 third-party 파일 탐색기로, fast-explorer와 워크로드가 가장 유사하다(듀얼-페인 아님이라는 차이는 있음). 같은 도메인에서 보고된 실측 성능 문제:</p>
+
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>이슈</th><th>증상 / 워크로드</th><th>인용 수치</th><th>상태 / 링크</th></tr></thead>
+    <tbody>
+      <tr>
+        <td>#15554</td>
+        <td>2000+ 항목 폴더 진입 시 "slows to a crawl", 수초 후 unresponsive. PR #15559·#15579로 수정됨</td>
+        <td>항목 ~2000, 파일 크기 1KB~9GB</td>
+        <td>Closed → <a href="https://github.com/files-community/Files/issues/15554">Files#15554</a></td>
+      </tr>
+      <tr>
+        <td>#11836</td>
+        <td>App cold start: Files 3.61–4.96 s vs Windows Explorer 1.55–1.68 s. 첫 시도 21 s 보고</td>
+        <td>Files 3.61 s, Explorer 1.55 s (직접 launch)</td>
+        <td>Closed → <a href="https://github.com/files-community/Files/issues/11836">Files#11836</a></td>
+      </tr>
+      <tr>
+        <td>#9280</td>
+        <td>폴더 더블클릭 후 1–3초 지연, 상위 폴더로 이동 후 1초 추가 새로고침으로 "screen jumps"</td>
+        <td>탐색 latency 1–3 s</td>
+        <td>Closed → <a href="https://github.com/files-community/Files/issues/9280">Files#9280</a></td>
+      </tr>
+      <tr>
+        <td>#14939</td>
+        <td>Ryzen 3900X·32 GB·NVMe에서 폴더 탐색 1–3초, 탭 전환 ~3초, hover ms 0.1–0.2초 지연. Windows Explorer 대비 2–4× 느림</td>
+        <td>hover latency 100–200 ms</td>
+        <td>Closed (duplicate of #4180) → <a href="https://github.com/files-community/Files/issues/14939">Files#14939</a></td>
+      </tr>
+      <tr>
+        <td>#3062</td>
+        <td>스크롤 속도가 너무 느림. 메인테이너 답변: "DataGrid 컨트롤 한계, WinUI가 새 DataGrid 작업 중"</td>
+        <td>—</td>
+        <td>Closed → <a href="https://github.com/files-community/Files/issues/3062">Files#3062</a></td>
+      </tr>
+      <tr>
+        <td>#3380</td>
+        <td>v1.2.0.0 "incredible bad. Almost unusable", 폴더 열기 1–2초, 검색 매우 느림</td>
+        <td>폴더 open 1–2 s</td>
+        <td>Closed → <a href="https://github.com/files-community/Files/issues/3380">Files#3380</a></td>
+      </tr>
+    </tbody>
+  </table>
+  </div>
+
+  <p><strong>교훈:</strong></p>
+  <ul>
+    <li>WinUI 3 자체보다 <strong>DataGrid·ListView 컨트롤 선택과 워크로드</strong>가 perf 결정 요인. Files 팀이 DataGrid를 한계 원인으로 지목한 것은 동일 컨트롤을 fast-explorer가 채택하면 안 된다는 강한 시그널 <a href="https://github.com/files-community/Files/issues/3062">[#3062]</a>.</li>
+    <li>같은 HW에서 Windows Explorer (Win32+XAML 하이브리드) 대비 Files (pure WinUI 3) 가 콜드 launch 2–4×, 폴더 탐색 latency 1–3 s 더 느린 것은 단순 코드 품질이 아니라 <strong>플랫폼 비용</strong>이 누적된 결과로 해석된다.</li>
+    <li>2000+ 항목에서도 가상화가 제대로 동작하지 않는 회귀가 자주 발생 (#15554 등). fast-explorer의 100k 시나리오를 위해서는 ContainerContentChanging + ChoosingItemContainer + 균일 행 높이 + x:Bind OneTime + DecodePixelWidth + 데이터 가상화(<code>ISupportIncrementalLoading</code>/<code>IItemsRangeInfo</code>)를 <strong>모두 정확히</strong> 결합해야 한다.</li>
+  </ul>
+
+  <h3>B.9 핵심 요약 (다음 에이전트 C/D 및 종합 평가자용)</h3>
+  <ul>
+    <li><strong>(1) 컨트롤 선택:</strong> fast-explorer 50k–100k 균일행 시나리오에는 <code>ListView</code> + <code>ItemsStackPanel</code>이 가장 안전. <code>ItemsRepeater</code> 단독은 #8888(100k 할당 10 s+), #7514(layout 병목 &lt;10 fps) 등 회귀가 명시. <code>ItemsView</code>는 InteractionTracker 기반 스크롤이 매력적이나 동일한 ItemsRepeater 결함 영향권 가능성 + SelectedItem 단방향 제약 <a href="https://github.com/microsoft/microsoft-ui-xaml/issues/8888">[#8888]</a> <a href="https://learn.microsoft.com/en-us/windows/apps/develop/ui/controls/itemsview">[Learn ItemsView]</a>.</li>
+
+    <li><strong>(2) Win32 LVS_OWNERDATA의 직접 대응:</strong> <code>ContainerContentChanging</code> + <code>ChoosingItemContainer</code> + <code>ItemsStackPanel</code> 조합. <code>LVN_GETDISPINFO</code>의 "필요한 행만 조회"는 가상화 + Phase 분할로 재현 가능하지만, "113-슬롯 dummy vtable로 ImageList 콜백 억제"같은 마이크로-최적화는 WinUI 3에 등가물이 없고 ContainerContentChanging Phase로 같은 효과를 더 안전하게 달성 <a href="https://learn.microsoft.com/en-us/windows/uwp/debug-test-perf/optimize-gridview-and-listview">[Learn Optimize ListView]</a>.</li>
+
+    <li><strong>(3) 바인딩:</strong> 모든 셀에서 <code>x:Bind</code> <strong>OneTime</strong> 사용 필수. {Binding}은 reflection으로 100k 행에서 비용이 비선형 증가. 더 빠른 경로는 ContainerContentChanging에서 코드비하인드로 setter를 직접 호출 (Microsoft 공식 "maximum performance" 권고) <a href="https://learn.microsoft.com/en-us/windows/uwp/debug-test-perf/optimize-gridview-and-listview">[Learn Optimize ListView]</a>.</li>
+
+    <li><strong>(4) DataTemplate selector 위험:</strong> <code>ItemTemplateSelector</code>는 후보 5개 한계 + WinUI 3 회귀(#9189, #9307)로 fast-explorer의 다중 항목 타입(폴더/파일/링크)에 쓰면 가상화가 깨질 가능성이 높음. <code>ChoosingItemContainer</code>이벤트로 대체 권장 <a href="https://github.com/microsoft/microsoft-ui-xaml/issues/9189">[#9189]</a>.</li>
+
+    <li><strong>(5) 아이콘:</strong> WinUI에는 <code>CreateBitmapSourceFromHIcon</code> 1:1 대응 API 없음. <code>StorageFile.GetThumbnailAsync</code>은 OneDrive 클라우드-온리에서 placeholder만 반환하고, 시스템 썸네일 캐시 사이즈에 제한. C++ 코어의 기존 <code>IShellItemImageFactory</code>+HBITMAP 캐시를 유지하고 <code>SoftwareBitmapSource</code>로 WinUI에 어댑팅하는 것이 비용·동작 모두 최적 <a href="https://github.com/microsoft/microsoft-ui-xaml/discussions/7943">[Discussion #7943]</a> <a href="https://github.com/microsoft/WindowsAppSDK/issues/1874">[#1874]</a>.</li>
+
+    <li><strong>(6) 스크롤 60–120 Hz:</strong> 전통적 XAML <code>ScrollViewer</code>는 UI 스레드 종속이라 layout 부하 시 stutter. <code>ItemsView</code>/<code>ScrollView</code>가 사용하는 <strong>InteractionTracker</strong>가 독립 스레드에서 manipulation 처리 → fast-explorer의 120 Hz 요구를 충족하려면 이 경로가 사실상 필수. 그러나 WinUI 3 자체에 ~30 fps cap 회귀(#7290), Win32 정밀 터치패드 열등(#2513) 이력이 있어 회귀 검증 부담이 큼 <a href="https://learn.microsoft.com/en-us/windows/apps/develop/composition/input-driven-animations">[Learn]</a> <a href="https://github.com/microsoft/microsoft-ui-xaml/issues/7290">[#7290]</a>.</li>
+
+    <li><strong>(7) 시작 시간:</strong> Native AOT(WASDK 1.6+)로 Microsoft 자체 측정 -50% (Contoso Camera). 그러나 trimming-safe 강제 + {Binding} reflection 위험 → fast-explorer는 x:Bind 일관 적용 시 AOT 채택 가능 <a href="https://blogs.windows.com/windowsdeveloper/2024/09/04/whats-new-in-windows-app-sdk-1-6/">[Win Dev Blog WASDK 1.6]</a>.</li>
+
+    <li><strong>(8) 메모리:</strong> WinUI 3 빈 윈도우조차 unpackaged 모드에서 비대한 메모리 footprint가 Open 이슈로 추적 중(#8736). fast-explorer가 현재 native Win32로 수 MB 수준이라면 WinUI 3 전환 시 <strong>최소 수십 MB 증가 예상</strong>(공식 1차 수치 없음).</li>
+
+    <li><strong>(9) Files 앱 reality check:</strong> 동일 도메인 mature WinUI 3 앱이 폴더 진입 1–3 s, hover 100–200 ms, 2000+ 항목 unresponsive 회귀를 반복적으로 겪었다는 사실은 100k 항목·120 Hz 목표를 WinUI 3로 달성하기가 <strong>"가능은 하나 평범한 구현으로는 회귀 위험"</strong>임을 시사한다 <a href="https://github.com/files-community/Files/issues/14939">[Files#14939]</a> <a href="https://github.com/files-community/Files/issues/15554">[Files#15554]</a>.</li>
+
+    <li><strong>(10) 권장 검증 전략(C/D 에이전트에게):</strong> POC에서 <strong>(a)</strong> 100k 더미 row에 ListView+x:Bind OneTime+ContainerContentChanging Phase, <strong>(b)</strong> 동일 데이터에 ItemsView, <strong>(c)</strong> 동일 데이터에 ItemsRepeater+ScrollView, 세 변종을 모두 측정. 측정 지표: 콜드/웜 launch ms, ItemsSource set 후 첫 paint까지 ms, 60·120 Hz 모니터에서 wheel·flick·drag 스크롤 fps, 1000 row 빠른 스크롤 시 dropped frames %.</li>
+  </ul>
+</section>
+<section class="module" id="winui3-C">
+  <h2>C. C++/WinRT 시나리오 &mdash; 기존 C++ Shell COM 재사용성</h2>
+  <p class="scope"><strong>출처:</strong> 코드(<code>src/ui/shell-*</code>, <code>drop-*</code>, <code>icon-*</code>) + Microsoft Learn / WindowsAppSDK 이슈</p>
+
+  <h3>C.1 윈도우/HWND 모델 호환성</h3>
+
+  <p>
+    현재 <code>MainWindow</code>는 전형적인 Win32 child-HWND 트리 구조이다.
+    <code>src/ui/main-window.cpp:1383</code> 의 <code>CreateWindowExW(0, kClassName, L"Fast Explorer", WS_OVERLAPPEDWINDOW, ...)</code>
+    가 최상위 프레임 HWND를 만들고, 그 자식으로:
+  </p>
+  <ul>
+    <li>상태바 1개 (<code>STATUSCLASSNAMEW</code>, <code>main-window.cpp:87&ndash;90</code>)</li>
+    <li>슬롯당 1개씩 최대 4개의 toolbar-row (<code>std::array&lt;std::unique_ptr&lt;PaneToolbarRow&gt;, 4&gt;</code>, <code>main-window.h:259</code>)</li>
+    <li>슬롯당 1개의 Edit 주소바 + BS_OWNERDRAW 드롭다운 버튼 (<code>main-window.cpp:105&ndash;109, 130&ndash;136</code>)</li>
+    <li>슬롯당 1개의 <code>WC_LISTVIEWW</code> 리포트뷰 (<code>main-window.cpp:146&ndash;150</code>, <code>listViews_[4]</code>)</li>
+    <li>스플리터 3개 (<code>splitterHwnds_[3]</code>, <code>main-window.h:294</code>)</li>
+  </ul>
+  <p>
+    배치는 <code>MainWindow::relayout()</code> (<code>main-window.cpp:490&ndash;587</code>)이 <code>WM_SIZE</code>에서
+    <code>SetWindowPos</code>로 직접 좌표를 갱신한다. 즉 UI는 14&ndash;15개의 별도 HWND가 살아 있는 트리이며,
+    각 HWND는 자기 wndProc로 메시지를 받는다.
+  </p>
+
+  <p>
+    WinUI 3에서 최상위 윈도우는 <code>Microsoft.UI.Xaml.Window</code>이며, 그 backing HWND는
+    <code>IWindowNative::get_WindowHandle</code> (GUID <code>EECDBF0E-BAE9-4CB6-A68E-9598E1CB57BB</code>)으로
+    얻을 수 있다
+    (<a href="https://learn.microsoft.com/en-us/windows/apps/develop/ui/retrieve-hwnd">Microsoft Learn &mdash; Retrieve a window handle (HWND)</a>,
+    <a href="https://github.com/microsoft/microsoft-ui-xaml/issues/5151">microsoft-ui-xaml#5151</a>).
+    AppWindow는 그 HWND를 WindowId로 변환해 (<code>Microsoft::UI::GetWindowIdFromWindow</code>) 얻고
+    <code>AppWindow::GetFromWindowId</code> 로 가져온다
+    (<a href="https://learn.microsoft.com/en-us/windows/windows-app-sdk/api/win32/winrt-microsoft.ui.interop/nf-winrt-microsoft-ui-interop-getwindowidfromwindow">Microsoft Learn &mdash; GetWindowIdFromWindow</a>).
+  </p>
+
+  <p>
+    문제는 <strong>해당 HWND 안의 콘텐츠</strong>다. WinUI 3 데스크톱 윈도우의 HWND는
+    그 자체가 ContentIsland(DirectComposition 기반 합성 표면)에 직접 부착돼 있고,
+    그 위에 Win32 자식 HWND(<code>WC_LISTVIEW</code>, <code>STATUSCLASSNAME</code>, 스플리터 등)를
+    <code>SetParent</code> 또는 <code>CreateWindowExW(... parent=xamlHwnd ...)</code> 로 얹는 길은
+    공식적으로 막혀 있다. microsoft-ui-xaml#10050(ThousandIslands Window 제안)은 이 한계를 다음과 같이 명시한다:
+    <em>&ldquo;The XAML island is the top-level window itself ... putting custom Win32 windows as children of the window
+    never worked out well: this way, you are essentially putting content INSIDE an existing island ...
+    it's possible to show something in a child window but it's not possible to get input working properly
+    (keyboard, mouse, pointer).&rdquo;</em>
+    (<a href="https://github.com/microsoft/microsoft-ui-xaml/issues/10050">microsoft-ui-xaml#10050</a>).
+  </p>
+
+  <p>
+    따라서 현재의 4-pane HWND 트리(listview &times; 4, toolbar row &times; 4, address Edit &times; 4,
+    splitter &times; 3, status bar)는 그대로 옮길 수 없다. 두 가지 선택지가 있다:
+  </p>
+  <ol>
+    <li>
+      <strong>전면 재설계</strong>: <code>ListView</code> &rarr; XAML <code>ListView</code>/<code>ItemsRepeater</code>로 치환,
+      스플리터 &rarr; XAML <code>Grid</code> + <code>GridSplitter</code>, 주소바 &rarr; XAML <code>AutoSuggestBox</code> 등.
+      이 경로에서 <code>main-window.cpp</code>(3,242 LOC)와 <code>pane-toolbar-row</code>, <code>pane-splitter</code>,
+      <code>address-bar-popup</code>, <code>listview-group-callback</code>, <code>dispinfo-histogram</code>,
+      <code>label-edit-controller</code>, <code>dark-scrollbar-hook</code>, <code>selection-sync</code>는 거의 전량 재작성 대상.
+    </li>
+    <li>
+      <strong>XAML Islands 역방향</strong>: Win32 프레임 안에 XAML 콘텐츠를 부분 호스팅하는 길.
+      그러나 데스크톱 WinUI 3에서 <code>WindowsXamlManager</code> 기반 XAML Islands는
+      &ldquo;deprecated path&rdquo; 로 분류되며 본 시나리오(WinUI 3 전환)와는 방향이 반대다.
+      (<a href="https://github.com/microsoft/WindowsAppSDK/discussions/465">WindowsAppSDK#465 &mdash; XAML Islands 위치</a>).
+    </li>
+  </ol>
+
+  <p>
+    결론: <strong>HWND 4개짜리 pane 아키텍처는 사실상 살아남지 못한다.</strong>
+    유일하게 보존되는 HWND는 최상위 프레임 HWND 1개이며, 거기에는
+    OLE(<code>RegisterDragDrop</code>) 가입과 shell 컨텍스트 메뉴 owner-window 지정 정도만 걸 수 있다.
+  </p>
+
+  <h3>C.2 Shell COM 표면 &mdash; 그대로 살아남는 것</h3>
+
+  <p>
+    아래 인터페이스들은 모두 pure COM이고 C++/WinRT 코드와 같은 STA 안에서 그대로 호출 가능하다.
+    C++/WinRT는 ABI 수준에서 그저 <code>IUnknown</code>-기반 COM 헤더(<code>ComPtr</code>, <code>winrt::com_ptr</code>,
+    혹은 raw <code>IFoo*</code>) 와 공존한다. 즉 <code>shell-bind.cpp</code> 같은 파일은 컴파일 옵션만 맞으면
+    그대로 빌드된다.
+  </p>
+
+  <div class="table-wrap">
+  <table>
+    <thead>
+      <tr>
+        <th>인터페이스</th>
+        <th>현재 코드 위치</th>
+        <th>C++/WinRT 호출 가능?</th>
+        <th>비고</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><code>IShellFolder</code> (SHParseDisplayName + SHBindToObject)</td>
+        <td><code>shell-bind.cpp:7&ndash;18</code></td>
+        <td>Yes</td>
+        <td>raw COM. <code>ComPtr&lt;IShellFolder&gt;</code>는 <code>com-raii.h:9&ndash;36</code> 그대로 사용 가능.</td>
+      </tr>
+      <tr>
+        <td><code>IShellFolder::CreateViewObject(IID_IDropTarget)</code></td>
+        <td><code>shell-bind.cpp:20&ndash;28</code></td>
+        <td>Yes</td>
+        <td>ownerHwnd 인자는 프레임 HWND를 그대로 넘기면 된다. shell extension은 어떤 HWND여도 무관.</td>
+      </tr>
+      <tr>
+        <td><code>IShellFolder::ParseDisplayName</code> &rarr; child PIDL</td>
+        <td><code>shell-context-menu.cpp:92&ndash;118</code></td>
+        <td>Yes</td>
+        <td>변경 없음.</td>
+      </tr>
+      <tr>
+        <td><code>IShellFolder::GetUIObjectOf(IID_IContextMenu)</code></td>
+        <td><code>shell-context-menu.cpp:120&ndash;132</code></td>
+        <td>Yes</td>
+        <td>호출 자체는 호환. 다만 반환된 <code>IContextMenu</code>를 어떻게 호스팅하느냐는 별개 문제 (C.4).</td>
+      </tr>
+      <tr>
+        <td><code>IContextMenu</code> / <code>IContextMenu2</code> / <code>IContextMenu3</code></td>
+        <td><code>shell-context-menu.cpp:31&ndash;56</code> (<code>HandleMenuMsg2</code>)</td>
+        <td>호출은 가능, 메시지 펌프 통합은 안 됨</td>
+        <td>현재 코드는 owner-window를 subclass해서 <code>WM_INITMENUPOPUP/WM_DRAWITEM/WM_MEASUREITEM</code>을 forward한다. XAML 윈도우 HWND에 동일 subclass를 거는 것은 가능하지만 messages가 도달하는지 문서화된 동작 불명 (C.4 참조).</td>
+      </tr>
+      <tr>
+        <td><code>IDataObject</code> (clipboard / drag source)</td>
+        <td><code>clipboard-ops.cpp:14&ndash;39</code>, <code>OleSetClipboard</code> <code>:81</code></td>
+        <td>Yes (clipboard 경로)</td>
+        <td>OLE clipboard는 XAML과 독립. <code>OleSetClipboard</code>/<code>OleGetClipboard</code> 그대로. 다만 XAML <code>DragDropManager</code>가 만드는 <code>DataPackage</code>를 다른 앱이 받을 때는 <code>IDataObject</code> 변환층이 필요 (C.3).</td>
+      </tr>
+      <tr>
+        <td><code>IDropTarget</code> (pane drop)</td>
+        <td><code>drop-target.cpp:30&ndash;142</code></td>
+        <td>등록 가능 (RegisterDragDrop), 그러나 어떤 HWND에 거느냐가 바뀜</td>
+        <td>현재는 listview HWND마다 4개 등록(<code>main-window.cpp:619</code>). WinUI 3에선 listview HWND가 사라지므로 프레임 HWND 단일 등록 + hit-test를 XAML 좌표계에서 직접 수행해야 함.</td>
+      </tr>
+      <tr>
+        <td><code>IDropSource</code> (drag source)</td>
+        <td><code>drop-source.cpp:5&ndash;36</code></td>
+        <td>Yes</td>
+        <td><code>DoDragDrop</code>와 함께 그대로 호출 가능. 다만 드래그 시작 트리거는 XAML PointerPressed 이벤트로 옮겨야 한다.</td>
+      </tr>
+      <tr>
+        <td><code>IFileOperation</code> (rename/delete/newfolder)</td>
+        <td><code>shell-worker.cpp:69&ndash;156</code></td>
+        <td>Yes</td>
+        <td>STA 워커 스레드(<code>shell-worker.cpp:230&ndash;251</code>)는 그대로 유지. <code>CoInitializeEx(COINIT_APARTMENTTHREADED)</code> 호환.</td>
+      </tr>
+      <tr>
+        <td><code>SHGetFileInfoW</code> (icon 추출)</td>
+        <td><code>icon-provider.cpp:63&ndash;81</code>, <code>icon-cache.cpp:15&ndash;27</code></td>
+        <td>호출은 가능</td>
+        <td>HICON 자체는 살아남지만 그 다음 단계(HIMAGELIST 대신 XAML ImageSource로의 변환)가 새 비용 (C.5).</td>
+      </tr>
+      <tr>
+        <td><code>SHCreateItemFromParsingName</code> &rarr; <code>IShellItem</code></td>
+        <td><code>shell-worker.cpp:86&ndash;93</code></td>
+        <td>Yes</td>
+        <td>변경 없음.</td>
+      </tr>
+      <tr>
+        <td><code>OleInitialize</code> / <code>OleUninitialize</code></td>
+        <td><code>app/main.cpp:62&ndash;77</code></td>
+        <td>Yes (필수 유지)</td>
+        <td><a href="https://learn.microsoft.com/en-us/windows/win32/api/ole2/nf-ole2-registerdragdrop">RegisterDragDrop</a>는 OleInitialize 가 선행돼야 한다 (CoInitializeEx 만으로는 <code>E_OUTOFMEMORY</code> 반환). <code>app/main.cpp:64</code>의 <code>OleScope</code>는 WinUI 3 진입점에서도 동일하게 필요.</td>
+      </tr>
+      <tr>
+        <td><code>CFSTR_PREFERREDDROPEFFECT</code> stamp</td>
+        <td><code>clipboard-ops.cpp:41&ndash;68</code></td>
+        <td>Yes</td>
+        <td>HGLOBAL/SetData 경로는 XAML과 무관 &mdash; OLE clipboard 직접 조작.</td>
+      </tr>
+    </tbody>
+  </table>
+  </div>
+
+  <p>
+    <strong>요약:</strong> Shell COM 호출 자체는 100% 호환된다.
+    재컴파일 가능성의 진짜 비용은 &ldquo;호출은 되지만, 호출 결과(메뉴, drop target, icon HBITMAP)를 어떻게 화면에 띄우느냐&rdquo;에 있다.
+  </p>
+
+  <h3>C.3 Drag &amp; Drop 인터롭 비용</h3>
+
+  <p>
+    현재 코드는 OLE drag-drop을 두 방향 모두 직접 다룬다:
+  </p>
+  <ul>
+    <li>
+      <strong>Drop in</strong>: 각 listview HWND에 <code>PaneDropTarget</code>을 <code>RegisterDragDrop</code> 등록
+      (<code>main-window.cpp:617&ndash;624</code>, <code>main-window.cpp:1676</code>).
+      <code>PaneDropTarget::DragEnter/Over/Leave/Drop</code> 안에서 <code>ListView_HitTest</code>로 행을 찾고
+      (<code>drop-target.cpp:66&ndash;94</code>), 해당 폴더의 shell <code>IDropTarget</code>을 caching해서
+      drop effect 계산을 통째로 shell에 위임 (<code>drop-target.cpp:102&ndash;142</code>).
+    </li>
+    <li>
+      <strong>Paste</strong> (clipboard &rarr; shell drop): <code>OleGetClipboard</code> &rarr; 폴더의 shell IDropTarget
+      &rarr; DragEnter/DragOver/Drop 시퀀스를 직접 시뮬레이션 (<code>clipboard-ops.cpp:89&ndash;117</code>).
+    </li>
+  </ul>
+
+  <p>
+    WinUI 3 에서는 두 갈래의 경로가 공존한다:
+  </p>
+  <ol>
+    <li>
+      <strong>XAML 네이티브 경로</strong>: <code>UIElement.AllowDrop = true</code> + <code>DragOver</code>/<code>Drop</code> 이벤트.
+      payload는 <code>DataPackageView</code>(read) / <code>DataPackage</code>(write)로 표현되며,
+      shell <code>CFSTR_FILECONTENTS</code> 같은 형식을 표현하기 위한 공식 변환층은 없다
+      (<a href="https://learn.microsoft.com/en-us/answers/questions/946076/(winui3)-drag-and-dop-funtion-how-to-fill-datapack">Microsoft Q&amp;A &mdash; DataPackage with shell resources</a>).
+      <a href="https://github.com/microsoft/microsoft-ui-xaml/issues/10119">microsoft-ui-xaml#10119</a>은
+      &ldquo;Explorer에서 파일을 끌어왔을 때 DragOver가 안 뜨고 not-allowed 커서가 뜨는&rdquo; 회귀를 확인된 버그(#8108 중복)로 문서화한다.
+    </li>
+    <li>
+      <strong>Win32 OLE 경로 유지</strong>: <code>RegisterDragDrop(frameHwnd, dropTarget)</code>을 그대로 호출.
+      이 경로에서 <code>IDropTarget::DragEnter</code>가 받는 것은 우리 코드가 익숙한 raw <code>IDataObject*</code>이다.
+      문제는: (a) 등록은 프레임 HWND 1개에만 가능 &mdash; XAML이 자기 wndProc 안에서 OLE 메시지를
+      소비하는지 문서화된 동작 불명, (b) hit-test가 XAML 트리 좌표계에서 일어나야 하므로
+      <code>drop-target.cpp:64&ndash;87</code>의 <code>ListView_HitTest</code>는 통째로 XAML
+      <code>VisualTreeHelper.FindElementsInHostCoordinates</code> 같은 API로 다시 써야 한다.
+    </li>
+    <li>
+      <strong>CoreDragDropManager / IDragDropManagerInterop 경로</strong>:
+      <code>IDragDropManagerInterop::GetForWindow(hwnd, IID_ICoreDragDropManager)</code>로
+      HWND에 매여 있는 <code>CoreDragDropManager</code>를 받아서 <code>TargetRequested</code> 이벤트에 hook하는 방식.
+      Windows 11+ 한정이고
+      (<a href="https://github.com/MicrosoftDocs/sdk-api/blob/docs/sdk-api-src/content/dragdropinterop/nf-dragdropinterop-idragdropmanagerinterop-getforwindow.md">sdk-api &mdash; IDragDropManagerInterop::GetForWindow</a>),
+      Drag source 측 visuals만 컨트롤하는 데 적합하다 &mdash; shell IDropTarget 전체 위임 모델로는 부족.
+    </li>
+  </ol>
+
+  <p>
+    <strong>현실적 권장</strong>: 프레임 HWND 1개에 <code>RegisterDragDrop</code>으로 OLE drop target 1개 유지하되,
+    pane별 hit-test 로직(<code>drop-target.cpp:60&ndash;94</code>)을 XAML 좌표계 hit-test로 재작성.
+    이 경로는 &ldquo;정상 동작 문서화 불명&rdquo;이며 (<a href="https://github.com/microsoft/microsoft-ui-xaml/issues/10119">#10119</a>의 회귀가
+    OLE 경로에도 영향을 미치는지 별도 검증 필요).
+    Drag source(<code>FileDropSource</code> + <code>DoDragDrop</code>)는 XAML PointerPressed에서 직접 호출 가능 &mdash;
+    shell <code>IDataObject</code>를 만들고 (<code>clipboard-ops.cpp:14&ndash;39</code> 재사용), <code>DoDragDrop</code> 호출.
+    XAML <code>DragStarting</code> 경로로 옮기면 <code>DataPackage</code>로 형식을 옮겨야 하므로 shell-호환 IDataObject를
+    잃고, Explorer 같은 외부 앱이 우리 드래그를 받아주지 않을 위험이 있다 (문서화 불명).
+  </p>
+
+  <h3>C.4 컨텍스트 메뉴 호스팅</h3>
+
+  <p>
+    현재 컨텍스트 메뉴는 전형적인 Win32 owner-draw 패턴이다 (<code>shell-context-menu.cpp:204&ndash;292</code>):
+  </p>
+  <ol>
+    <li><code>CreatePopupMenu()</code> + <code>IContextMenu::QueryContextMenu</code> 로 HMENU 채움.</li>
+    <li>caller가 넘긴 <code>ExtraSubmenu</code>를 <code>AppendMenuW(MF_POPUP, ...)</code>로 hierarchy에 매단다 (<code>:223&ndash;239</code>).</li>
+    <li><code>SubclassGuard</code> (<code>:58&ndash;74</code>) 로 owner HWND를 임시 subclass &mdash;
+        <code>WM_INITMENUPOPUP / WM_DRAWITEM / WM_MEASUREITEM / WM_MENUCHAR</code> 4종 메시지를
+        <code>IContextMenu3::HandleMenuMsg2</code> (없으면 <code>IContextMenu2::HandleMenuMsg</code>) 로 forward.</li>
+    <li><code>TrackPopupMenuEx(... TPM_RETURNCMD ...)</code> 로 modal popup &mdash; 사용자 선택을 반환받음.</li>
+    <li>cmd가 <code>kCmdIdMax(0x7FFF)</code>보다 크면 caller의 extra submenu &rarr; <code>PostMessageW(owner, WM_COMMAND, ...)</code>.
+        작으면 shell verb &rarr; <code>IContextMenu::InvokeCommand</code> 혹은 per-item fan-out (<code>:184&ndash;202</code>).</li>
+  </ol>
+
+  <p>
+    이 코드를 WinUI 3 안에서 그대로 실행할 수 있는가? 두 측면을 분리해야 한다:
+  </p>
+  <ul>
+    <li>
+      <strong>TrackPopupMenuEx 자체는 Win32 API이고 HWND만 있으면 동작한다.</strong> 프레임 HWND를
+      <code>IWindowNative::get_WindowHandle</code>로 얻어 그대로 owner로 넘기면 메뉴 자체는 뜬다.
+      이는 Win32 API 호출이므로 XAML 합성 표면과 무관 &mdash; OS가 별도 popup HWND를 만든다.
+    </li>
+    <li>
+      <strong>그러나 <code>WM_INITMENUPOPUP / WM_DRAWITEM / WM_MEASUREITEM</code> 이 우리 wndProc로 도달하는지가 핵심.</strong>
+      이 메시지들은 owner HWND의 wndProc로 전달되는데, WinUI 3 프레임 HWND의 wndProc는
+      Microsoft.UI.Xaml 내부 코드가 소유한다. <code>SetWindowSubclass</code> 자체는 호출 가능하지만,
+      XAML 내부 wndProc가 이 메시지들을 사용자 subclass에 전달하기 전에 소비할 가능성에 대한
+      공식 문서는 없다 (검색 결과 microsoft-ui-xaml 저장소 어디에도 owner-draw shell menu 패턴
+      가이드 없음; <a href="https://github.com/microsoft/microsoft-ui-xaml/issues/6925">#6925 &mdash; flyout이 윈도우 밖으로 나갈 수 있는가</a>도
+      해결되지 않은 채로 열려 있음).
+    </li>
+  </ul>
+
+  <p>
+    대안은 <strong>전면 <code>MenuFlyout</code> 재구성</strong>이다 &mdash;
+    <code>IContextMenu::QueryContextMenu</code> 로 HMENU 를 채운 뒤, HMENU를 walk하면서
+    각 항목(<code>GetMenuItemInfoW</code>)을 <code>MenuFlyoutItem</code>으로 옮기고, 사용자가 클릭하면
+    <code>IContextMenu::InvokeCommand</code> 를 직접 호출. 이 경로의 약점:
+  </p>
+  <ul>
+    <li>shell extension의 owner-draw 항목(예: &ldquo;Open With&rdquo; 아이콘 + 부제목, &ldquo;Share&rdquo; 미니 미리보기)이
+        모두 그림 없이 텍스트만 남는다. <code>MF_OWNERDRAW</code>를 받아서 그릴 device context가
+        MenuFlyout에는 없다.</li>
+    <li><code>WM_MENUCHAR</code> hotkey 라우팅 (<code>shell-context-menu.cpp:30&ndash;37</code>)이 사라지므로
+        Office 같은 서드파티 shell ext의 단축키가 안 먹는다.</li>
+    <li>shell 컨텍스트 메뉴의 깊은 nested submenu(예: &ldquo;Send to &rarr; ...&rdquo;)는 동적으로 채워지는데,
+        이건 HMENU 위에서 <code>WM_INITMENUPOPUP</code>으로 lazy-populate 되는 메커니즘이라
+        MenuFlyout으로 옮기면 동적 채움 시점이 어긋난다.</li>
+  </ul>
+
+  <p>
+    결론: <strong>Win32 HMENU + TrackPopupMenuEx 경로를 유지하는 것이 기능적으로 안전</strong>하다.
+    프레임 HWND를 owner로 쓰는 것은 가능, 그러나 subclass-forward 패턴이 XAML wndProc 안에서
+    살아남는지는 검증 필요 항목으로 남는다.
+  </p>
+
+  <h3>C.5 아이콘 파이프라인 (HICON &rarr; XAML ImageSource)</h3>
+
+  <p>
+    현재 아이콘 파이프라인은 다음 4단계다:
+  </p>
+  <ol>
+    <li><code>IconCache::IconCache(dpi)</code> &rarr; <code>createPlaceholderImageList(dpi)</code> 로
+        <code>HIMAGELIST</code>를 만들고 2개 placeholder icon을 채움 (<code>icon-cache.cpp:34&ndash;61</code>).</li>
+    <li>list-view에 <code>ListView_SetImageList</code> + <code>LVS_SHAREIMAGELISTS</code> 부착.</li>
+    <li>extension별로 STA worker에서 <code>SHGetFileInfoW</code>(<code>SHGFI_ICON|SHGFI_SMALLICON|SHGFI_USEFILEATTRIBUTES</code>)
+        호출 (<code>icon-provider.cpp:63&ndash;81</code>) &rarr; HICON 반환.</li>
+    <li>UI 스레드에서 <code>ImageList_AddIcon</code>으로 slot index 받음 &rarr;
+        <code>ExtensionIconCache</code>(<code>extension-icon-cache.h:28&ndash;64</code>)가 extension &rarr; slot index 매핑.</li>
+  </ol>
+
+  <p>
+    XAML <code>ListView</code> / <code>ItemsRepeater</code> 에는 <code>HIMAGELIST</code> 개념이 없다 &mdash;
+    각 아이템 row가 <code>Image</code> 컨트롤을 들고, <code>Image.Source</code>는
+    <code>ImageSource</code>(<code>BitmapImage</code> / <code>WriteableBitmap</code> / <code>SoftwareBitmapSource</code>) 중 하나여야 한다.
+    HICON &rarr; <code>ImageSource</code> 직결 API는 없다.
+  </p>
+
+  <p>
+    공개된 변환 경로:
+  </p>
+  <ol>
+    <li>
+      <strong>HICON &rarr; HBITMAP &rarr; SoftwareBitmap &rarr; SoftwareBitmapSource</strong> 경로
+      (<a href="https://github.com/microsoft/microsoft-ui-xaml/discussions/7943">microsoft-ui-xaml#7943</a>):
+      <code>GetIconInfo</code>로 HBITMAP 추출 &rarr; <code>GetDIBits</code>로 픽셀 추출 &rarr; <code>SoftwareBitmap</code> 생성 &rarr;
+      <code>SoftwareBitmapSource.SetBitmapAsync</code>. 16&times;16 BGRA8 기준 한 아이콘당 1024 byte memcpy + GPU upload 1회.
+    </li>
+    <li>
+      <strong>StorageFile.GetThumbnailAsync</strong> (#7943에서 권장된 길): 우리 PIDL 경로 모델과
+      충돌한다 &mdash; <code>StorageFile</code>은 권한이 있는 실제 파일 경로를 요구하고 비동기다.
+      현재 우리 cache 키는 extension 단위(<code>extension-icon-cache.h:13&ndash;15</code>)이므로 fit하지 않다.
+    </li>
+    <li>
+      <strong>SoftwareBitmapSource의 호환성</strong>: WinUI 3의 <code>Microsoft.UI.Xaml.Media.Imaging.SoftwareBitmapSource</code>는
+      WinRT API이고 UI 스레드에서 <code>SetBitmapAsync</code> 호출이 필요
+      (<a href="https://learn.microsoft.com/en-us/windows/windows-app-sdk/api/winrt/microsoft.ui.xaml.media.imaging.softwarebitmapsource">Microsoft Learn &mdash; SoftwareBitmapSource</a>).
+    </li>
+  </ol>
+
+  <p>
+    <strong>비용 추산 (개별 검증 필요, 추정치)</strong>: small icon 16&times;16 BGRA8 한 장 = 1 KB.
+    <code>ExtensionIconCache::kDefaultCapacity = 256</code> (<code>extension-icon-cache.h:30</code>) 가득 채우면
+    256 KB의 CPU 사이드 버퍼 + 256개의 <code>SoftwareBitmap</code> + 256번의 <code>SetBitmapAsync</code> 호출.
+    GPU upload는 XAML 렌더러가 lazy로 한다고 알려져 있으나 정확한 시점은 문서화되지 않음.
+  </p>
+
+  <p>
+    <strong>cache key 영향</strong>: 현재 key는 extension(소문자 정규화, <code>extension-icon-cache.h:36&ndash;47</code>),
+    value는 HIMAGELIST slot index(<code>int</code>). XAML 경로에서는 value를
+    <code>winrt::Microsoft::UI::Xaml::Media::ImageSource</code> 같은 RAII 핸들로 바꿔야 한다 &mdash;
+    int &rarr; smart pointer로 바뀌므로 <code>extension-icon-cache.{h,cpp}</code>는 시그니처 수정 필요 (key 의미는 유지).
+    LRU 정책(<code>std::list</code>) 자체는 재사용 가능.
+  </p>
+
+  <p>
+    <code>icon-cache.cpp:80&ndash;99</code>의 <code>byteSize()</code> diagnostic은 의미가 바뀐다 &mdash;
+    HIMAGELIST가 사라지므로 SoftwareBitmap 풀의 추정 크기를 새로 계산해야 한다.
+  </p>
+
+  <h3>C.6 스레딩 모델 매핑</h3>
+
+  <p>
+    현재 스레딩 토폴로지:
+  </p>
+  <ul>
+    <li><strong>메인 UI 스레드</strong>: <code>OleInitialize</code> (<code>main.cpp:64</code>) &rarr; STA + OLE.
+        message loop는 <code>main.cpp:168&ndash;192</code> 의 <code>GetMessageW</code> + <code>DispatchMessageW</code> 루프.</li>
+    <li><strong>ShellWorker</strong>: <code>std::jthread</code> + <code>CoInitializeEx(COINIT_APARTMENTTHREADED)</code>
+        (<code>shell-worker.cpp:230&ndash;251</code>). <code>IFileOperation</code> 요구사항이라 STA 필수.</li>
+    <li><strong>IconProvider</strong>: 동일 패턴 &mdash; <code>std::jthread</code> + STA
+        (<code>icon-provider.cpp:95&ndash;113</code>).</li>
+    <li><strong>FS watcher / WinSparkle 백그라운드</strong>: 자세히 검증 필요 &mdash; 본 보고 범위 밖.</li>
+  </ul>
+
+  <p>
+    WinUI 3에서는 <code>Microsoft.UI.Dispatching.DispatcherQueue</code>가 UI 스레드의 디스패처 역할을 한다.
+    문서상 WinUI 3 UI 스레드는 &ldquo;STA UI model &mdash; all UI elements are owned by the thread that created them
+    and are backed by a DispatcherQueue tied to that thread.&rdquo;
+    (<a href="https://learn.microsoft.com/en-us/windows/apps/windows-app-sdk/migrate-to-windows-app-sdk/guides/threading">Microsoft Learn &mdash; Threading functionality migration</a>).
+    DispatcherQueueController는 <code>DQTYPE_THREAD_CURRENT</code> + <code>DQTAT_COM_STA</code> 로 만들 수 있다고 명시
+    (<a href="https://github.com/microsoft/microsoft-ui-xaml-specs/blob/master/winui3/DispatcherQueueUpdates.md">DispatcherQueueUpdates spec</a>).
+  </p>
+
+  <p>
+    <strong>호환성</strong>:
+  </p>
+  <ul>
+    <li>UI 스레드 STA &rarr; 우리 OLE/Shell COM 요구와 정확히 일치.</li>
+    <li>Worker STA jthread (<code>shell-worker</code>, <code>icon-provider</code>) &rarr; UI 스레드와 무관하게 자기 apartment 운영, 변경 불요.</li>
+    <li>
+      현재 UI &larr; worker 통신은 <code>PostMessageW(host, kWmFe*, ...)</code> 기반의 <code>ResultChannel</code>
+      (<code>icon-provider.h:81</code>, <code>shell-worker.h:60&ndash;100</code>).
+      WinUI 3에서는 프레임 HWND가 살아 있지만 그 wndProc가 우리 것이 아니므로 사용자 메시지가
+      어디로 가는지 검증 필요 &mdash; 권장 대안은 <code>DispatcherQueue.TryEnqueue</code> 로의 마이그레이션
+      (<a href="https://learn.microsoft.com/en-us/windows/windows-app-sdk/api/winrt/microsoft.ui.dispatching.dispatcherqueue">Microsoft Learn &mdash; DispatcherQueue</a>).
+    </li>
+    <li>
+      <strong>주의</strong>: WinUI 3 STA 는 UWP의 ASTA (non-reentrant) 보장이 없다 &mdash;
+      &ldquo;the Windows App SDK's STA threading model doesn't have the same assurances around preventing reentrancy issues&rdquo;.
+      현재 코드가 ASTA 가정에 의존하지는 않지만(우리는 본래 Win32 STA), 새 코드 작성 시 주의.
+    </li>
+  </ul>
+
+  <h3>C.7 빌드/바이너리 크기 영향</h3>
+
+  <ul>
+    <li>
+      <strong>WindowsAppRuntime 의존성</strong>: WinUI 3는 standalone 배포가 아니라 WindowsAppRuntime
+      framework package에 의존한다. 자체 포함 배포(<code>WindowsAppSDKSelfContained=true</code>) 선택 시
+      앱과 함께 ship해야 하는 리디스트리뷰터블은 <strong>x64 .msix 약 20.3 MiB</strong>, executable redistributable
+      약 <strong>56.8 MiB</strong> 수준
+      (<a href="https://github.com/microsoft/microsoft-ui-xaml/discussions/7683">microsoft-ui-xaml#7683 &mdash; Hello World size</a>).
+      현재 fast-explorer는 WinSparkle 외 추가 런타임 의존성이 없는 단일 실행파일이므로 배포 사이즈가
+      한 자릿수 MiB &rarr; 두 자릿수 MiB로 점프한다.
+    </li>
+    <li>
+      <strong>컴파일 타임</strong>: C++/WinRT 헤더(<code>winrt/Microsoft.UI.Xaml.h</code>, <code>winrt/Microsoft.UI.Xaml.Controls.h</code> 등)는
+      파싱 자체가 무겁다 &mdash; Microsoft 자체 측정에서 <code>winrtHeaders.h</code> 한 파일이
+      16.4초 빌드의 8.6초(<strong>52.3%</strong>)를 차지한 사례
+      (<a href="https://learn.microsoft.com/en-us/cpp/build-insights/tutorials/build-insights-included-files-view">Microsoft Learn &mdash; Build Insights</a>).
+      PCH로 winrt headers 를 묶는 것이 필수.
+    </li>
+    <li>
+      <strong>C++/WinRT 자체 코드 크기</strong>: 헤더-온리 projection이므로 사용 안한 type은 코드 생성되지 않음.
+      Microsoft 측 측정 &mdash; C++/CX 대비 binary 20% 감소
+      (<a href="https://learn.microsoft.com/en-us/windows/uwp/cpp-and-winrt-apis/news">Microsoft Learn &mdash; What's new in C++/WinRT</a>).
+      즉 C++/WinRT 자체는 부담이 작고, 부담은 WindowsAppRuntime DLL이 차지한다.
+    </li>
+    <li>
+      <strong>WinSparkle</strong>(<code>app/main.cpp:108&ndash;134</code>)와 충돌하는가? 별도 검증 필요.
+      WinSparkle은 자기 STA + 백그라운드 스레드를 들고 있고 WinUI 3 DispatcherQueue와 무관하므로
+      이론적으로는 공존 가능. 문서화된 호환성 확인은 본 보고 범위 밖.
+    </li>
+  </ul>
+
+  <h3>C.8 재사용 가능한 코드 범위 추정</h3>
+
+  <p class="caveat">
+    <strong>주의 (추정):</strong> 아래 수치는 LOC 기준이며 실제 재작성 노력은 LOC와 선형이 아니다.
+    &ldquo;재사용 가능&rdquo; = 컴파일 옵션만 맞으면 그대로 빌드되며 동작이 동등.
+    &ldquo;재작성 필요&rdquo; = UI 토폴로지 변경으로 인해 호출 시점/HWND 인자/메시지 펌프가 달라져 코드 재구성 필요.
+  </p>
+
+  <div class="table-wrap">
+  <table>
+    <thead>
+      <tr>
+        <th>모듈</th>
+        <th>현재 LOC</th>
+        <th>재사용 가능</th>
+        <th>재작성 필요</th>
+        <th>비고</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><code>shell-bind.{h,cpp}</code></td>
+        <td>52</td>
+        <td>~52 (100%)</td>
+        <td>~0</td>
+        <td>pure shell COM 래퍼. HWND 인자만 프레임 HWND로 바꿔서 전달.</td>
+      </tr>
+      <tr>
+        <td><code>shell-context-menu.{h,cpp}</code></td>
+        <td>376</td>
+        <td>~200 (53%)</td>
+        <td>~176</td>
+        <td>QueryContextMenu/InvokeCommand/fan-out 로직 (<code>:120&ndash;202</code>)은 그대로. owner subclass + TrackPopupMenuEx (<code>:204&ndash;292</code>)는 frame HWND 위에서 동작 검증 필요 &mdash; 실패 시 MenuFlyout 마이그레이션 (전체 재작성).</td>
+      </tr>
+      <tr>
+        <td><code>shell-worker.{h,cpp}</code></td>
+        <td>357</td>
+        <td>~357 (100%)</td>
+        <td>~0</td>
+        <td>IFileOperation STA 워커는 UI 프레임워크와 독립. 단, <code>ResultChannel</code>의 PostMessage 종단점만 DispatcherQueue.TryEnqueue 로 바꿀 가능성 있음 (host HWND가 우리 wndProc가 아니라면).</td>
+      </tr>
+      <tr>
+        <td><code>drop-source.{h,cpp}</code></td>
+        <td>60</td>
+        <td>~60 (100%)</td>
+        <td>~0</td>
+        <td>IDropSource는 OLE 인터페이스 그대로. <code>DoDragDrop</code> 호출 시점만 XAML PointerPressed 핸들러로 옮김.</td>
+      </tr>
+      <tr>
+        <td><code>drop-target.{h,cpp}</code></td>
+        <td>200</td>
+        <td>~120 (60%)</td>
+        <td>~80</td>
+        <td>IDropTarget vtable + shell delegate 패턴 (<code>:30&ndash;58, 96&ndash;142</code>)은 유지. ListView_HitTest 기반 row-resolve (<code>:60&ndash;94</code>)는 XAML hit-test 로 재작성. 등록도 listview HWND &times; 4 &rarr; frame HWND &times; 1 로 변경.</td>
+      </tr>
+      <tr>
+        <td><code>clipboard-ops.{h,cpp}</code></td>
+        <td>149</td>
+        <td>~149 (100%)</td>
+        <td>~0</td>
+        <td>OleSetClipboard/OleGetClipboard + shell IDropTarget 위임은 XAML과 직교. ownerHwnd 인자는 frame HWND.</td>
+      </tr>
+      <tr>
+        <td><code>com-raii.h</code></td>
+        <td>87</td>
+        <td>~87 (100%)</td>
+        <td>~0</td>
+        <td>ComPtr/PidlOwner/MenuOwner &mdash; pure C++. winrt::com_ptr와 공존 가능.</td>
+      </tr>
+      <tr>
+        <td><code>icon-provider.{h,cpp}</code></td>
+        <td>231</td>
+        <td>~180 (78%)</td>
+        <td>~51</td>
+        <td>worker thread + SHGetFileInfoW는 그대로. <code>IconResult</code>의 payload(HICON)는 SoftwareBitmap으로 바뀌므로 publish 종단의 type 시그니처 변경.</td>
+      </tr>
+      <tr>
+        <td><code>icon-cache.{h,cpp}</code></td>
+        <td>174</td>
+        <td>~30 (17%)</td>
+        <td>~144</td>
+        <td>HIMAGELIST 기반이라 거의 전량 재작성. byteSize/iconCount/swap 모두 의미 변경.</td>
+      </tr>
+      <tr>
+        <td><code>extension-icon-cache.{h,cpp}</code></td>
+        <td>141</td>
+        <td>~120 (85%)</td>
+        <td>~21</td>
+        <td>LRU 구조와 normalisation 로직 유지. value type만 int &rarr; ImageSource 핸들로 변경.</td>
+      </tr>
+      <tr>
+        <td><code>app/main.cpp</code></td>
+        <td>416</td>
+        <td>~200 (48%)</td>
+        <td>~216</td>
+        <td>OleInitialize / WinSparkle / settings load &mdash; 유지. wWinMain 자체 + message loop (<code>:157&ndash;192</code>)는 WinUI 3 <code>Microsoft::UI::Xaml::Application::Start</code> 로 대체.</td>
+      </tr>
+      <tr>
+        <td><code>main-window.cpp</code></td>
+        <td>3,242</td>
+        <td>~500 (15%, 추정)</td>
+        <td>~2,742</td>
+        <td>WndProc 기반 분기(<code>:1432&ndash;1459</code> 외), relayout (<code>:490&ndash;587</code>), CreateWindowExW 직접 호출 (<code>:139&ndash;164</code> 외), HIMAGELIST/subclass 패턴은 모두 재작성. 살아남는 부분: 정렬 indicator 업데이트 정책, 단축키 dispatch, shell launch 헬퍼(<code>:331&ndash;414</code>).</td>
+      </tr>
+      <tr>
+        <td><code>pane-toolbar-row</code>, <code>pane-splitter</code>, <code>address-bar-popup</code>, <code>label-edit-controller</code>, <code>dark-scrollbar-hook</code>, <code>listview-group-callback</code>, <code>dispinfo-histogram</code>, <code>selection-sync</code> (UI 컨트롤 군)</td>
+        <td>별도 측정 필요 (UI 디렉토리 잔여분)</td>
+        <td>~0%</td>
+        <td>~100%</td>
+        <td>모두 Win32 컨트롤 위에서만 의미 있는 코드 (subclass, owner-draw, theme hook). XAML 등가물로 전면 재작성.</td>
+      </tr>
+      <tr>
+        <td><code>pane-controller</code>, <code>pane-manager</code>, <code>pane-sort-coordinator</code>, <code>cut-state-tracker</code>, <code>filter-pattern</code>, <code>folder-name</code>, <code>format-cache</code>, <code>icon-cache-coordinator</code></td>
+        <td>별도 측정 필요</td>
+        <td>~80&ndash;100% (추정)</td>
+        <td>나머지</td>
+        <td>view-model에 가까운 모듈들 &mdash; HWND를 들고 있더라도 단순 owner reference 이므로 frame HWND로 치환만 하면 됨. <strong>코드를 더 살피지 않은 추정.</strong></td>
+      </tr>
+      <tr>
+        <td><strong>core/* (디렉토리 enumeration, sort, FS watcher, settings store, ring logger, perf tracker)</strong></td>
+        <td>별도 측정 필요</td>
+        <td>~100%</td>
+        <td>~0</td>
+        <td>본 보고 범위 (<code>src/ui</code>) 밖 &mdash; 명세상 &ldquo;C++ core (directory enumeration, sort, FS watcher, Shell COM integration)는 재사용&rdquo; 으로 못박힌 영역.</td>
+      </tr>
+    </tbody>
+  </table>
+  </div>
+
+  <p>
+    <strong>본 보고에서 직접 검토한 9개 파일 + main-window.cpp + main.cpp 의 합산</strong>:
+  </p>
+  <ul>
+    <li>읽은 코드 총 LOC ≈ 5,485 (wc -l 합산)</li>
+    <li>재사용 가능 추정 ≈ 2,055 LOC (~37%)</li>
+    <li>재작성 필요 추정 ≈ 3,430 LOC (~63%)</li>
+  </ul>
+  <p>
+    이 중 main-window.cpp 한 파일이 재작성 LOC의 ~80%를 차지한다 &mdash;
+    UI 재구성 비용이 main-window에 집중돼 있고, shell COM 자체는 거의 살아남는다는 비대칭이 핵심.
+  </p>
+
+  <h3>C.9 C++/WinRT 시나리오 핵심 요약</h3>
+
+  <ul>
+    <li>
+      <strong>Shell COM 호출 코드는 거의 전량 재사용 가능</strong>.
+      <code>shell-bind</code>, <code>shell-worker</code>, <code>drop-source</code>, <code>clipboard-ops</code>,
+      <code>com-raii</code> 5개 파일(704 LOC)이 그대로 살아남는다. C++/WinRT는 ABI 수준에서 그저 COM이므로
+      raw <code>IShellFolder*</code>, <code>IContextMenu*</code>, <code>IDropTarget*</code>, <code>IFileOperation*</code>는
+      전부 그대로 호출 가능.
+    </li>
+    <li>
+      <strong>HWND 트리는 살아남지 못한다</strong>. WinUI 3 윈도우의 backing HWND는
+      <code>IWindowNative::get_WindowHandle</code>로 얻을 수 있지만
+      (<a href="https://learn.microsoft.com/en-us/windows/apps/develop/ui/retrieve-hwnd">Retrieve HWND</a>),
+      그 HWND 아래에 우리의 4개 listview/3개 splitter/4개 toolbar-row HWND를 자식으로 매다는 길은
+      Microsoft에서 명시적으로 &ldquo;input이 동작하지 않는다&rdquo;고 인정한 상태
+      (<a href="https://github.com/microsoft/microsoft-ui-xaml/issues/10050">microsoft-ui-xaml#10050</a>).
+      &rarr; main-window.cpp의 3,242 LOC는 ~85% 재작성.
+    </li>
+    <li>
+      <strong>Drop target은 frame HWND 단일 등록으로 축소</strong>. <code>RegisterDragDrop</code>으로
+      OLE 경로를 살려두면 shell <code>IDataObject</code> 위임 모델이 그대로 동작할 가능성이 있으나,
+      Explorer &rarr; WinUI 3 drag-in 자체가 회귀 버그(<a href="https://github.com/microsoft/microsoft-ui-xaml/issues/10119">#10119</a>/#8108)로
+      문서화돼 있어 검증 필요. pane 별 hit-test (<code>drop-target.cpp:60&ndash;94</code>)는 XAML 좌표계로 재작성.
+    </li>
+    <li>
+      <strong>컨텍스트 메뉴는 두 갈래의 위험</strong>: TrackPopupMenuEx + owner subclass 경로가 살아남는지
+      문서화된 보장 없음; 살지 않으면 <code>MenuFlyout</code>으로 옮겨야 하는데
+      shell extension의 owner-draw 항목(아이콘, &ldquo;Open With&rdquo; 부제 등)과
+      <code>WM_INITMENUPOPUP</code> 기반 lazy submenu 채움이 깨진다.
+      &rarr; <code>shell-context-menu.cpp</code> 376 LOC 중 핵심 호출부(~200)는 유지, owner subclass + Track 부분은
+      검증 후 결정.
+    </li>
+    <li>
+      <strong>아이콘 파이프라인은 새 비용</strong>. HIMAGELIST는 XAML에서 사용 불가 &mdash;
+      HICON&rarr;HBITMAP&rarr;SoftwareBitmap&rarr;SoftwareBitmapSource 변환층 신설 필요
+      (<a href="https://github.com/microsoft/microsoft-ui-xaml/discussions/7943">microsoft-ui-xaml#7943</a>).
+      <code>icon-cache.cpp</code>(107 LOC)는 거의 전량 재작성, <code>extension-icon-cache</code>의 LRU 구조는 유지.
+    </li>
+    <li>
+      <strong>스레딩 모델은 호환</strong>. UI 스레드 STA + DispatcherQueue (<code>DQTAT_COM_STA</code>) 가
+      현재의 OleInitialize STA 와 정확히 일치
+      (<a href="https://learn.microsoft.com/en-us/windows/apps/windows-app-sdk/migrate-to-windows-app-sdk/guides/threading">Threading migration</a>).
+      ShellWorker / IconProvider 의 STA jthread 패턴(<code>shell-worker.cpp:230&ndash;251</code>,
+      <code>icon-provider.cpp:95&ndash;113</code>)은 변경 불요.
+      UI &larr; worker 통신만 <code>PostMessageW</code> &rarr; <code>DispatcherQueue.TryEnqueue</code>로 마이그레이션 권장
+      (host wndProc 이 우리 것이 아니므로).
+    </li>
+    <li>
+      <strong>배포 사이즈가 점프</strong>. WindowsAppRuntime framework 의존 &rarr; self-contained x64 .msix
+      ~20 MiB / executable redistributable ~57 MiB
+      (<a href="https://github.com/microsoft/microsoft-ui-xaml/discussions/7683">#7683</a>).
+      현재 단일 .exe + WinSparkle 모델 대비 ship size가 크게 늘어남.
+    </li>
+    <li>
+      <strong>컴파일 타임 비용</strong>. C++/WinRT 헤더는 Microsoft 측정 기준 빌드의 ~52%를 차지
+      (<a href="https://learn.microsoft.com/en-us/cpp/build-insights/tutorials/build-insights-included-files-view">Build Insights</a>);
+      PCH 필수.
+    </li>
+    <li>
+      <strong>총평 (추정)</strong>: 본 보고가 직접 검토한 11개 파일 5,485 LOC 기준
+      재사용 ~37% / 재작성 ~63%. 재작성 부담은 거의 전부 <code>main-window.cpp</code> 및 pane UI 컨트롤군에 집중.
+      core/* 와 shell COM 래퍼군은 명세대로 살아남는다.
+      가장 큰 위험 두 가지는 (1) shell 컨텍스트 메뉴의 owner-draw 메시지가 XAML wndProc 안에서
+      forward 되는지 문서화 불명, (2) Explorer &rarr; WinUI 3 drag-in 회귀 (#10119/#8108).
+    </li>
+  </ul>
+
+</section>
+<section class="module" id="winui3-D">
+  <h2>D. C# / .NET 시나리오 &mdash; 인터롭 비용과 GC 압력</h2>
+  <p class="scope"><strong>출처:</strong> 코드(현재 hot path) + Microsoft Learn / CsWinRT / .NET runtime 이슈</p>
+
+  <p class="scope"><strong>표기 규칙:</strong> 코드 인용은 <code>path:line</code>, 외부 인용은 URL. "문서화", "측정값", "공개 데이터 없음"을 명시적으로 구분한다.</p>
+
+  <h3>D.1 인터롭 경계 정량화</h3>
+
+  <p>
+    현재 Win32 구현에서 UI &harr; 코어 경계는 <em>같은 프로세스의 함수 호출</em>이라
+    측정 불가능한 nanosecond 수준이다. C# / WinUI 3로 옮기면 동일 경계가
+    <strong>managed &harr; native</strong> 경계로 바뀌고, 호출마다 P/Invoke 또는
+    COM RCW 디스패치 비용이 더해진다. 다음 표는 <em>코드에 이미 존재하는 콜백 지점</em>에서
+    어느 정도 호출이 발생하는지 정량화한 것이다.
+  </p>
+
+  <div class="table-wrap">
+  <table>
+    <thead>
+      <tr>
+        <th>경로</th>
+        <th>예상 빈도</th>
+        <th>마샬링 페이로드</th>
+        <th>비용 클래스</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>
+          <code>LVN_GETDISPINFOW</code> 콜백<br>
+          (<code>src/ui/main-window.cpp:2686</code>,
+          <code>src/ui/main-window.cpp:2985</code> <code>handleGetDispInfoBody</code>)
+        </td>
+        <td>
+          가시 행 수 &times; 컬럼 수 &times; (스크롤 / 정렬 / 그룹 변경 시)<br>
+          현재 컬럼 5개 (<code>switch (disp-&gt;item.iSubItem)</code> case 0..4,
+          <code>src/ui/main-window.cpp:3036-3065</code>) &rArr; 한 행당 최대 5회 +
+          <code>LVIF_IMAGE</code> 1회 + <code>LVIF_GROUPID</code> 1회.<br>
+          공개 데이터: WinUI 3에서 동등한 패턴은 ListView/ItemsRepeater의
+          <code>DataTemplate</code> 바인딩이며, 가상화는 viewport 기준으로 동작
+          (<a href="https://learn.microsoft.com/en-us/windows/apps/develop/performance/listview-and-gridview-data-optimization">Microsoft Learn: ListView and GridView data virtualization</a>).
+        </td>
+        <td>
+          핫 패스 (uint, wchar_t*, NMLVDISPINFOW 구조체)<br>
+          현재는 같은 프로세스 내 인-라인 호출이며 dispinfo-histogram이 마이크로초
+          단위로 측정한다 (<code>src/ui/dispinfo-histogram.cpp:11-24</code>,
+          버킷 &lt;1us, 1-5us, 5-20us, 20-50us, 50-100us, 100-500us, &ge;500us).<br>
+          C#로 옮기면 viewport에 표시되는 모든 셀이 <code>x:Bind</code> 또는
+          <code>{Binding}</code>으로 변환되어 <strong>호출 단위가 cell이 아니라
+          property getter</strong>가 된다 &mdash; 즉 native &rarr; managed 전이가
+          행 단위로 응집된다.
+        </td>
+        <td>
+          <strong>높음</strong><br>
+          호출 빈도 자체는 비슷하지만 비용 단가가 다르다. 아래 D.2 참조.
+        </td>
+      </tr>
+      <tr>
+        <td>
+          확장자 아이콘 미스 → <code>SHGetFileInfoW</code><br>
+          (<code>src/ui/icon-provider.cpp:63-81</code>,
+          <code>src/ui/icon-cache-coordinator.cpp:30-51</code>)
+        </td>
+        <td>
+          확장자당 1회 (캐시 hit 시 0)<br>
+          <code>ExtensionIconCache</code>가 첫 등장 시 placeholder를 pin해서
+          반복 요청을 막는다 (<code>icon-cache-coordinator.cpp:46-50</code>).
+          폴더당 고유 확장자 수가 상한이며, 일반적인 폴더에서 수십 회를 넘지 않는다.
+        </td>
+        <td>
+          <code>HICON</code> (포인터), 확장자 문자열 (wchar_t*),
+          <code>SHFILEINFOW</code> (692 B in/out).<br>
+          현재는 STA worker 스레드가 직접 호출
+          (<code>src/ui/icon-provider.cpp:95-113</code>, COINIT_APARTMENTTHREADED).
+        </td>
+        <td>
+          <strong>낮음~중간</strong> (확장자 캐시 덕분에 빈도가 낮다).<br>
+          C#에서도 동일 빈도로 P/Invoke 가능. <code>SHGetFileInfoW</code> 자체가
+          무거워서 인터롭 오버헤드는 묻힌다.
+        </td>
+      </tr>
+      <tr>
+        <td>
+          IDropTarget의 <code>DragOver</code>마다 ListView_HitTest +<br>
+          (필요 시) <code>SHParseDisplayName</code> + <code>SHBindToObject</code><br>
+          (<code>src/ui/drop-target.cpp:60-94</code>)
+        </td>
+        <td>
+          마우스 이동 중 매우 자주 (수십 Hz). 단, <code>lastHitRow_</code> 가드가
+          같은 행에서는 리바인드를 스킵 (<code>drop-target.cpp:70-72</code>).
+        </td>
+        <td>
+          <code>IDataObject*</code>, <code>POINTL</code>, <code>DWORD*</code>.<br>
+          공개 사례: Explorer는 드롭 전에 <code>IDataObject::GetData</code>를
+          20회 이상 호출하기도 한다
+          (<a href="https://www.daniweb.com/programming/software-development/threads/452076/lazy-filedrop-to-windows-explorer">DaniWeb thread: Lazy FileDrop</a>,
+          관찰 기반 보고).
+        </td>
+        <td>
+          <strong>중간</strong>: 같은 행 가드 덕에 리바운드 빈도가 낮지만,
+          shell IDropTarget을 한 번 위임받은 뒤의 <code>DragEnter/DragOver/Drop</code>
+          전부가 COM 호출이라 C#로 옮기면 매 호출이 RCW 통과.
+        </td>
+      </tr>
+      <tr>
+        <td>
+          <code>IContextMenu</code> 호출 + 오너 서브클래스 메시지 전달<br>
+          (<code>src/ui/shell-context-menu.cpp:25-56</code>,
+          <code>shell-context-menu.cpp:204-292</code>)
+        </td>
+        <td>
+          사용자 우클릭당 1회의 <code>QueryContextMenu</code> +
+          <code>TrackPopupMenuEx</code>가 활성화된 동안 매 popup마다
+          <code>WM_INITMENUPOPUP</code> / <code>WM_DRAWITEM</code> /
+          <code>WM_MEASUREITEM</code> / <code>WM_MENUCHAR</code>가 전달된다.
+          shell 확장이 owner-draw를 쓰는 한 메뉴 항목 수에 비례.
+        </td>
+        <td>
+          <code>HMENU</code>, <code>WPARAM/LPARAM</code>, <code>LRESULT*</code>.
+          <code>HandleMenuMsg2</code>의 <code>LRESULT* result</code>는 ANSI/UNICODE 분기를
+          포함한다 (<code>shell-context-menu.cpp:30-50</code>).
+        </td>
+        <td>
+          <strong>높음 (단발성)</strong>: 호출 빈도는 우클릭당이라 자주는 아니지만
+          <em>한 번의 우클릭이 수십 회의 native &harr; managed 메시지 라운드트립을
+          유발</em>한다. 메뉴가 떠 있는 동안 입력 latency를 결정.
+        </td>
+      </tr>
+      <tr>
+        <td>
+          enumeration 배치 콜백 (<code>BatchCallback</code>)<br>
+          (<code>src/core/directory-enumerator.h:45-46</code>,
+          <code>directory-enumerator.cpp:96-132</code>)
+        </td>
+        <td>
+          폴더당 ceil(entries / 256) 회<br>
+          (<code>Config::batchSize = 256</code>,
+          <code>directory-enumerator.h:30</code>).<br>
+          100k 항목 한도(<code>FileModelStore::kMaxEntries = 100'000</code>,
+          <code>file-model-store.h:49</code>) &rArr; 최대 391회.
+        </td>
+        <td>
+          <code>(size_t startIndex, size_t count)</code> 두 정수만 마샬.
+        </td>
+        <td>
+          <strong>매우 낮음</strong>: 배치 크기가 충분히 커서 polling 형 콜백이
+          아니다. 어떤 P/Invoke 방식이든 무시할 수 있는 비용.
+        </td>
+      </tr>
+      <tr>
+        <td>
+          정렬 이후의 가시 행 재요청<br>
+          (<code>ListView_RedrawItems</code>가 매 행 재바인딩을 유발)
+        </td>
+        <td>
+          정렬 1회 = viewport 행 수 만큼 <code>LVN_GETDISPINFOW</code> 재호출.
+          그룹 변경 시도 동일 (<code>main-window.cpp:3112-3116</code>).
+        </td>
+        <td>위 첫 행과 동일.</td>
+        <td>위 첫 행과 동일.</td>
+      </tr>
+    </tbody>
+  </table>
+  </div>
+
+  <p>
+    <strong>요약</strong>: 진짜 hot path는 <em>가시 행 재바인딩</em> 한 곳에 모여
+    있다. 100k 항목 자체가 매 프레임 마샬되는 일은 없고 (가상화), 인터롭 비용은
+    "한 행이 화면에 들어올 때마다 한 번 지불"되는 모델이다. 그러나 정렬 / 그룹
+    변경 / 필터 토글이 일어나면 <em>전체 viewport 재호출</em>이 한꺼번에 터지므로
+    이 burst 비용이 critical metric이다.
+  </p>
+
+  <h3>D.2 마샬링 비용 모델 (LibraryImport / GeneratedComInterface)</h3>
+
+  <p>
+    .NET 7 이상에서는 두 개의 source generator가 인터롭 경로를 크게 바꿨다.
+  </p>
+
+  <ul>
+    <li>
+      <strong><code>[LibraryImport]</code> (P/Invoke source generator)</strong>:
+      classic <code>[DllImport]</code>은 런타임에 IL stub을 생성하고 JIT한다.
+      <code>[LibraryImport]</code>는 컴파일 시점에 marshalling C# 코드를 생성하므로
+      runtime IL stub 생성이 사라지고 inlining 기회가 열린다
+      (<a href="https://learn.microsoft.com/en-us/dotnet/standard/native-interop/pinvoke-source-generation">Microsoft Learn: P/Invoke source generation</a>,
+      <a href="https://devclass.com/2022/11/14/microsoft-platform-invoke-in-net-7-0-sweeps-away-old-weird-behaviors-in-fundamental-shift/">DEVCLASS, 2022-11-14</a>).
+      Native AOT에서도 이 generator가 필수 &mdash; AOT는 런타임 IL emit을
+      허용하지 않는다.
+    </li>
+    <li>
+      <strong><code>[GeneratedComInterface]</code> (.NET 8+, ComWrappers 기반)</strong>:
+      <code>[ComImport]</code>가 의존하던 built-in COM marshaller를 대체. 다만
+      Microsoft가 명시한 한 가지 트레이드오프 &mdash; <em>derived interface의
+      메서드를 호출할 때 <code>[ComImport]</code>는 직접 dispatch가 가능했지만
+      <code>[GeneratedComInterface]</code>는 base interface로의 cast가
+      <code>QueryInterface</code> 호출로 변환된다</em>
+      (<a href="https://github.com/dotnet/runtime/blob/main/docs/design/libraries/ComInterfaceGenerator/DerivedComInterfaces.md">dotnet/runtime: ComInterfaceGenerator/DerivedComInterfaces.md</a>).
+      <code>IContextMenu3</code>가 <code>IContextMenu2</code>를 거쳐
+      <code>IContextMenu</code>를 상속하는 우리 케이스에 직접적으로 부정적이다.
+    </li>
+    <li>
+      <strong>CsWinRT</strong>: WinRT projection은 자체 ABI 위에서 COM을
+      호출하며 CsWinRT 2.0부터 trimmable / AOT-compatible
+      (<a href="https://github.com/microsoft/CsWinRT/blob/master/docs/aot-trimming.md">CsWinRT: aot-trimming.md</a>).
+      WinUI 3 자체가 CsWinRT 위에 얹혀 있어 우리가 명시적으로 CsWinRT 코드를
+      작성하지 않더라도 모든 XAML 콜백이 이 경로를 통과한다.
+    </li>
+  </ul>
+
+  <p>
+    <strong>FileEntry blittability 분석</strong>:
+    <code>src/core/file-entry.h:48-59</code>의 40 B 레이아웃을 그대로 P/Invoke로
+    넘기려면 모든 필드가 blittable이어야 한다.
+  </p>
+
+  <div class="table-wrap">
+  <table>
+    <thead>
+      <tr>
+        <th>C++ 필드 (file-entry.h:49-58)</th>
+        <th>C# 표현</th>
+        <th>blittable?</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr><td><code>const wchar_t* namePtr</code></td>
+          <td><code>IntPtr</code> 또는 <code>char*</code> (unsafe)</td>
+          <td>O (raw pointer)</td></tr>
+      <tr><td><code>uint64_t size</code></td><td><code>ulong</code></td><td>O</td></tr>
+      <tr><td><code>uint64_t modifiedTime100ns</code></td><td><code>ulong</code></td><td>O</td></tr>
+      <tr><td><code>uint32_t attributes</code></td><td><code>uint</code></td><td>O</td></tr>
+      <tr><td><code>uint16_t nameLength</code></td><td><code>ushort</code></td><td>O</td></tr>
+      <tr><td><code>uint16_t extensionOffset</code></td><td><code>ushort</code></td><td>O</td></tr>
+      <tr><td><code>uint8_t flags / states / errorCode / reserved</code></td>
+          <td><code>byte</code> 네 개</td><td>O</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <p>
+    핵심 관찰: <strong>FileEntry는 그대로 blittable</strong>이다. C++ 헤더의
+    <code>static_assert(sizeof(FileEntry) == 40)</code>, <code>alignof == 8</code>,
+    <code>is_standard_layout</code>, <code>is_trivially_copyable</code>
+    (<code>file-entry.h:61-74</code>) 조건이 정확히 .NET이 blittable 구조체에
+    요구하는 조건과 일치한다. <code>[StructLayout(LayoutKind.Sequential, Pack=8)]</code> +
+    <code>sizeof = 40</code>으로 C# 측에 동일 정의가 가능하고, 그러면 마샬링
+    레이어가 비활성화 (no-op pinning). <code>namePtr</code>이 raw
+    <code>wchar_t*</code>이기 때문에 <em>이름 문자열을 가져올 때는 별도의
+    <code>Marshal.PtrToStringUni(ptr, length)</code> 한 번이 필요</em>하지만
+    이건 행을 처음 표시할 때만 발생한다.
+  </p>
+
+  <p>
+    <strong>인터롭 단가 (공개 데이터가 있는 범위)</strong>:
+  </p>
+  <ul>
+    <li>
+      P/Invoke 호출 자체의 절대값에 대한 일관된 마이크로벤치마크는
+      Microsoft 공식 문서에 수치로 박혀 있지 않다 &mdash; 공개 데이터 없음.
+      방향성만: <code>[LibraryImport]</code> + blittable args &rarr; 거의 inline화 가능
+      (<a href="https://learn.microsoft.com/en-us/dotnet/standard/native-interop/pinvoke-source-generation">Microsoft Learn: P/Invoke source generation</a>).
+    </li>
+    <li>
+      CsWinRT 2.0의 측정 결과: trimmable projection이 Hello World 기준 디스크
+      footprint 80% 감소, 시작 시간 7% 개선, WinUI gallery는 디스크 45% 감소
+      (<a href="https://github.com/microsoft/CsWinRT/blob/master/docs/aot-trimming.md">CsWinRT aot-trimming docs</a>).
+      이는 <em>per-call</em> 비용이 아니라 트리밍 + AOT 일반 이득.
+    </li>
+    <li>
+      실측 케이스 (CsWinRT 1373): WinRT 호출 성능이 UWP &rarr; WinUI에서 크게 다른
+      시나리오 &mdash; iCloud 사진 폴더(60k 파일) ItemDate indexer가
+      <em>UWP 14초 vs WinUI 6분</em>
+      (<a href="https://github.com/microsoft/CsWinRT/issues/1373">microsoft/CsWinRT issue #1373</a>).
+      100k~10m 파일 스캔에서 WinUI 3가 Win32 대비 45-53% 느려진 사례도 보고
+      (같은 이슈 thread). <strong>측정된 결과</strong>이며 우리 hot path와 직접
+      유사하다.
+    </li>
+  </ul>
+
+  <h3>D.3 100k 항목 관리 객체 비용</h3>
+
+  <p>
+    이 절이 C# 시나리오의 결정적 변수다. 두 가지 모델을 비교한다.
+  </p>
+
+  <h4>모델 A: 각 항목을 managed wrapper 클래스로 감싼다</h4>
+  <p>
+    가장 자연스러운 XAML 패턴 &mdash; <code>ObservableCollection&lt;FileEntryViewModel&gt;</code>.
+    문서화된 .NET 객체 헤더 비용: 64-bit에서 모든 reference 타입은 최소 24 B
+    (16 B 헤더 + 8 B 메서드 테이블 포인터, 8 B 정렬)
+    (<a href="https://theburningmonk.com/2015/07/smallest-net-ref-type-is-12-bytes-or-why-you-should-consider-using-value-types/">theburningmonk: Smallest .NET ref type</a>,
+    <a href="https://www.red-gate.com/simple-talk/development/dotnet-development/object-overhead-the-hidden-net-memory-allocation-cost/">Simple Talk: Object Overhead</a>).
+  </p>
+
+  <p>
+    <code>FileEntryViewModel</code>이 보유해야 할 필드 (현재 FileEntry의 표시용
+    파생값 포함): name (string), size (long), modified (DateTime
+    또는 long), attributes (uint), iconIndex (int), groupId (int),
+    displayName cache (string), formattedSize cache (string),
+    formattedType cache (string), formattedDate cache (string).
+  </p>
+
+  <p>
+    추정 (보수적, native FileEntry는 reuse하지 않는다고 가정):
+  </p>
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>구성</th><th>건당 바이트</th><th>100k 합계</th></tr></thead>
+    <tbody>
+      <tr><td>객체 헤더 (16 B) + MT (8 B)</td><td>24</td><td>2.4 MB</td></tr>
+      <tr><td>5개 string 참조 (8 B × 5)</td><td>40</td><td>4.0 MB</td></tr>
+      <tr><td>scalar 필드 (size, mtime, attr, icon, group ≈ 32 B)</td><td>32</td><td>3.2 MB</td></tr>
+      <tr><td>참조된 string 객체 본체 (헤더 24 B + 평균 32자 wide = 64 B × 5)</td><td>320</td><td>32 MB</td></tr>
+      <tr><td><strong>합계 (extreme)</strong></td><td><strong>~416</strong></td><td><strong>~41.6 MB</strong></td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <p>
+    참고: 현재 C++ 측의 per-pane 예산은 <em>4 MB 구조 + ~4.8 MB 이름 아레나 = 약 9 MB</em>
+    (<code>file-entry.h:11-13</code> 주석, <code>file-model-store.h:164-175</code>).
+    Wrapper 모델은 그 4~5배. 두 pane이면 80 MB 수준이 working set에 추가된다.
+    Gen2 후보 객체가 100k개 늘어난다는 사실이 더 본질적인 문제. <em>Files</em>
+    프로젝트에서 보고된 "큰 폴더에서 lag" 이슈와 정확히 같은 종류의 압력이다
+    (<a href="https://github.com/files-community/Files/issues/9431">files-community/Files #9431 (slow/lag)</a>,
+    <a href="https://github.com/files-community/Files/issues/11082">#11082</a>,
+    <a href="https://github.com/files-community/Files/issues/16357">#16357</a>).
+  </p>
+
+  <h4>모델 B: Span&lt;T&gt; / unmanaged backing + WinUI 데이터 가상화</h4>
+  <p>
+    네이티브 메모리(현재 <code>std::unique_ptr&lt;FileEntry[]&gt;</code> +
+    NameArena, <code>file-model-store.cpp:13-14</code>)를 그대로 두고, C# 측은
+    포인터만 잡은 채 viewport 행에 대해서만 lazy하게 string을 만든다. 이를
+    위한 WinUI 3의 공식 API:
+  </p>
+  <ul>
+    <li>
+      <strong><code>ISupportIncrementalLoading</code></strong> &mdash; tail에서
+      더 가져오는 패턴, 우리의 256-batch 모델과 직접 매칭 가능
+      (<a href="https://learn.microsoft.com/en-us/windows/apps/develop/performance/listview-and-gridview-data-optimization">Microsoft Learn: ListView and GridView data virtualization</a>).
+    </li>
+    <li>
+      <strong><code>IItemsRangeInfo</code></strong> &mdash; ItemIndexRange 기반의
+      "viewport에 있는 행 범위" 통지. 우리 모델에서는 viewport 진입 시에만
+      <code>FileEntry</code>에서 wrapper를 lazy하게 materialize하면 된다
+      (같은 Microsoft Learn 문서).
+    </li>
+    <li>
+      <strong>주의</strong>: <code>IItemsRangeInfo</code>는 instance-당 single
+      ItemsControl 가정. 두 pane이면 두 data source 인스턴스가 필요 (같은 문서).
+    </li>
+  </ul>
+  <p>
+    모델 B에서 Gen2에 적재되는 wrapper는 viewport 크기 × 2 pane × 약간의 lookahead
+    ≈ <strong>수십~수백 개</strong> 수준으로 줄어든다. 41 MB가 0.05 MB가 된다.
+    이게 C# 시나리오를 살리는 유일한 길.
+  </p>
+
+  <h3>D.4 GC 일시 정지와 완화책</h3>
+
+  <p>
+    문서화된 GC latency mode (<a href="https://learn.microsoft.com/en-us/dotnet/standard/garbage-collection/latency">Microsoft Learn: Latency Modes</a>):
+  </p>
+  <ul>
+    <li>
+      <strong>Workstation GC</strong>: 데스크톱 / WPF / WinForms / MAUI 표준
+      (<a href="https://nemorize.com/roadmaps/mastering-memory-management-and-garbage-collection-in-net/lessons/workstation-vs-server-gc">Nemorize summary</a>).
+      WinUI 3는 기본적으로 workstation GC가 적합.
+    </li>
+    <li>
+      <strong><code>SustainedLowLatency</code></strong>: foreground gen 2를 억제,
+      background gen 2만 허용. 단점 명시: <em>heap 크기가 더 커지고
+      fragmentation이 증가하며 메모리 압박 시에는 결국 GC가 트리거되어 잠시
+      멈춘다</em> (같은 Microsoft Learn). 100k entries 두 pane 환경처럼 heap이
+      커진 상태에서는 결국 timing 문제로 잠시 멈춤이 발생한다.
+    </li>
+    <li>
+      <strong><code>GC.TryStartNoGCRegion</code></strong>: 사전에 알리는 바이트 양에
+      한해 GC를 완전히 차단. 짧은 critical section에만 사용 가능, region이 끝나면
+      이전 mode로 복귀.
+    </li>
+    <li>
+      Workstation GC pause: 측정 사례에서 ~25 ms까지 관찰됨; Server는 ~10 ms
+      (<a href="https://mattwarren.org/2017/01/13/Analysing-Pause-times-in-the-.NET-GC/">mattwarren.org: Analysing Pause times</a>,
+      2017 측정값).
+    </li>
+    <li>
+      현대 데스크톱(60 Hz)에서 frame budget은 16.7 ms &mdash; Gen2 pause 하나가
+      한 프레임을 통째로 먹는다. dotnet/runtime issue 65850에서도 60 fps 유지에
+      GC pause가 충돌한다는 명시적 보고
+      (<a href="https://github.com/dotnet/runtime/issues/65850">dotnet/runtime #65850</a>).
+    </li>
+    <li>
+      .NET 9의 DATAS (Dynamic Adaptive Tuning for Application Sizing)가 default로
+      활성화 &mdash; long-lived data 크기에 비례해 heap을 조정
+      (<a href="https://www.c-sharpcorner.com/article/understanding-the-working-of-garbage-collector-in-net-9/">c-sharpcorner: GC in .NET 9</a>).
+      이게 우리 100k 항목 시나리오에서 heap을 안정시키지만 pause 시간 자체는
+      여전히 작업 set에 의존.
+    </li>
+  </ul>
+
+  <p>
+    <strong>이 프로젝트에 적용 시 권장 조합</strong> (모델 B를 택한 경우):
+  </p>
+  <ol>
+    <li>Workstation GC + DATAS 기본값.</li>
+    <li>스크롤 / 정렬 burst 직전에 <code>SustainedLowLatency</code> 진입,
+        burst 끝난 후 <code>Interactive</code>로 복귀.</li>
+    <li>모델 A를 택할 경우엔 stress가 너무 커서 위 mode들이 충분치 않다 &mdash;
+        모델 B가 사실상 필수.</li>
+  </ol>
+
+  <p>
+    참고: Microsoft 자체도 WinUI 3 / File Explorer 성능 작업("Project K2")의
+    중심에 GC 압력 감소를 두고 <code>Span&lt;T&gt;</code> + stack allocation 전환을 진행
+    (<a href="https://windowsnews.ai/article/winui-3-performance-push-how-microsoft-plans-to-make-windows-11-feel-fast.418097">Windows News: WinUI 3 Performance Push</a>,
+    <a href="https://windowsnews.ai/article/microsoft-k2-winui-3-performance-optimizations-target-file-explorer-and-start.417651">Windows News: Project K2</a>).
+    이 사실 자체가 "기본 패턴으로는 우리 사양에 못 미친다"는 신호.
+  </p>
+
+  <h3>D.5 Native AOT for WinUI 3 (2026 시점)</h3>
+
+  <p>
+    Native AOT 지원 현황 (2026-05 기준):
+  </p>
+  <ul>
+    <li>
+      WinUI 3 / Windows App SDK 1.6부터 Native AOT가 옵션으로 활성화
+      (<a href="https://github.com/microsoft/CsWinRT/blob/master/docs/aot-trimming.md">CsWinRT aot-trimming 문서</a>,
+      Windows App SDK 1.6 release notes).
+    </li>
+    <li>
+      Windows App SDK 1.8 stable (2025-09), serviced through 2026-03;
+      SDK 2.0 preview는 .NET 10 타겟
+      (<a href="https://www.ctco.blog/posts/winui-vs-wpf-2026-practical-comparison/">CTCO: WinUI vs WPF in 2026</a>).
+    </li>
+    <li>
+      AOT 빌드 시 publish는 <code>SelfContained=true</code>가 필수
+      (<a href="https://github.com/dotnet/runtime/issues/109154">dotnet/runtime #109154</a>).
+    </li>
+    <li>
+      알려진 알파급 결함: win-x86 AOT 빌드에서 GC crash
+      (<a href="https://github.com/dotnet/runtime/issues/110607">dotnet/runtime #110607</a>).
+      x86 데스크톱이 우리 타겟에 포함된다면 차단 요인.
+    </li>
+    <li>
+      Microsoft가 보고한 정성적 효과 (File Explorer, Notepad WinUI 3 변환):
+      cold start 40-55% 단축
+      (<a href="https://www.windowslatest.com/2026/05/15/microsoft-commits-to-native-ui-for-windows-11-as-users-push-back-against-web-app-slop/">Windows Latest, 2026-05-15</a>,
+      Microsoft 텔레메트리라고 출처 표기).
+    </li>
+    <li>
+      AOT가 강제하는 제약: <em>런타임 코드 생성 금지</em> &mdash;
+      reflection-heavy XAML binding, <code>{Binding}</code>의 일부 시나리오,
+      runtime-generated COM proxy 모두 제거 필요. <code>x:Bind</code>(컴파일 타임 바인딩)와
+      <code>[GeneratedComInterface]</code>가 권장 경로.
+    </li>
+    <li>
+      바이너리 크기: UWP 소형 앱 기준 약 +4 MB 증가 (self-contained 때문에)
+      (<a href="https://learn.microsoft.com/en-us/windows/uwp/dotnet-native/modernize-uwp-apps-with-dotnet">Microsoft Learn: Modernize UWP with .NET</a>).
+      WinUI 3는 framework + XAML 메타데이터가 더 큼 &mdash; 실측 데이터는 앱마다 상이.
+    </li>
+  </ul>
+
+  <p>
+    <strong>이 프로젝트에 대한 함의</strong>:
+  </p>
+  <ul>
+    <li>
+      AOT를 채택하면 <code>[GeneratedComInterface]</code>가 강제된다 &mdash; D.2의
+      derived-interface QueryInterface 비용이 우리 <code>IContextMenu3</code>
+      체인에 그대로 부과.
+    </li>
+    <li>
+      AOT 채택 시 <code>[LibraryImport]</code>가 강제 &mdash; 좋은 일이지만,
+      현재 코드에 P/Invoke가 없으니 처음부터 LibraryImport로 작성하면 된다.
+    </li>
+    <li>
+      XAML <code>{Binding}</code> 대신 <code>x:Bind</code> 사용 강제 &mdash;
+      디자이너 productivity 측면에선 큰 차이 없고 오히려 성능에 유리.
+    </li>
+  </ul>
+
+  <h3>D.6 Shell COM 호출의 C# 호환성</h3>
+
+  <p>
+    현재 코드가 호출하는 shell COM 인터페이스를 C# 측에서 어떻게 부를지 정리.
+  </p>
+
+  <div class="table-wrap">
+  <table>
+    <thead>
+      <tr>
+        <th>COM 인터페이스 / 호출</th>
+        <th>현재 C++ 위치</th>
+        <th>C# 가능성</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><code>SHParseDisplayName</code></td>
+        <td><code>shell-context-menu.cpp:79</code></td>
+        <td>O. P/Invoke <code>[LibraryImport]</code>로 직접. blittable.</td>
+      </tr>
+      <tr>
+        <td><code>IShellFolder::BindToObject / ParseDisplayName / GetUIObjectOf</code></td>
+        <td><code>shell-context-menu.cpp:85-132</code></td>
+        <td>O. <code>[GeneratedComInterface]</code>로 IShellFolder 선언 가능. PIDL은 <code>IntPtr</code>로 다루고 lifetime은 <code>CoTaskMemFree</code> 명시 호출.</td>
+      </tr>
+      <tr>
+        <td><code>IContextMenu / IContextMenu2 / IContextMenu3</code><br>
+            owner subclass에서 <code>HandleMenuMsg2</code> 전달</td>
+        <td><code>shell-context-menu.cpp:25-56, 204-292</code></td>
+        <td>
+          O이지만 두 가지 비용 포인트: (1) <code>[GeneratedComInterface]</code>의
+          derived-interface QueryInterface 비용
+          (<a href="https://github.com/dotnet/runtime/blob/main/docs/design/libraries/ComInterfaceGenerator/DerivedComInterfaces.md">dotnet runtime docs</a>);
+          (2) <code>SetWindowSubclass</code>는 현재 같은 프로세스 안 함수 콜백.
+          C# 측 콜백을 등록하려면 delegate marshalling이 필요한데 AOT 환경에서는
+          <code>[UnmanagedCallersOnly]</code> 정적 메서드여야 한다 &mdash;
+          서브클래스 컨텍스트(IContextMenu2/3 포인터)는 별도 static 테이블 또는
+          GCHandle로 보관.
+        </td>
+      </tr>
+      <tr>
+        <td><code>SHGetFileInfoW</code></td>
+        <td><code>icon-cache.cpp:23</code>, <code>icon-provider.cpp:76</code></td>
+        <td>
+          O. P/Invoke 직접. <code>SHFILEINFOW</code>를 그대로 blittable
+          <code>[StructLayout]</code>로 선언.
+        </td>
+      </tr>
+      <tr>
+        <td><code>IDropTarget / IDataObject</code> chain</td>
+        <td><code>drop-target.cpp:30-142</code></td>
+        <td>
+          O. WinUI 3 자체가 <code>Drop</code> 이벤트를 노출하지만
+          <em>같은 수준의 shell 위임(현재 코드의 핵심 패턴)을 하려면</em> raw
+          <code>IDropTarget</code>이 필요. WinUI 3의 element는 자체
+          <code>RegisterDragDrop</code>을 호출하지 않으므로 host HWND를 잡아
+          P/Invoke로 직접 등록하거나, shell IDropTarget을 wrap한 managed adapter를
+          노출해야 한다. <strong>제일 마찰 큰 부분</strong>.
+        </td>
+      </tr>
+      <tr>
+        <td><code>CoInitializeEx(COINIT_APARTMENTTHREADED)</code></td>
+        <td><code>icon-provider.cpp:99-100</code></td>
+        <td>
+          P/Invoke로 직접 가능. .NET worker thread에서 STA로 들어가려면
+          <code>Thread.SetApartmentState(STA)</code> &mdash; 단 ThreadPool
+          스레드에는 적용 불가. 별도 dedicated thread 필요.
+        </td>
+      </tr>
+      <tr>
+        <td><code>SetWindowSubclass / DefSubclassProc</code></td>
+        <td><code>shell-context-menu.cpp:62, 55</code></td>
+        <td>
+          P/Invoke 가능하지만 callback이 <code>[UnmanagedCallersOnly]</code> static
+          이어야 한다 (AOT 호환). 현재 코드의 <code>refData</code>로 인스턴스 포인터를
+          전달하는 패턴은 GCHandle로 대체.
+        </td>
+      </tr>
+    </tbody>
+  </table>
+  </div>
+
+  <p>
+    <strong>가장 마찰이 큰 두 지점</strong>: (1) IDropTarget의 lifetime &mdash;
+    XAML element가 아니라 LV에 등록되어 있는 shell IDropTarget을 그대로 위임받는
+    현재 구조 (<code>drop-target.cpp:87</code> <code>queryFolderDropTarget</code>);
+    (2) shell context menu의 owner subclass &mdash; AOT에서 static callback
+    제약이 강제. 둘 다 "불가능"은 아니지만 C++ 대비 보일러플레이트가 늘고
+    GeneratedComInterface 한계 안에서 조심스럽게 다뤄야 한다.
+  </p>
+
+  <h3>D.7 빌드/배포 영향</h3>
+
+  <div class="table-wrap">
+  <table>
+    <thead>
+      <tr>
+        <th>배포 모드</th>
+        <th>설치 footprint 추정</th>
+        <th>출처</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>Framework-dependent (.NET runtime + Windows App SDK runtime이 시스템에 있어야)</td>
+        <td>앱 EXE + DLL 수십 MB. <em>단</em> 사용자에게 Windows App SDK 런타임이 없으면 사전 설치 필요. MSIX 패키지 단독이면 ~10-20 MB.</td>
+        <td>WinUI 3 일반 가이드.</td>
+      </tr>
+      <tr>
+        <td>Self-contained (no AOT)</td>
+        <td>약 +60-100 MB (CoreCLR 전체).</td>
+        <td>일반 .NET self-contained 추정.</td>
+      </tr>
+      <tr>
+        <td>Native AOT (self-contained 필수, <a href="https://github.com/dotnet/runtime/issues/109154">dotnet/runtime #109154</a>)</td>
+        <td>UWP 소형 앱 기준 +4 MB 증가; WinUI 3는 framework + XAML 메타데이터로 더 큼. 단일 EXE에 가까운 형태가 가능.</td>
+        <td><a href="https://learn.microsoft.com/en-us/windows/uwp/dotnet-native/modernize-uwp-apps-with-dotnet">Microsoft Learn: Modernize UWP</a></td>
+      </tr>
+      <tr>
+        <td>CsWinRT 2.0 trimmed (AOT 또는 trimming)</td>
+        <td>Hello World 디스크 footprint -80%, WinUI gallery -45%; startup -7%.</td>
+        <td><a href="https://github.com/microsoft/CsWinRT/blob/master/docs/aot-trimming.md">CsWinRT aot-trimming.md</a></td>
+      </tr>
+    </tbody>
+  </table>
+  </div>
+
+  <p>
+    현재 Win32 빌드(C++)는 보통 수 MB MSI/포터블 EXE. C# 시나리오는 framework-dependent
+    + 사전 SDK 설치로 가장 가깝게 맞춰도 ~20 MB 수준, AOT는 그보다 더 크다.
+    "fast-explorer"라는 제품 포지셔닝(빠른 기동, 작은 footprint)에 직접 영향.
+  </p>
+
+  <h3>D.8 재사용 가능한 코드 범위 추정</h3>
+
+  <p>
+    LOC는 <code>wc -l</code> 기준 코드 + 헤더 합. C# 시나리오는 <em>UI 레이어
+    재작성 + core를 C-callable shim 뒤로 노출</em>을 가정. core는 거의 그대로 두고
+    <code>extern "C"</code> 래퍼만 추가하면 P/Invoke가 가능하다 (FileEntry는 D.2에서
+    확인했듯 blittable).
+  </p>
+
+  <div class="table-wrap">
+  <table>
+    <thead>
+      <tr>
+        <th>모듈</th>
+        <th>현재 LOC</th>
+        <th>재사용 가능 (P/Invoke 경유)</th>
+        <th>재작성 필요</th>
+        <th>비고</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><code>src/core/</code> 전체 (file-entry, file-model-store, name-arena, directory-enumerator, fs-watcher, fs-backend, path-utils, settings-store, perf-tracker, ring-logger, crash-handler)</td>
+        <td>4748</td>
+        <td>~4500 (95%)</td>
+        <td>~250 (5%, C-callable shim 추가)</td>
+        <td>FileEntry blittable, FileModelStore의 raw array 포인터를 그대로 노출 가능. <code>std::span</code> &rarr; <code>(FileEntry*, size_t)</code> 쌍으로 평탄화.</td>
+      </tr>
+      <tr>
+        <td><code>icon-cache.cpp/h</code> (HIMAGELIST 관리)</td>
+        <td>175</td>
+        <td>0</td>
+        <td>175</td>
+        <td>WinUI 3는 HIMAGELIST를 직접 쓰지 않음. ImageSource 또는 BitmapImage 기반으로 재작성.</td>
+      </tr>
+      <tr>
+        <td><code>icon-provider.cpp/h</code> (SHGetFileInfo worker)</td>
+        <td>231</td>
+        <td>~150 (SHGetFileInfo 호출 부분)</td>
+        <td>~80 (worker scheduling, jthread는 Task로)</td>
+        <td>STA worker thread는 별도 dedicated <code>Thread</code>로 재작성 필요.</td>
+      </tr>
+      <tr>
+        <td><code>icon-cache-coordinator.cpp/h</code></td>
+        <td>172</td>
+        <td>~50 (정책 로직)</td>
+        <td>~122 (HIMAGELIST 의존성 제거)</td>
+        <td></td>
+      </tr>
+      <tr>
+        <td><code>extension-icon-cache.cpp/h</code></td>
+        <td>141</td>
+        <td>~141</td>
+        <td>0</td>
+        <td>순수 자료구조; <code>Dictionary&lt;string, int&gt;</code>로 직역 또는 그대로 P/Invoke.</td>
+      </tr>
+      <tr>
+        <td><code>shell-context-menu.cpp/h</code></td>
+        <td>377</td>
+        <td>0</td>
+        <td>377</td>
+        <td>D.6 참조. owner subclass 패턴이 AOT-static-callback 제약 때문에 구조 재설계 필요.</td>
+      </tr>
+      <tr>
+        <td><code>drop-target.cpp/h</code> + <code>drop-source.cpp/h</code></td>
+        <td>261</td>
+        <td>~50 (정책)</td>
+        <td>~211 (WinUI 3 drag-drop event 통합)</td>
+        <td></td>
+      </tr>
+      <tr>
+        <td><code>main-window.cpp/h</code> (LVN_GETDISPINFO 외 win32 메시지 디스패치 전반)</td>
+        <td>3547</td>
+        <td>0</td>
+        <td>3547</td>
+        <td>XAML + ViewModel로 전면 재작성. C# 시나리오의 가장 큰 비용.</td>
+      </tr>
+      <tr>
+        <td>나머지 UI 모듈 (pane-controller, pane-manager, pane-toolbar-row, address-bar-popup, search-popup, label-edit-controller, filter-pattern, format-cache, column-formatter, status-text, selection-sync, listview-group-callback, dark-scrollbar-hook, clipboard-ops, cut-state-tracker, stall-probe, folder-name, dispinfo-histogram, com-raii.h 등)</td>
+        <td>약 7000</td>
+        <td>~1500 (정책/포매팅/필터 로직)</td>
+        <td>~5500 (UI 통합 부분)</td>
+        <td>format-cache, filter-pattern, dispinfo-histogram, column-formatter는 거의 그대로 재사용 가능; pane-* / listview-group-callback / dark-scrollbar-hook은 전면 재작성.</td>
+      </tr>
+      <tr>
+        <td><code>src/app/main.cpp</code></td>
+        <td>416</td>
+        <td>0</td>
+        <td>416</td>
+        <td>WinUI 3 <code>App.xaml</code> + Activation 으로 재작성.</td>
+      </tr>
+      <tr>
+        <td><code>src/bench/</code></td>
+        <td>약 1240</td>
+        <td>~1100</td>
+        <td>~140</td>
+        <td>core를 향한 벤치이므로 대부분 재사용 가능. CLI 진입점만 수정.</td>
+      </tr>
+      <tr>
+        <td><strong>합계</strong></td>
+        <td><strong>~18308</strong> (tests 제외)</td>
+        <td><strong>~7491 (~41%)</strong></td>
+        <td><strong>~10817 (~59%)</strong></td>
+        <td></td>
+      </tr>
+    </tbody>
+  </table>
+  </div>
+
+  <p>
+    참고: 위 합계 18308은 <code>find src -name "*.cpp" -o -name "*.h" | xargs wc -l</code>로
+    계산한 19105에서 헤더 중복 등을 제외한 보수적 어림. 정확한 LOC가 필요한 시점에는
+    재측정해야 한다.
+  </p>
+
+  <h3>D.9 C# 시나리오 핵심 요약</h3>
+
+  <ul>
+    <li>
+      <strong>인터롭 경계 빈도는 관리 가능</strong>: 진짜 hot path는 LVN_GETDISPINFO
+      등가 (cell 단위 바인딩) 한 곳. 가상화가 viewport 단위로 제한해주므로 100k
+      항목 전체가 매 프레임 마샬되지는 않는다. 정렬/그룹/필터 burst만 주의.
+    </li>
+    <li>
+      <strong>FileEntry는 그대로 blittable</strong>: <code>file-entry.h:48-74</code>의
+      <code>static_assert</code> 일곱 개가 .NET이 LayoutKind.Sequential blittable
+      구조체에 요구하는 조건과 일치. P/Invoke로 zero-copy 전달 가능 (이름 문자열만
+      별도 <code>PtrToStringUni</code>).
+    </li>
+    <li>
+      <strong>관리 객체 wrapper 모델은 금지</strong>: 100k 항목을
+      <code>FileEntryViewModel</code>로 감싸면 약 41 MB 추가 + Gen2 후보 100k개 추가.
+      <em>files-community/Files</em>의 다수 lag 이슈
+      (<a href="https://github.com/files-community/Files/issues/9431">#9431</a>,
+      <a href="https://github.com/files-community/Files/issues/11082">#11082</a>,
+      <a href="https://github.com/files-community/Files/issues/16357">#16357</a>)와
+      WinUI 3 / WinRT indexer가 UWP 14초 vs WinUI 6분으로 느려진 사례
+      (<a href="https://github.com/microsoft/CsWinRT/issues/1373">CsWinRT #1373</a>)가
+      이 경로의 위험을 직접 보여준다. <code>ISupportIncrementalLoading</code> +
+      <code>IItemsRangeInfo</code>를 통해 native-backed lazy materialization만이
+      현재 C++의 9 MB/pane 메모리 footprint를 유지할 수 있는 길.
+    </li>
+    <li>
+      <strong>GC pause는 단일 frame budget(16.7 ms)을 위협</strong>: workstation
+      GC pause가 측정 사례에서 ~25 ms
+      (<a href="https://mattwarren.org/2017/01/13/Analysing-Pause-times-in-the-.NET-GC/">mattwarren.org</a>),
+      dotnet/runtime #65850에서 60 fps와의 충돌이 명시. <code>SustainedLowLatency</code>
+      + 모델 B + .NET 9 DATAS 조합이 필요. 모델 A는 mitigation으로도 부족.
+    </li>
+    <li>
+      <strong>Native AOT는 가능하지만 비용도 명확</strong>: Windows App SDK 1.6+에서
+      지원, Microsoft 자체 텔레메트리로 cold start 40-55% 단축
+      (<a href="https://www.windowslatest.com/2026/05/15/microsoft-commits-to-native-ui-for-windows-11-as-users-push-back-against-web-app-slop/">Windows Latest, 2026-05-15</a>),
+      CsWinRT 2.0 trimmed로 디스크 -45-80%, 시작 -7%
+      (<a href="https://github.com/microsoft/CsWinRT/blob/master/docs/aot-trimming.md">CsWinRT aot-trimming</a>).
+      그러나 <code>[GeneratedComInterface]</code>의 derived-interface
+      <code>QueryInterface</code> 비용
+      (<a href="https://github.com/dotnet/runtime/blob/main/docs/design/libraries/ComInterfaceGenerator/DerivedComInterfaces.md">dotnet/runtime docs</a>)이
+      우리 <code>IContextMenu &rarr; IContextMenu2 &rarr; IContextMenu3</code> 체인에
+      직접 부과. win-x86 AOT GC crash 회귀
+      (<a href="https://github.com/dotnet/runtime/issues/110607">dotnet/runtime #110607</a>)는
+      x86 타겟 시 차단 요인.
+    </li>
+    <li>
+      <strong>Shell COM 호출은 모두 가능, 단 두 곳이 까다롭다</strong>:
+      (a) <code>IDropTarget</code> 위임 패턴 &mdash; WinUI 3 element가 자체
+      RegisterDragDrop을 하지 않으므로 host HWND를 직접 잡거나 managed adapter가
+      필요; (b) shell context menu owner subclass &mdash; AOT에서 callback이
+      <code>[UnmanagedCallersOnly]</code> static이라 instance state는 GCHandle로
+      외부 보관. 둘 다 구현 가능하지만 현재 C++ 코드 대비 보일러플레이트 증가.
+    </li>
+    <li>
+      <strong>배포 footprint는 명확히 커진다</strong>: framework-dependent도
+      ~20 MB 수준 (Windows App SDK 사전 설치 필요), AOT self-contained는 더 크다
+      (<a href="https://github.com/dotnet/runtime/issues/109154">SelfContained 강제</a>,
+      <a href="https://learn.microsoft.com/en-us/windows/uwp/dotnet-native/modernize-uwp-apps-with-dotnet">UWP +4 MB 기준</a>).
+      "fast-explorer" 포지셔닝에 직접 충돌.
+    </li>
+    <li>
+      <strong>재사용 가능 코드 비율 ~41%</strong>: core ~4500 LOC + 정책/포매팅
+      ~1500 LOC + bench ~1100 LOC ≈ 7100 LOC가 그대로 살아남고, 나머지 ~10800
+      LOC (특히 main-window.cpp 3242 LOC 전체)는 XAML + ViewModel로 재작성.
+      C++/WinRT 시나리오 대비 productivity 이득은 분명히 있지만 (XAML 디자이너,
+      hot reload, LINQ, async/await), hot-path 위험 영역이 더 많다.
+    </li>
+  </ul>
+
+  <p class="scope">
+    <strong>최종 권고 (D 모듈 한정)</strong>:
+    C# / WinUI 3 시나리오는 <em>모델 B (Native-backed virtualization +
+    ISupportIncrementalLoading/IItemsRangeInfo) + Native AOT + LibraryImport +
+    GeneratedComInterface + Workstation GC + 정렬 burst 시
+    SustainedLowLatency 가드</em>의 조합에서만 현재 Win32 성능 프로파일에
+    근접할 수 있다. 이 조합을 못 채우면 (모델 A로 가거나 GC 가드 누락) Files
+    프로젝트가 겪는 lag 클래스 이슈를 그대로 재현할 가능성이 높다.
+    "C#이라서 자동으로 productivity가 좋아진다"는 진술은 main-window.cpp 3242
+    LOC 재작성 부담과 동시에 평가해야 한다.
+  </p>
+</section>
+<section class="module" id="winui3-E">
+  <h2>E. 종합 비교 — 예상 성능 수준과 마이그레이션 위험 매트릭스</h2>
+  <p class="scope"><strong>출처:</strong> A·B·C·D 모든 섹션의 데이터를 결합. 추정치는 모두 명시함.</p>
+
+  <h3>E.1 핵심 답변 (요약)</h3>
+  <p>
+    "현재 코드는 그대로 두고 UI 도구만 WinUI 3로 교체"라는 시나리오에서, 측정 가능한 모든 신호는 <strong>성능이 의미 있게 하향 조정된다</strong>는 결론을 가리킨다. 현재 Fast Explorer는 100k 항목 첫 배치 29.83 ms·warm launch 21–36 ms·100k peak working set 9.39 MB로 동급 도메인(파일 탐색기)에서 사실상 최상위권 성능을 측정해 두었고(§A.8), WinUI 3 + Windows App SDK 런타임을 끼우는 순간 framework 자체가 강요하는 비용(빈 윈도우 29–31 ms/frame 리포트, UI 스레드 30 fps cap, AnnotatedScrollBarLabel 100k 할당 10초 회귀)이 그 베이스라인을 깎는다(§B.7). 같은 도메인의 microsoft/Files 가 "cold launch 3.6–5 s vs Explorer 1.55 s", "1–3 s 폴더 네비게이션 지연", "2000-item 폴더 unresponsive"를 자기 이슈 트래커에 보고하고 있다(§B.8) — 동일 backend를 가정하더라도 framework cost는 피하기 어렵다.
+  </p>
+  <p>
+    예상 도달 범위(추정):
+  </p>
+  <ul>
+    <li><strong>Best-case</strong>(ItemsRepeater 회피 + ListView·ItemsStackPanel + x:Bind OneTime + ContainerContentChanging·x:Phase + Native AOT + native-backed virtualization + 기존 C++ shell COM 재사용): 현재 대비 <strong>start-up 10–20×, scroll latency 2–3×, working set 5–10×</strong> 악화 추정. 이론적으로는 "WinUI 3 치고는 매우 빠른" 앱이 된다.</li>
+    <li><strong>Typical-case</strong>(Files community 수준 — 비슷한 기능, 검증된 패턴 따랐을 때): <strong>cold start 30–150×, folder navigation 30–100×, scroll 2× 이상 또는 회귀</strong>. 사용자 체감으로 "현재 Fast Explorer가 주는 즉각성"은 사라진다.</li>
+    <li>현재 정의된 SLO(§A 표 A.4 design budgets) <code>scroll frame p95 ≤ 16.7 ms</code>, <code>100k WS target 50 MB / budget 100 MB</code>, <code>warm launch ≤ 500 ms</code> 중 <strong>100k WS budget 100 MB</strong>와 <strong>warm launch 500 ms</strong>는 best-case 시나리오에서 여전히 충족 가능하지만, <strong>scroll frame 16.7 ms p95</strong>는 framework cap(§B.7 #7290)에 의해 위협받는다.</li>
+  </ul>
+
+  <h3>E.2 메트릭별 예상 성능 (추정 포함)</h3>
+  <p>
+    아래 표에서 "현재 측정"은 §A의 실측, "WinUI 3 예측"은 §B/C/D의 1차 자료를 바탕으로 한 <em>추정</em>이다. 추정 행은 별도 표시.
+  </p>
+  <div class="table-wrap">
+  <table>
+    <thead>
+      <tr>
+        <th>메트릭</th>
+        <th>현재 Win32 (실측)</th>
+        <th>WinUI 3 best-case (추정)</th>
+        <th>WinUI 3 typical (Files 수준)</th>
+        <th>예상 배율 (악화)</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><strong>Cold start</strong></td>
+        <td>미측 (warm 21–36 ms만)</td>
+        <td>~1,000 ms (AOT 적용 시, §B.6)</td>
+        <td><a href="https://github.com/files-community/Files/issues/11836">3,600–5,000 ms</a> (Files#11836)</td>
+        <td>30–150× ↓ <em>(추정)</em></td>
+      </tr>
+      <tr>
+        <td><strong>Warm start</strong></td>
+        <td>21–36 ms (§A.8, ≤500 ms gate)</td>
+        <td>~200–500 ms <em>(추정)</em></td>
+        <td>500 ms 이상 <em>(추정)</em></td>
+        <td>10–20× ↓ <em>(추정)</em></td>
+      </tr>
+      <tr>
+        <td><strong>폴더 첫 배치 (100k)</strong></td>
+        <td>29.83 ms (§A.8)</td>
+        <td>수백 ms <em>(추정, ListView 가상화 시)</em></td>
+        <td><a href="https://github.com/files-community/Files/issues/14939">1–3 s</a> (Files#14939)</td>
+        <td>30–100× ↓ <em>(추정)</em></td>
+      </tr>
+      <tr>
+        <td><strong>100k 항목 할당</strong></td>
+        <td>FileModelStore 즉시 (raw array, §A 5.10)</td>
+        <td>~수백 ms (ListView ItemsSource)</td>
+        <td><a href="https://github.com/microsoft/microsoft-ui-xaml/issues/8888">10초+ (ItemsRepeater 버그)</a></td>
+        <td>ListView 경로 사용 시 controllable</td>
+      </tr>
+      <tr>
+        <td><strong>Scroll frame p95</strong></td>
+        <td>≤16.7 ms 목표 (§A design)</td>
+        <td>≥33 ms (30 fps cap, <a href="https://github.com/microsoft/microsoft-ui-xaml/issues/7290">#7290</a>) <em>(추정)</em></td>
+        <td>주기적 unresponsive (Files#15554)</td>
+        <td>2× ↓ ~ 회귀</td>
+      </tr>
+      <tr>
+        <td><strong>Per-row 콜백 비용</strong></td>
+        <td>LVN_GETDISPINFO ≤ 50 µs (§A.2)</td>
+        <td>ContainerContentChanging 측정 데이터 없음 <em>(B.9 "no public number")</em></td>
+        <td>—</td>
+        <td>unknown</td>
+      </tr>
+      <tr>
+        <td><strong>100k peak working set</strong></td>
+        <td>9.39 MB (§A.8)</td>
+        <td>50–80 MB <em>(추정: XAML+WinAppRuntime 베이스)</em></td>
+        <td>100 MB+ <em>(추정)</em></td>
+        <td>5–10× ↑ <em>(추정)</em></td>
+      </tr>
+      <tr>
+        <td><strong>배포 크기</strong></td>
+        <td>portable .exe (수 MB)</td>
+        <td>self-contained .msix +20 MiB / framework +57 MiB (§C.7)</td>
+        <td>동일</td>
+        <td>×10 이상 ↑</td>
+      </tr>
+      <tr>
+        <td><strong>C# 경로 추가: GC pause</strong></td>
+        <td>해당 없음</td>
+        <td>SustainedLowLatency로 완화</td>
+        <td>~25 ms Gen2 (§D.4, &gt;16.7 ms frame budget)</td>
+        <td>scroll jank 위험</td>
+      </tr>
+    </tbody>
+  </table>
+  </div>
+
+  <h3>E.3 두 시나리오 비교 — C++/WinRT vs C#</h3>
+  <p>
+    핵심 hot path 성능 자체는 두 경로 모두 framework cost에 지배된다. 차이는 <strong>(1) 기존 코드 재사용성</strong>과 <strong>(2) 100k 항목 시 GC 압력</strong>에 있다.
+  </p>
+  <div class="table-wrap">
+  <table>
+    <thead>
+      <tr>
+        <th>축</th>
+        <th>C++/WinRT</th>
+        <th>C# / .NET</th>
+        <th>판정</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>Shell COM 재사용</td>
+        <td>raw COM 그대로 호출 (704 LOC 무변환, §C.2)</td>
+        <td>GeneratedComInterface 필요, IContextMenu→2→3 QI 추가 비용 (§D.6)</td>
+        <td>C++/WinRT 우위</td>
+      </tr>
+      <tr>
+        <td>FileEntry 마샬링</td>
+        <td>인터롭 자체가 없음</td>
+        <td>40 B blittable, Pack=8 정확히 맞음 → zero-copy P/Invoke 가능 (§D.2)</td>
+        <td>C# 도 거의 무비용</td>
+      </tr>
+      <tr>
+        <td>100k entry 메모리</td>
+        <td>native만 (현재 9 MB 유지)</td>
+        <td>naive ViewModel 시 +41 MB, native-backed virtualization 필수 (§D.3)</td>
+        <td>C++/WinRT 우위 (자연스럽게 native)</td>
+      </tr>
+      <tr>
+        <td>scroll 중 stall</td>
+        <td>없음 (GC 부재)</td>
+        <td>Gen2 25 ms 위험, SustainedLowLatency 필수 (§D.4)</td>
+        <td>C++/WinRT 우위</td>
+      </tr>
+      <tr>
+        <td>코드 재사용 비율</td>
+        <td>~37% (5,485 LOC 중, §C.8)</td>
+        <td>~41% (~7,491 LOC, §D.8)</td>
+        <td>거의 동등</td>
+      </tr>
+      <tr>
+        <td>main-window.cpp (3,242 LOC)</td>
+        <td>~85% 재작성 (HWND 4-pane 불가, §C.1)</td>
+        <td>~95% 재작성 (전부 XAML)</td>
+        <td>C++/WinRT 약간 우위</td>
+      </tr>
+      <tr>
+        <td>shell-context-menu owner-draw subclass</td>
+        <td>XAML wndProc 안 동작 여부 <strong>미검증</strong> (§C.4)</td>
+        <td>UnmanagedCallersOnly + GCHandle 패턴으로 재작성 필요 (§D.6)</td>
+        <td>둘 다 위험, 검증 필요</td>
+      </tr>
+      <tr>
+        <td>아이콘 파이프라인</td>
+        <td>HICON → SoftwareBitmapSource 변환층 신설, ~85% 재작성 (§C.5)</td>
+        <td>동일 + COM RCW round-trip</td>
+        <td>C++/WinRT 약간 우위</td>
+      </tr>
+      <tr>
+        <td>Native AOT</td>
+        <td>해당 없음 (네이티브 컴파일)</td>
+        <td>WASDK 1.6+ 지원, win-x86 GC crash 존재 (§D.5)</td>
+        <td>C++/WinRT는 기본형, C#은 옵션</td>
+      </tr>
+      <tr>
+        <td>생산성/유지보수</td>
+        <td>XAML codegen 복잡, 빌드 느림 (§C.7)</td>
+        <td>핫리로드 등 도구 풍부 (§D 종합)</td>
+        <td>C# 우위</td>
+      </tr>
+    </tbody>
+  </table>
+  </div>
+  <p>
+    종합: 100k 항목 시나리오에서 <strong>C++/WinRT가 성능 측면에서 명백히 안전</strong>하다. C# 경로를 택하려면 <code>ISupportIncrementalLoading + IItemsRangeInfo + native-backed virtualization</code>으로 ViewModel 객체 100k 생성을 회피하는 패턴이 사실상 필수이며(§D.3), 그렇게 해도 GC pause 25 ms가 scroll frame budget 16.7 ms를 초과하는 위험이 남는다(§D.4).
+  </p>
+
+  <h3>E.4 가장 큰 위험 5가지</h3>
+  <ol>
+    <li>
+      <strong>UI 스레드 30 fps cap</strong> — <a href="https://github.com/microsoft/microsoft-ui-xaml/issues/7290">microsoft-ui-xaml#7290</a> 가 보고하는 "1000 Hz 마우스에도 UI가 30 fps에 묶임"은 현재 Fast Explorer의 <code>scroll frame p95 ≤ 16.7 ms</code> SLO를 직접 위협한다 (§B.7). 회피 패턴이 framework-level 수정에 의존하므로 사용자 코드로 해결 불가.
+    </li>
+    <li>
+      <strong>HWND 4-pane 호스팅 불가</strong> — Microsoft가 인정한 <a href="https://github.com/microsoft/microsoft-ui-xaml/issues/10050">#10050</a> ("WinUI 3 윈도우 안에 child HWND를 매달면 input이 동작하지 않는다")는 현재 <code>main-window.cpp</code> 3,242 LOC의 페인 호스팅 구조를 강제로 재설계하게 만든다(§C.1).
+    </li>
+    <li>
+      <strong>Shell 컨텍스트 메뉴 owner-draw subclass 동작 미검증</strong> — <code>shell-context-menu.cpp:25-56</code>의 <code>WM_INITMENUPOPUP / WM_DRAWITEM</code> forwarding이 XAML wndProc 환경에서 동작하는지에 대한 문서가 없다(§C.4). 동작하지 않으면 MenuFlyout + 수동 verb 디스패치로 전부 재작성 필요.
+    </li>
+    <li>
+      <strong>ItemsRepeater 100k 항목 회귀</strong> — <a href="https://github.com/microsoft/microsoft-ui-xaml/issues/8888">#8888</a>의 AnnotatedScrollBarLabel 10초+ 할당 버그는 현재 100k 워크로드를 ItemsRepeater로는 운영할 수 없게 만든다(§B.1). ListView+ItemsStackPanel 경로로 가야 하며 ItemsView도 제약 있음.
+    </li>
+    <li>
+      <strong>아이콘 파이프라인 추가 비용</strong> — HIMAGELIST가 XAML에서 사용 불가, <code>CreateBitmapSourceFromHIcon</code> 부재(<a href="https://github.com/microsoft/microsoft-ui-xaml/discussions/7943">discussions#7943</a>). HICON → HBITMAP → SoftwareBitmap → SoftwareBitmapSource 변환층이 매 미스마다 추가되며, 현재 코드의 placeholder pin 패턴과 호환 여부는 별도 설계 필요(§C.5).
+    </li>
+  </ol>
+
+  <h3>E.5 현재 SLO 충족 가능성 매트릭스</h3>
+  <p>현재 design §11 budgets를 best-case WinUI 3 시나리오에서 충족 가능한지(추정).</p>
+  <div class="table-wrap">
+  <table>
+    <thead>
+      <tr>
+        <th>SLO (현재)</th>
+        <th>현재 값</th>
+        <th>WinUI 3 best-case 충족?</th>
+        <th>근거</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>Warm launch ≤ 500 ms</td>
+        <td>21–36 ms</td>
+        <td>가능 (마진 축소)</td>
+        <td>AOT 시 ~50% 단축 (§B.6)</td>
+      </tr>
+      <tr>
+        <td>First batch UI ≤ 200 ms (100k)</td>
+        <td>29.83 ms</td>
+        <td>위험</td>
+        <td>Files 1–3 s 보고 (§B.8)</td>
+      </tr>
+      <tr>
+        <td>Scroll frame p95 ≤ 16.7 ms</td>
+        <td>측정 인프라만 ship</td>
+        <td><strong>불가 가능성</strong></td>
+        <td>30 fps cap = 33 ms (§B.7 #7290)</td>
+      </tr>
+      <tr>
+        <td>LVN_GETDISPINFO ≤ 50 µs</td>
+        <td>histogram p99 미정량</td>
+        <td>측정 데이터 없음</td>
+        <td>ContainerContentChanging 벤치 부재 (§B.9)</td>
+      </tr>
+      <tr>
+        <td>100k WS target 50 MB</td>
+        <td>9.39 MB (18.8%)</td>
+        <td>위험</td>
+        <td>XAML+WASDK 베이스 추정 50–80 MB (§E.2)</td>
+      </tr>
+      <tr>
+        <td>100k WS budget 100 MB</td>
+        <td>9.39 MB (9.4%)</td>
+        <td>가능 (마진 축소)</td>
+        <td>동일</td>
+      </tr>
+      <tr>
+        <td>10-cycle drift ≤ 5 MB</td>
+        <td>404 KB (8.1%)</td>
+        <td>측정 데이터 없음</td>
+        <td>XAML resource leak 패턴 별도 검증 필요</td>
+      </tr>
+      <tr>
+        <td>FileEntry == 40 B</td>
+        <td>static_assert (§A 베이스)</td>
+        <td>유지 가능</td>
+        <td>core 그대로 (§C.2, §D.2)</td>
+      </tr>
+    </tbody>
+  </table>
+  </div>
+
+  <h3>E.6 권고 — "현재 성능을 유지하려면"</h3>
+  <p>
+    만약 WinUI 3 마이그레이션을 선택한다면, 현재 성능과 가장 가까운 결과를 얻기 위한 패턴은 다음과 같다(데이터 근거 첨부).
+  </p>
+  <ol>
+    <li><strong>바인딩: C++/WinRT 선택</strong>. C#은 ViewModel 100k 객체 위험과 GC pause 위험이 추가됨(§E.3).</li>
+    <li><strong>리스트 컨트롤: ListView + ItemsStackPanel 고정</strong>. ItemsRepeater는 100k 회귀(#8888) 회피 위해 사용 금지(§B.1).</li>
+    <li><strong>가상화: x:Bind OneTime + ContainerContentChanging + x:Phase</strong>. {Binding}은 reflection으로 AOT 불호환(§B.3, §B.6).</li>
+    <li><strong>Shell COM은 그대로 유지</strong>. C++ ShellWorker/IconProvider/DropTarget을 C++/WinRT 윈도우의 child component로 호출(§C.2). 약 700 LOC 무변환.</li>
+    <li><strong>아이콘 캐시: HICON→SoftwareBitmapSource 변환 어댑터만 신설</strong>. 캐시 키/eviction 정책은 현재 그대로 재사용(§C.5).</li>
+    <li><strong>Native AOT 적용</strong>. WASDK 1.6+에서 cold start 50% 단축(§B.6). 단 win-x86은 GC crash 존재(§D.5)로 x64 only.</li>
+    <li><strong>30 fps cap 회피</strong>. 현재 시점에 사용자 공간 회피책이 framework 수정 없이는 없음을 사전 수용해야 함(§B.7 #7290).</li>
+    <li><strong>4-pane HWND 호스팅 포기</strong>. 페인은 XAML UserControl로 재설계, 약 3,000+ LOC 재작성을 비용으로 인정(§C.1).</li>
+  </ol>
+
+  <h3>E.7 결론 한 줄</h3>
+  <p>
+    <strong>"UI 도구만 WinUI 3로 교체"라는 가정 자체가 부분적으로 성립하지 않는다</strong> — Shell COM과 core는 살아남지만, main-window/pane HWND 트리·아이콘 파이프라인·컨텍스트 메뉴 hosting은 사실상 재설계 대상이 된다. 그리고 framework 자체가 부여하는 cost(30 fps cap, ItemsRepeater 100k 회귀, WinAppRuntime 베이스 라인) 때문에 <strong>가장 신중하게 설계해도 현재 베이스라인(warm 21–36 ms, 100k 첫 배치 29.83 ms, 100k peak WS 9.39 MB)에 도달할 수 없다</strong>. 일반적 구현에서는 microsoft/Files 가 자기 이슈 트래커에 적어둔 수준(cold 3.6–5 s, navigation 1–3 s, 2000-item unresponsive)이 현실적 도달점이다.
+  </p>
+</section>
+</main>
+
+<footer class="meta">
+  <p><strong>생성 메타데이터</strong></p>
+  <p>· 생성일: 2026-05-23</p>
+  <p>· 베이스 커밋: <code>92b999f</code> (refactor/ui)</p>
+  <p>· 분석 영역: A·B·C·D 4개 모듈 병렬 에이전트 + E 종합 섹션</p>
+  <p>· 출처 원칙: 코드 주장은 <code>file:line</code>, 외부 주장은 URL 인용. 추정치는 본문에서 "<em>(추정)</em>"으로 명시.</p>
+  <p>· 본 문서는 마이그레이션 의사결정의 1차 자료이며, 실제 프로토타입 측정으로 검증 권장.</p>
+</footer>
+
+<a href="#" class="totop" aria-label="맨 위로">↑</a>
+</body>
+</html>
