@@ -183,6 +183,34 @@ set(FE_RESOURCES
   ${CMAKE_CURRENT_BINARY_DIR}/resources/FastExplorer.rc
 )
 
+# ---------------------------------------------------------------------------
+# winui_lite: reusable Win32 UI building blocks. Knows nothing about file
+# explorers, the shell, or this app's domain. Consumed by FastExplorer and
+# (later) by examples/minimal-window. See docs/refactor-plan.html for the
+# port/adapter layout being built up step by step.
+#
+# Empty at step 1 of the refactor; only carries _placeholder.cpp so the
+# static lib has a translation unit. Real chrome sources move in at step 2.
+# ---------------------------------------------------------------------------
+add_library(winui_lite STATIC
+  lib/winui_lite/chrome/_placeholder.cpp
+)
+
+target_include_directories(winui_lite PUBLIC lib)
+
+target_compile_features(winui_lite PUBLIC cxx_std_20)
+
+# Enforces rule #1 of the refactor plan: lib/winui_lite/ may not include
+# any header under src/. Greps the lib tree on every build of winui_lite
+# and fails the build if a backwards edge appears.
+add_custom_target(check_winui_lite_isolation
+  COMMAND ${CMAKE_COMMAND}
+    -DLIB_DIR=${CMAKE_CURRENT_SOURCE_DIR}/lib/winui_lite
+    -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/check-winui-lite-isolation.cmake
+  VERBATIM
+)
+add_dependencies(winui_lite check_winui_lite_isolation)
+
 add_executable(FastExplorer WIN32
   ${FE_APP_SOURCES}
   ${FE_RESOURCES}
@@ -196,6 +224,7 @@ target_compile_definitions(FastExplorer PRIVATE
 )
 
 target_link_libraries(FastExplorer PRIVATE
+  winui_lite
   comctl32
   shell32
   shlwapi
@@ -366,6 +395,7 @@ add_executable(core-tests
 target_include_directories(core-tests PRIVATE src tests)
 
 target_link_libraries(core-tests PRIVATE
+  winui_lite
   comctl32
   shell32
   ole32
