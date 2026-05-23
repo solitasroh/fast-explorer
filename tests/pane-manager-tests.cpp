@@ -2,11 +2,11 @@
 
 #include "test-harness.h"
 #include "ui/pane-controller.h"
-#include "ui/pane-manager.h"
+#include "winui_lite/chrome/pane-manager.h"
 
 using fast_explorer::ui::chooseSecondPaneInitialPath;
 using fast_explorer::ui::PaneController;
-using fast_explorer::ui::PaneManager;
+using PaneManager = fast_explorer::ui::PaneManager<PaneController>;
 
 FE_TEST_CASE(PaneManager_Default_ZeroCount) {
   PaneManager pm;

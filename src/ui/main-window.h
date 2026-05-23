@@ -27,7 +27,7 @@ class DispInfoHistogram;
 class LabelEditController;
 class ListViewGroupCallback;
 class PaneController;
-class PaneManager;
+template <class TPane> class PaneManager;
 class PaneToolbarRow;
 class SelectionSync;
 
@@ -261,7 +261,7 @@ class MainWindow {
   CutStateTracker cutState_;
   std::unique_ptr<AddressBarPopup> addressBarPopup_;
   std::array<bool, 4> firstBatchSeen_{false, false, false, false};
-  std::unique_ptr<PaneManager> paneManager_;
+  std::unique_ptr<PaneManager<PaneController>> paneManager_;
   // Cached pointer to the manager's currently active pane. Refreshed
   // by onCreate (and by the active-pane switch handler in a later M9
   // atom). Never owns; the PaneController itself is owned by

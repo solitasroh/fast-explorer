@@ -10,7 +10,8 @@
 
 namespace fast_explorer::ui {
 
-class PaneManager;
+class PaneController;
+template <class TPane> class PaneManager;
 
 // IDropTarget for a single pane's list-view. Delegates to the shell-
 // provided IDropTarget of either the hovered folder row or the pane
@@ -18,7 +19,7 @@ class PaneManager;
 // = move, cross-drive = copy) and conflict UI itself.
 class PaneDropTarget final : public IDropTarget {
  public:
-  PaneDropTarget(HWND lv, PaneManager* paneManager,
+  PaneDropTarget(HWND lv, PaneManager<PaneController>* paneManager,
                  std::size_t paneIdx) noexcept;
 
   STDMETHODIMP QueryInterface(REFIID riid, void** ppv) override;
@@ -41,7 +42,7 @@ class PaneDropTarget final : public IDropTarget {
   void clearCurrentTarget() noexcept;
 
   HWND lv_;
-  PaneManager* paneManager_;
+  PaneManager<PaneController>* paneManager_;
   std::size_t paneIdx_;
   ComPtr<IDataObject> currentData_;
   ComPtr<IDropTarget> currentTarget_;
