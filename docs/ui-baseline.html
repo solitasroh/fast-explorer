@@ -1,0 +1,3533 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="light dark">
+<title>Fast Explorer · UI 리팩토링 베이스라인</title>
+<style>
+* { box-sizing: border-box; }
+:root {
+  --bg: #0d1117;
+  --surface: #161b22;
+  --surface-2: #1f2937;
+  --border: #30363d;
+  --fg: #e6edf3;
+  --muted: #8b949e;
+  --link: #58a6ff;
+  --code-bg: #1f2937;
+  --accent: #f78166;
+  --shadow: 0 4px 12px rgba(0,0,0,.4);
+}
+@media (prefers-color-scheme: light) {
+  :root {
+    --bg: #ffffff;
+    --surface: #f6f8fa;
+    --surface-2: #eaeef2;
+    --border: #d0d7de;
+    --fg: #1f2328;
+    --muted: #59636e;
+    --link: #0969da;
+    --code-bg: #eaeef2;
+    --accent: #cf222e;
+    --shadow: 0 4px 12px rgba(0,0,0,.12);
+  }
+}
+html {
+  background: var(--bg);
+  color: var(--fg);
+  -webkit-text-size-adjust: 100%;
+  font: 16px/1.65 -apple-system, BlinkMacSystemFont, "Segoe UI", "Pretendard", "Apple SD Gothic Neo", "Noto Sans KR", sans-serif;
+}
+body {
+  max-width: 880px;
+  margin: 0 auto;
+  padding: 1rem 1.1rem 5rem;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+}
+header.title {
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 1.2rem;
+  margin-bottom: 1.5rem;
+}
+header.title h1 {
+  font-size: 1.55rem;
+  margin: .35rem 0 .5rem;
+  letter-spacing: -0.01em;
+  line-height: 1.3;
+}
+header.title p { margin: .35rem 0; color: var(--muted); font-size: .92rem; }
+header.title .tag {
+  display: inline-block;
+  font-size: .68rem;
+  letter-spacing: .05em;
+  text-transform: uppercase;
+  background: var(--surface);
+  color: var(--muted);
+  border: 1px solid var(--border);
+  border-radius: .35rem;
+  padding: .18rem .45rem;
+  margin-right: .25rem;
+  font-weight: 600;
+}
+nav.toc {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: .55rem;
+  padding: .9rem 1.1rem;
+  margin: 1.5rem 0 2.4rem;
+  font-size: .95rem;
+}
+nav.toc h2 {
+  font-size: .82rem;
+  margin: 0 0 .55rem;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: .07em;
+  border: none;
+  padding: 0;
+}
+nav.toc ol { margin: 0; padding-left: 1.3rem; }
+nav.toc li { padding: .28rem 0; }
+nav.toc a { color: var(--link); text-decoration: none; }
+nav.toc a:hover { text-decoration: underline; }
+h2 {
+  font-size: 1.4rem;
+  margin: 2.8rem 0 1rem;
+  padding-bottom: .45rem;
+  border-bottom: 1px solid var(--border);
+  scroll-margin-top: .5rem;
+  line-height: 1.3;
+}
+h3 {
+  font-size: 1.1rem;
+  margin: 1.9rem 0 .75rem;
+  color: var(--fg);
+  scroll-margin-top: .5rem;
+}
+h4 {
+  font-size: .98rem;
+  margin: 1.3rem 0 .55rem;
+  color: var(--fg);
+}
+p, li { font-size: .98rem; }
+ul, ol { padding-left: 1.4rem; }
+li + li { margin-top: .25rem; }
+code {
+  font-family: ui-monospace, "SF Mono", "JetBrains Mono", Consolas, Menlo, monospace;
+  background: var(--code-bg);
+  padding: .12em .38em;
+  border-radius: .25rem;
+  font-size: .86em;
+  word-break: break-all;
+}
+pre {
+  background: var(--code-bg);
+  border: 1px solid var(--border);
+  border-radius: .45rem;
+  padding: .8rem .9rem;
+  overflow-x: auto;
+  font-size: .85rem;
+  line-height: 1.55;
+  -webkit-overflow-scrolling: touch;
+}
+pre code {
+  background: transparent;
+  padding: 0;
+  border-radius: 0;
+  font-size: inherit;
+  word-break: normal;
+  white-space: pre;
+}
+.table-wrap {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  margin: 1rem 0 1.4rem;
+  border: 1px solid var(--border);
+  border-radius: .4rem;
+}
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: .92rem;
+}
+table thead { background: var(--surface); }
+table th, table td {
+  text-align: left;
+  padding: .55rem .7rem;
+  border-bottom: 1px solid var(--border);
+  border-right: 1px solid var(--border);
+  vertical-align: top;
+  min-width: 7rem;
+}
+table th:last-child, table td:last-child { border-right: none; }
+table tr:last-child td { border-bottom: none; }
+table th {
+  color: var(--muted);
+  font-weight: 600;
+  font-size: .8rem;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+  white-space: nowrap;
+}
+.scope {
+  background: var(--surface);
+  border-left: 3px solid var(--accent);
+  padding: .6rem .85rem;
+  border-radius: 0 .35rem .35rem 0;
+  margin: .25rem 0 1.5rem;
+  font-size: .88rem;
+  color: var(--muted);
+  line-height: 1.55;
+}
+.scope code { background: var(--surface-2); color: var(--fg); }
+section.module {
+  margin-top: 3rem;
+  padding-top: .5rem;
+}
+section.module:first-of-type { margin-top: 0; }
+a { color: var(--link); }
+a:hover { text-decoration: underline; }
+strong { font-weight: 600; color: var(--fg); }
+em { font-style: italic; color: var(--muted); }
+blockquote {
+  margin: 1rem 0;
+  padding: .5rem .9rem;
+  border-left: 3px solid var(--border);
+  color: var(--muted);
+  background: var(--surface);
+  border-radius: 0 .35rem .35rem 0;
+}
+footer.meta {
+  margin-top: 4rem;
+  padding-top: 1.5rem;
+  border-top: 1px solid var(--border);
+  color: var(--muted);
+  font-size: .82rem;
+  line-height: 1.6;
+}
+@media (max-width: 540px) {
+  body { padding: .8rem .85rem 4rem; font-size: 15px; }
+  header.title h1 { font-size: 1.25rem; }
+  h2 { font-size: 1.18rem; margin-top: 2.2rem; }
+  h3 { font-size: 1.02rem; margin-top: 1.5rem; }
+  h4 { font-size: .95rem; }
+  p, li { font-size: .94rem; }
+  pre { font-size: .78rem; padding: .65rem .7rem; }
+  table { font-size: .85rem; }
+  table th, table td { padding: .45rem .55rem; }
+  nav.toc { padding: .8rem .95rem; }
+}
+.totop {
+  position: fixed;
+  bottom: 1rem;
+  right: 1rem;
+  width: 2.6rem;
+  height: 2.6rem;
+  border-radius: 50%;
+  background: var(--accent);
+  color: #fff !important;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-decoration: none !important;
+  font-size: 1.15rem;
+  font-weight: 700;
+  box-shadow: var(--shadow);
+  opacity: .9;
+}
+.totop:active { transform: scale(.95); }
+</style>
+</head>
+<body>
+<header class="title">
+  <p>
+    <span class="tag">Pre-refactor</span>
+    <span class="tag">refactor/ui</span>
+    <span class="tag">v0.6.0</span>
+  </p>
+  <h1>Fast Explorer · UI 코드 리팩토링 베이스라인</h1>
+  <p>리팩토링 직전 시점의 UI 레이어와 그것이 의존하는 코어 레이어를 5개 영역으로 나누어 분석한 결과입니다. 모든 주장에는 <code>file:line</code> 형식의 코드 인용이 붙어 있으며, 코드에서 직접 확인되지 않는 추론은 기재하지 않았습니다.</p>
+  <p>대상 커밋 <code>e63ffff</code> · UI 레이어 약 12,082 LOC · 5-agent 병렬 분석.</p>
+</header>
+
+<nav class="toc">
+  <h2>목차</h2>
+  <ol>
+    <li><a href="#module-1">Main Window &amp; Application Shell</a></li>
+    <li><a href="#module-2">Pane System (듀얼 페인 코어)</a></li>
+    <li><a href="#module-3">Shell Integration · Drag/Drop · Clipboard · Popups</a></li>
+    <li><a href="#module-4">Cache · Format · Virtual ListView Rendering</a></li>
+    <li><a href="#module-5">Core Data Model · Filesystem · Performance · Diagnostics</a></li>
+  </ol>
+</nav>
+
+<main>
+<section class="module" id="module-1">
+  <h2>1. Main Window &amp; Application Shell</h2>
+  <p class="scope"><strong>범위:</strong>
+    <code>src/app/main.cpp</code>,
+    <code>src/app/app-services.cpp</code>, <code>src/app/app-services.h</code>,
+    <code>src/ui/main-window.cpp</code>, <code>src/ui/main-window.h</code>,
+    <code>src/ui/messages.h</code>,
+    <code>CMakeLists.txt</code> (main/app/window 와이어링 부분)
+  </p>
+
+  <h3>1.1 코드 구조</h3>
+  <p>
+    엔트리 포인트는 Win32 GUI 서브시스템용
+    <code>wWinMain</code> (<code>src/app/main.cpp:196</code>) 한 곳이며,
+    <code>CMakeLists.txt:186</code>에서 <code>add_executable(FastExplorer WIN32 ...)</code>로
+    빌드된다. <code>wWinMain</code>은 다음과 같이 스택 위에 진단/런타임 서비스를 쌓고,
+    OLE/공통 컨트롤/다크모드 후크/WinSparkle을 RAII 스코프로 감싼 다음
+    <code>MainWindow</code>를 띄우는 단일 함수다:
+  </p>
+  <pre><code>wWinMain
+  ├─ AppServices services;                   // app-services.h:18
+  │    services.start()                       // logger → crash handler → memory
+  ├─ CommandLineToArgvW(cmdLine, ...)         // --crash-test / --open
+  └─ { OleScope ole                           // main.cpp:62 (OleInitialize)
+       ├─ InitCommonControlsEx(ICC_LISTVIEW|BAR|USEREX)  // main.cpp:266
+       ├─ enableProcessDarkMode()             // uxtheme ord.135 SetPreferredAppMode
+       ├─ installDarkScrollBarHook()          // comctl32 → uxtheme IAT patch
+       ├─ WinSparkleScope sparkle             // main.cpp:108
+       ├─ loadSessionState(settingsPath, initialState)
+       ├─ MainWindow window(memory, perf);    // main-window.h:34
+       │    window.create(instance, showCmd)
+       │    window.applyInitialState(initialState)
+       │    CreateAcceleratorTableW(...)      // 22개 가속기
+       │    window.openFolder(openPath | panePaths[0])
+       │    window.restoreLayoutFromSession(initialState)
+       │    runMessageLoop(...)               // main.cpp:157
+       │    saveSessionState(settingsPath, window.capturedSessionState())
+       └─ services.perf().dumpToCallback(...)
+     } // OleUninitialize, WinSparkle cleanup, AppServices dtor</code></pre>
+
+  <p>
+    <code>MainWindow</code> 자체는 단일 클래스로,
+    <code>wndProc</code>(<code>src/ui/main-window.cpp:1397</code>)이 SEH-안전한 try/catch로
+    감싼 인스턴스 메서드 <code>handleMessage</code>(<code>main-window.cpp:1432</code>)로
+    디스패치하는 표준 Win32 윈도우 클래스 패턴을 따른다. 클래스 이름은
+    <code>L"FastExplorer.MainWindow"</code> (<code>main-window.h:218</code>),
+    스타일 <code>WS_OVERLAPPEDWINDOW</code>, 기본 크기 1280×800
+    (<code>main-window.h:219-220</code>, <code>main-window.cpp:1383</code>).
+  </p>
+  <p>
+    라이프사이클은
+    <code>WM_NCCREATE</code>에서 <code>SetWindowLongPtrW(GWLP_USERDATA, this)</code>로
+    인스턴스 포인터를 캐싱 (<code>main-window.cpp:1399-1408</code>),
+    <code>WM_CREATE</code>에서 자식 컨트롤 생성 (<code>onCreate</code>,
+    <code>main-window.cpp:1622-1729</code>),
+    <code>WM_DESTROY</code>에서 세션 상태 캡처 + 타이머/COM 객체 해제 + <code>PostQuitMessage(0)</code>
+    (<code>main-window.cpp:1533-1607</code>),
+    <code>WM_NCDESTROY</code>에서 <code>GWLP_USERDATA</code> 클리어 및
+    <code>hwnd_ = nullptr</code> (<code>main-window.cpp:1608-1616</code>)로 종료한다.
+  </p>
+
+  <h3>1.2 핵심 클래스와 책임</h3>
+<div class="table-wrap">
+  <table>
+    <thead>
+      <tr><th>클래스/함수</th><th>위치</th><th>책임</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><code>wWinMain</code></td>
+        <td><code>src/app/main.cpp:196</code></td>
+        <td>진단 서비스 부팅, OLE/CommonControls/다크모드 초기화, 세션 상태 로드,
+          MainWindow 생성, 가속기 등록, 메시지 루프 구동, 종료 시 perf/메모리/세션 덤프.</td>
+      </tr>
+      <tr>
+        <td><code>AppServices</code></td>
+        <td><code>src/app/app-services.h:18</code></td>
+        <td><code>RingLogger</code>, <code>PerfTracker</code>,
+          <code>ProcessMemoryService</code>를 멤버로 소유. <code>start()</code>는
+          logger → crash handler → memory 순으로 부팅하고,
+          <code>stop()</code>/dtor는 역순으로 해체한다
+          (<code>app-services.cpp:16-48</code>).</td>
+      </tr>
+      <tr>
+        <td><code>OleScope</code></td>
+        <td><code>src/app/main.cpp:62</code></td>
+        <td><code>OleInitialize</code>/<code>OleUninitialize</code> RAII 짝짓기.
+          STA 아파트먼트를 모든 조기 반환 경로에서도 해제 보장.</td>
+      </tr>
+      <tr>
+        <td><code>WinSparkleScope</code></td>
+        <td><code>src/app/main.cpp:108</code></td>
+        <td>appcast URL, 자동 체크 플래그, EdDSA 공개키,
+          <code>shutdown_request_callback</code> 등록 후
+          <code>win_sparkle_init</code>/<code>cleanup</code>을 RAII로 짝짓는다.
+          dtor에서 <code>g_mainWindowHwnd</code>을 null로 만들어 콜백 무효화.</td>
+      </tr>
+      <tr>
+        <td><code>runMessageLoop</code></td>
+        <td><code>src/app/main.cpp:157</code></td>
+        <td><code>GetMessageW</code> 루프에 가속기 변환과 QPC 기반 디스패치 지연
+          측정을 결합. 첫 메시지에서 <code>PerfTracker::EventId::AppInteractive</code>
+          기록 (<code>main.cpp:172-175</code>), 각 디스패치마다
+          <code>StallHistogram::record</code> + <code>classifyStall</code> →
+          <code>logStall</code> 호출.</td>
+      </tr>
+      <tr>
+        <td><code>MainWindow</code></td>
+        <td><code>src/ui/main-window.h:34</code></td>
+        <td>최상위 윈도우, 최대 4개 페인 슬롯
+          (<code>listViews_</code>, <code>addressBars_</code>,
+          <code>paneToolbarRows_</code>, <code>dropTargets_</code>,
+          <code>iconCoords_</code>, <code>selectionSyncs_</code>,
+          <code>labelEdits_</code>, <code>groupCallbacks_</code> 모두
+          <code>std::array&lt;..., 4&gt;</code>) 소유 및 메시지 라우팅
+          (<code>main-window.h:242-302</code>).</td>
+      </tr>
+      <tr>
+        <td><code>MainWindow::wndProc</code></td>
+        <td><code>src/ui/main-window.cpp:1397</code></td>
+        <td>정적 콜백. <code>WM_NCCREATE</code>에서 <code>GWLP_USERDATA</code>
+          저장, 그 외에는 <code>handleMessage</code>로 위임.
+          <code>try/catch(...)</code>로 C++ 예외가 OS로 새는 것을 차단하고
+          WM_CREATE 시 -1을 반환해 윈도우 생성을 실패시킨다
+          (<code>main-window.cpp:1416-1428</code>).</td>
+      </tr>
+      <tr>
+        <td><code>MainWindow::handleMessage</code></td>
+        <td><code>src/ui/main-window.cpp:1432</code></td>
+        <td>중앙 switch — <code>WM_CREATE/NOTIFY/DPICHANGED/SIZE/COMMAND/APPCOMMAND/
+          SETTINGCHANGE/TIMER/DESTROY/NCDESTROY</code> 및 커스텀
+          <code>kWmFe*</code> 메시지를 각 onXxx 헬퍼로 분기한다.</td>
+      </tr>
+      <tr>
+        <td><code>MainWindow::onCreate</code></td>
+        <td><code>src/ui/main-window.cpp:1622</code></td>
+        <td>슬롯 0의 listview / status bar / toolbar row / address bar /
+          dropdown 버튼을 생성하고, <code>PaneManager</code> 인스턴스화 +
+          <code>openInitial(hwnd)</code> 호출, <code>FormatCache</code> /
+          <code>DispInfoHistogram</code> / 다크모드 / 스플리터 사전 생성까지 수행
+          (<code>main-window.cpp:1622-1729</code>).</td>
+      </tr>
+      <tr>
+        <td><code>installPaneAt</code> / <code>uninstallPaneAt</code></td>
+        <td><code>src/ui/main-window.cpp:597</code>, <code>:679</code></td>
+        <td>슬롯 1~3의 UI 컴포넌트 동적 생성/해체. 슬롯 0은 항상 onCreate가
+          담당하므로 idx==0 진입 시 no-op (<code>main-window.cpp:598-599, 680</code>).</td>
+      </tr>
+      <tr>
+        <td><code>enterLayout</code></td>
+        <td><code>src/ui/main-window.cpp:739</code></td>
+        <td><code>LayoutPreset</code>(Single/Dual_V/Dual_H/Tri_*/Quad)을 대상
+          슬롯 수로 변환하고, 부족하면 <code>paneManager_-&gt;openPane</code> +
+          <code>installPaneAt</code>로 키우고, 초과면
+          <code>uninstallPaneAt</code> + <code>closePane</code>로 줄인다.</td>
+      </tr>
+      <tr>
+        <td><code>relayout</code></td>
+        <td><code>src/ui/main-window.cpp:490</code></td>
+        <td>동기 레이아웃 재계산. <code>computePaneLayout</code> 결과를 받아
+          각 슬롯의 toolbar row + listview HWND를 <code>SetWindowPos</code>로
+          배치하고, 스플리터 3개의 <code>SplitterContext</code>를
+          orient/ratioId/axis 길이로 갱신.</td>
+      </tr>
+      <tr>
+        <td><code>addressBarSubclassProc</code></td>
+        <td><code>src/ui/main-window.cpp:1244</code></td>
+        <td>address bar Edit 컨트롤 서브클래스.
+          <code>WM_GETDLGCODE</code>에서 <code>VK_RETURN</code>을 요구
+          (<code>DLGC_WANTMESSAGE</code>), <code>WM_KEYDOWN</code>+VK_RETURN에서
+          루트로 <code>kWmFeAddressCommit</code>을 SendMessage,
+          <code>WM_LBUTTONDOWN</code> 시 <code>kTbAddressDropdown</code> 커맨드를
+          PostMessage하여 드롭다운 토글.</td>
+      </tr>
+      <tr>
+        <td><code>statusBarSubclassProc</code></td>
+        <td><code>src/ui/main-window.cpp:1759</code></td>
+        <td>Win32 상태바가 다크 테마를 무시하므로 직접 WM_PAINT를 그려
+          상단 toolbar row와 색조를 맞춘다. <code>StatusBarSubclassState</code>
+          힙 구조체로 브러시 캐싱 (<code>main-window.cpp:279-293</code>).</td>
+      </tr>
+      <tr>
+        <td><code>listViewHeaderColorSubclass</code></td>
+        <td><code>src/ui/main-window.cpp:1828</code></td>
+        <td>다크모드일 때 listview의 자식 Header 컨트롤이 보낸
+          <code>NM_CUSTOMDRAW</code>를 listview 단에서 가로채 컬럼 타이틀을
+          직접 페인트 (<code>HeaderDarkState</code> + DrawTextW).</td>
+      </tr>
+      <tr>
+        <td><code>handleListViewNotify</code></td>
+        <td><code>src/ui/main-window.cpp:2678</code></td>
+        <td>WM_NOTIFY 디스패처. LVN_GETDISPINFOW / COLUMNCLICK /
+          ITEMACTIVATE / ITEMCHANGED / BEGINLABELEDIT / ENDLABELEDIT /
+          ODFINDITEMW / ODSTATECHANGED / BEGINDRAG / NM_CUSTOMDRAW /
+          NM_RCLICK / NM_SETFOCUS를 각 핸들러로 분기.</td>
+      </tr>
+    </tbody>
+  </table></div>
+
+  <h3>1.3 메시지 / 이벤트 라우팅</h3>
+
+  <h4>1.3.1 커스텀 메시지 ID</h4>
+  <p>
+    <code>src/ui/messages.h:13</code>의 <code>kWmFeBase = WM_APP + 0x100</code>을
+    기준으로 모든 워커→UI 메시지가 정의된다. <code>WM_APP</code> 위에 직접
+    얹지 않고 0x100을 더하는 이유는 다른 라이브러리들이 흔히 사용하는
+    <code>WM_APP + small</code> 영역과 충돌을 피하기 위해서 (<code>messages.h:11-13</code>).
+    범위 가드는 <code>static_assert</code>로 검증
+    (<code>messages.h:97-100</code>).
+  </p>
+<div class="table-wrap">
+  <table>
+    <thead>
+      <tr><th>메시지</th><th>값</th><th>방향 / 페이로드</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><code>kWmFeEnumBatch</code></td><td>+0x01</td>
+        <td>Enumerator → UI. WPARAM = packed(pane,gen), LPARAM = 누적 카운트.
+          처리: <code>onEnumBatch</code> (<code>main-window.cpp:2347</code>).</td></tr>
+      <tr><td><code>kWmFeEnumComplete</code></td><td>+0x02</td>
+        <td>처리: <code>onEnumComplete</code> (<code>main-window.cpp:2369</code>).
+          정렬 재적용, 셀렉션 요약 갱신, 그룹/cut-state/라벨 편집 재시작 트리거.</td></tr>
+      <tr><td><code>kWmFeEnumError</code></td><td>+0x03</td>
+        <td>LPARAM = <code>EnumerationError</code>. <code>onEnumError</code>
+          (<code>main-window.cpp:2407</code>) — 상태바에 에러 문자열.</td></tr>
+      <tr><td><code>kWmFeSortComplete</code></td><td>+0x04</td>
+        <td>비동기 정렬 결과. <code>onSortComplete</code>
+          (<code>main-window.cpp:2423</code>) → <code>applyPendingSort</code> +
+          <code>finalizeSortApply</code>.</td></tr>
+      <tr><td><code>kWmFeIconBatch</code></td><td>+0x05</td>
+        <td>아이콘 STA 워커 → UI. <code>onIconBatch</code>가 보이는 행 다시 그리기
+          (<code>main-window.cpp:2437</code>).</td></tr>
+      <tr><td><code>kWmFeOperationResult</code></td><td>+0x06</td>
+        <td>Shell 워커 결과 (Delete/Move/Copy). <code>onOperationResult</code>가
+          배치를 한 줄로 집계해 상태바에 표시
+          (<code>main-window.cpp:2472</code>).</td></tr>
+      <tr><td><code>kWmFeFsChange</code></td><td>+0x07</td>
+        <td>FsWatcher → UI. <code>onFsChange</code>가 페인별 100ms 디바운스
+          타이머를 (재)설정 (<code>main-window.cpp:2502</code>).</td></tr>
+      <tr><td><code>kWmFePerfEvent</code></td><td>+0x08</td>
+        <td>현재 핸들러 등록되지 않음 (<code>main-window.cpp</code>의 switch에
+          매핑 없음). messages.h에는 예약되어 있음 (<code>messages.h:21</code>).</td></tr>
+      <tr><td><code>kWmFeAddressCommit</code></td><td>+0x09</td>
+        <td>주소바 서브클래스에서 ENTER 키 시 발사.
+          <code>handleAddressCommit</code> 호출 (<code>main-window.cpp:1477-1479</code>).</td></tr>
+      <tr><td><code>kWmFeLowMemory</code></td><td>+0x0A</td>
+        <td>ProcessMemoryService 콜백이 PostMessage. <code>onLowMemory</code>는
+          모든 페인 아이콘 캐시 축소 (<code>main-window.cpp:2460</code>).</td></tr>
+      <tr><td><code>kWmFeAddressPopupPick</code></td><td>+0x0B</td>
+        <td>주소바 드롭다운에서 항목 선택. WPARAM = <code>new std::wstring*</code>,
+          LPARAM = pane idx (<code>main-window.cpp:1480-1495</code>).</td></tr>
+      <tr><td><code>kWmFeAddressPopupHide</code></td><td>+0x0C</td>
+        <td>messages.h에 정의되어 있으나 main-window 디스패처에서 직접 처리하지
+          않음 (popup 측에서 소비) — not present in main-window switch.</td></tr>
+      <tr><td><code>kWmFeAddressPopupClick</code></td><td>+0x0D</td>
+        <td>동일 — main-window 디스패처에서 직접 처리하지 않음.</td></tr>
+      <tr><td><code>kWmFeFilterQuery</code></td><td>+0x0E</td>
+        <td>SearchPopup → UI. LPARAM=heap-owned <code>std::wstring*</code>.
+          80ms 디바운스 타이머 설정만 (<code>main-window.cpp:1504-1515</code>).</td></tr>
+      <tr><td><code>kWmFeFilterDismiss</code></td><td>+0x0F</td>
+        <td>ESC 등. 필터 제거 + listview 카운트 재설정
+          (<code>main-window.cpp:1516-1531</code>).</td></tr>
+      <tr><td><code>kWmFePaneGroupByChanged</code></td><td>+0x10</td>
+        <td>messages.h:37에 정의 — main-window 디스패처는 별도 case가 없고
+          분류 메뉴 ID(<code>kMenuGroupBy*</code>)를 WM_COMMAND에서 직접 처리한다
+          (<code>main-window.cpp:1953-1979</code>).</td></tr>
+    </tbody>
+  </table></div>
+
+  <h4>1.3.2 WPARAM 패킹 (pane + generation)</h4>
+  <p>
+    멀티 페인 라우팅을 위해 WPARAM 상위 8비트(33-40)에 paneIndex (0..255),
+    하위 32비트에 generation을 싣는다
+    (<code>messages.h:108-121</code>):
+  </p>
+  <pre><code>inline UINT_PTR makePaneWParam(std::size_t paneIndex,
+                               std::uint32_t generation) noexcept {
+  return (static_cast&lt;UINT_PTR&gt;(paneIndex &amp; 0xFFu) &lt;&lt; 32) |
+         static_cast&lt;UINT_PTR&gt;(generation);
+}</code></pre>
+  <p>
+    paneIndex 0이 묵시적으로 디코드되므로 pre-M9 송신자(패킹 helper 미사용)도
+    pane 0으로 안전하게 해석된다 (<code>messages.h:105-112</code>).
+    <code>MainWindow::isStaleGeneration</code>(<code>main-window.cpp:1215</code>)이
+    수신 시 generation 검사를 수행해 옛 enumeration 결과를 폐기한다.
+    단, <code>onOperationResult</code>(<code>main-window.cpp:2472-2500</code>)와
+    <code>onFsChange</code>(<code>main-window.cpp:2502-2523</code>)는
+    gen=0로 publish되므로 generation gate를 의도적으로 우회한다 (해당 함수의
+    주석 참조).
+  </p>
+
+  <h4>1.3.3 표준 Win32 메시지 처리</h4>
+<div class="table-wrap">
+  <table>
+    <thead><tr><th>메시지</th><th>처리</th><th>위치</th></tr></thead>
+    <tbody>
+      <tr><td><code>WM_NCCREATE</code></td>
+        <td><code>SetWindowLongPtrW(GWLP_USERDATA, this)</code>, <code>hwnd_</code> 저장</td>
+        <td><code>main-window.cpp:1399-1408</code></td></tr>
+      <tr><td><code>WM_CREATE</code></td>
+        <td>전체 자식 컨트롤 + 페인 관리자 구성</td>
+        <td><code>main-window.cpp:1622-1729</code></td></tr>
+      <tr><td><code>WM_NOTIFY</code></td>
+        <td>list-view 자식의 LVN/NM_* 통지 디스패치</td>
+        <td><code>main-window.cpp:2678</code></td></tr>
+      <tr><td><code>WM_DPICHANGED</code></td>
+        <td>창 재배치 + 각 listview 컬럼폭 재스케일 + toolbar row DPI 콜백</td>
+        <td><code>main-window.cpp:1911-1929</code></td></tr>
+      <tr><td><code>WM_SIZE</code></td>
+        <td>status bar에 WM_SIZE 전달, <code>relayout()</code>, 최소화/복귀 시 메모리 서비스 통지</td>
+        <td><code>main-window.cpp:1931-1944</code></td></tr>
+      <tr><td><code>WM_COMMAND</code></td>
+        <td>packed-id 디코드 (<code>unpackButton/unpackPane</code>), 가속기 (HIWORD==1) 처리</td>
+        <td><code>main-window.cpp:1946-2275</code></td></tr>
+      <tr><td><code>WM_APPCOMMAND</code></td>
+        <td>5버튼 마우스 BROWSER_BACKWARD/FORWARD → WM_COMMAND로 재합성</td>
+        <td><code>main-window.cpp:1440-1460</code></td></tr>
+      <tr><td><code>WM_SETTINGCHANGE</code></td>
+        <td>lParam="ImmersiveColorSet"일 때만 <code>applySystemTheme</code> +
+          <code>applyActivePaneAppearance</code></td>
+        <td><code>main-window.cpp:1461-1476</code></td></tr>
+      <tr><td><code>WM_TIMER</code></td>
+        <td>3개 타이머 밴드 라우팅 (fs coalesce / sel summary / filter debounce)</td>
+        <td><code>main-window.cpp:2277-2303</code></td></tr>
+      <tr><td><code>WM_DESTROY</code></td>
+        <td>모든 타이머 KillTimer, <code>GetWindowPlacement</code>로 위치 캡처,
+          페인 경로/preset/ratios 캡처, drop-targets revoke,
+          <code>PostQuitMessage(0)</code></td>
+        <td><code>main-window.cpp:1533-1607</code></td></tr>
+      <tr><td><code>WM_NCDESTROY</code></td>
+        <td>low-memory 콜백 해제, GWLP_USERDATA 0으로, <code>hwnd_=nullptr</code></td>
+        <td><code>main-window.cpp:1608-1616</code></td></tr>
+    </tbody>
+  </table></div>
+
+  <h4>1.3.4 가속기 / 명령 ID</h4>
+  <p>
+    가속기 테이블은 wWinMain에서 22개 항목으로 빌드 (<code>main.cpp:310-355</code>).
+    ID는 <code>kAccelFocusAddress=100</code>부터
+    <code>kAccelLayoutQuad=121</code>까지 (<code>messages.h:39-60</code>),
+    <code>WM_COMMAND</code> HIWORD==1로 들어와 <code>onCommand</code>의 두 번째
+    스위치 블록(<code>main-window.cpp:2118-2272</code>)에서 처리된다.
+    툴바 버튼 ID는 <code>(button &lt;&lt; 8) | paneIdx</code> 패킹 규칙
+    (<code>messages.h:62-72</code>), 햄버거 팝업 메뉴 ID는 300번대
+    (<code>messages.h:78-86</code>),
+    분류 방법 메뉴 ID는 0x8000~0x8003 (셸 verb 범위 위에 의도적으로 배치,
+    <code>messages.h:87-95</code>).
+  </p>
+
+  <h3>1.4 데이터 흐름</h3>
+
+  <h4>1.4.1 시작 시퀀스</h4>
+  <ol>
+    <li><code>wWinMain</code> 진입 → <code>AppServices services</code> 스택 생성
+      (<code>main.cpp:204</code>). 멤버 초기화 순서로
+      <code>RingLogger</code>가 먼저 살아남 (<code>app-services.cpp:9-10</code>:
+      <code>memory_(logger_)</code>).</li>
+    <li><code>perf().record(AppLaunchStart)</code> + 메모리 프로브
+      (<code>main.cpp:205-206</code>).</li>
+    <li><code>services.start()</code>: <code>logger.start()</code> →
+      <code>CrashHandler::install(perf_)</code> → <code>memory_.start()</code>
+      (<code>app-services.cpp:16-33</code>).</li>
+    <li><code>CommandLineToArgvW</code>로 <code>--crash-test[=throw|=invalid]</code> 및
+      <code>--open &lt;path&gt;</code> 파싱 (<code>main.cpp:221-260</code>).
+      crash-test는 dump 후 즉시 반환.</li>
+    <li><code>OleScope</code> → <code>InitCommonControlsEx</code>
+      (ICC_LISTVIEW|BAR|USEREX 클래스, <code>main.cpp:266-270</code>).</li>
+    <li><code>enableProcessDarkMode()</code>: uxtheme.dll ordinal 135
+      (<code>SetPreferredAppMode(AllowDark)</code>) 호출
+      (<code>main.cpp:48-58, 278</code>). listview 생성 이전 필수.</li>
+    <li><code>installDarkScrollBarHook()</code>: comctl32→uxtheme 딜레이 로드
+      thunk (OpenNcThemeData) IAT 패치 (<code>main.cpp:288</code>).</li>
+    <li><code>WinSparkleScope</code>: appcast/EdDSA 키 설정,
+      shutdown 콜백 등록, <code>win_sparkle_init</code>, 비-UI 체크 발사
+      (<code>main.cpp:108-127</code>).</li>
+    <li><code>loadSessionState(settingsPath, initialState)</code>
+      (<code>main.cpp:294-302</code>).</li>
+    <li><code>MainWindow window(services.memory(), services.perf())</code>
+      구성 (<code>main-window.cpp:425-429</code>).
+      <code>capturedState_</code>를 미리 <code>make_unique</code>로 준비.</li>
+    <li><code>window.create(instance, showCommand)</code>
+      (<code>main-window.cpp:1377-1395</code>):
+      <code>RegisterClassExW</code> → <code>CreateWindowExW</code> →
+      WM_CREATE 동기 발사 → <code>onCreate</code>가 자식 컨트롤 + PaneManager
+      구성. 성공 시 <code>ShowWindow</code> + <code>UpdateWindow</code>.</li>
+    <li><code>g_mainWindowHwnd.store(window.handle())</code>
+      (<code>main.cpp:308</code>) — WinSparkle shutdown 콜백을 위해 공개.</li>
+    <li><code>window.applyInitialState(initialState)</code>:
+      <code>SetWindowPos</code>로 저장된 위치 복원, showHidden/showExtensions
+      플래그 전파 (<code>main-window.cpp:821-857</code>).</li>
+    <li><code>CreateAcceleratorTableW(accels, ...)</code> (<code>main.cpp:356</code>).</li>
+    <li>경로 우선순위: <code>--open</code> &gt; <code>panePaths[0]</code>
+      (<code>main.cpp:361-372</code>). 둘 다 없으면
+      <code>PaneManager::openInitial</code>이 onCreate 안에서 이미 설정한
+      기본 폴더가 유지된다.</li>
+    <li><code>window.restoreLayoutFromSession(initialState)</code>:
+      ratios/orientation/preset 복원, 슬롯 1~targetCount-1 까지
+      <code>openPane</code>+<code>installPaneAt</code>+<code>openFolder</code>
+      (<code>main-window.cpp:859-927</code>).</li>
+    <li><code>runMessageLoop</code> 진입 (<code>main.cpp:378</code>).</li>
+  </ol>
+
+  <h4>1.4.2 onCreate 내부 구성 순서</h4>
+  <p>
+    슬롯 0의 listview → status bar (서브클래스 설치) →
+    paneToolbarRow[0] → addressBar[0] + dropdown 버튼 + Edit 서브클래스 →
+    AddressBarPopup / SearchPopup → <code>PaneManager</code>
+    인스턴스화 + <code>openInitial(hwnd)</code> →
+    <code>PaneDropTarget</code> + <code>RegisterDragDrop</code> →
+    <code>FormatCache</code> → <code>installPaneCoordinators(0, listView_)</code>
+    (IconCacheCoordinator/SelectionSync/LabelEditController +
+    ListViewGroupCallback 등록) → <code>DispInfoHistogram</code> +
+    QPC freq 캐시 → <code>ImageList</code> 연결 →
+    <code>setLowMemoryCallback(PostMessage kWmFeLowMemory)</code> →
+    <code>applySystemTheme</code> → <code>initRatiosToDefaults</code> →
+    <code>PaneSplitter::registerClass</code> → 3개 스플리터 HWND 사전 생성(숨김 상태)
+    (<code>main-window.cpp:1623-1727</code>).
+  </p>
+
+  <h4>1.4.3 메시지 루프와 스톨 측정</h4>
+  <p>
+    <code>runMessageLoop</code> (<code>main.cpp:157-192</code>)은
+    <code>GetMessageW</code> 직후 가속기 변환을 시도하고, 그 외 메시지는
+    <code>QueryPerformanceCounter</code>로 디스패치 전후를 측정하여 마이크로초
+    단위 갭을 <code>StallHistogram::record</code>에 넣고
+    <code>classifyStall(dispatchMicros)</code>가 None/Info/Warn/Error 중
+    하나를 반환하면 그에 맞는 RingLogger 함수 포인터로 로깅,
+    Error 등급일 때만 <code>perf.dumpToCallback</code>으로 전체 perf 트레이스를
+    덤프한다 (<code>main.cpp:136-155</code>의 <code>logStall</code> 참조).
+  </p>
+
+  <h4>1.4.4 종료 시퀀스</h4>
+  <ol>
+    <li>사용자 닫기 (또는 WinSparkle 업데이트 수락 시
+      <code>winSparkleShutdownRequest</code>가 <code>WM_CLOSE</code> Post,
+      <code>main.cpp:98-103</code>).</li>
+    <li>DefWindowProc이 <code>WM_DESTROY</code> 발사 →
+      MainWindow가 모든 타이머 KillTimer, GetWindowPlacement로
+      <code>capturedState_</code>에 위치/사이즈 저장,
+      paneManager_의 각 페인 currentPath / paneCount / activePane / preset /
+      ratios / orientation / showHidden / showExtensions 캡처
+      (<code>main-window.cpp:1546-1581</code>),
+      addressBarPopup hide, dropTargets revoke,
+      groupCallbacks release, <code>PostQuitMessage(0)</code>.</li>
+    <li><code>runMessageLoop</code>가 종료, wWinMain이
+      <code>dumpStallHistogram</code> / <code>dumpDispInfoHistogram</code>,
+      <code>DestroyAcceleratorTable</code>,
+      <code>saveSessionState</code>로 현재 캡처된 상태 저장
+      (<code>main.cpp:380-399</code>).</li>
+    <li>스코프 종료: <code>WinSparkleScope</code> dtor →
+      <code>g_mainWindowHwnd=nullptr</code> + <code>win_sparkle_cleanup</code>
+      (<code>main.cpp:128-131</code>). <code>OleScope</code> dtor →
+      <code>OleUninitialize</code>. perf shutdown 이벤트 기록 +
+      working set 로깅.</li>
+    <li><code>AppServices</code> dtor: <code>stop()</code> →
+      memory → crash handler → logger 역순 해제
+      (<code>app-services.cpp:35-48</code>).</li>
+  </ol>
+
+  <h3>1.5 도입된 알고리즘/이론</h3>
+  <ul>
+    <li>
+      <strong>RAII로 감싼 글로벌 자원</strong>:
+      <code>OleScope</code> (<code>main.cpp:62</code>),
+      <code>WinSparkleScope</code> (<code>main.cpp:108</code>),
+      <code>AppServices</code> (<code>app-services.h:18</code>) 모두 wWinMain
+      스택에 살아 있어 조기 반환 / 예외 / WM_CLOSE 어느 경로로 빠져도
+      해제 순서가 deterministic하다. <code>AppServices::start</code>가
+      logger → crash → memory 순으로 부팅하고 <code>stop</code>은 역순으로
+      내려가 의존성 역추적이 보장된다 (<code>app-services.cpp:16-48</code>).
+    </li>
+    <li>
+      <strong>STA(단일 스레드 아파트먼트) 라이프사이클</strong>:
+      <code>OleInitialize</code>(STA 진입)와 <code>OleUninitialize</code>의 짝짓기
+      (<code>main.cpp:64-69</code>) — WinSparkle 백그라운드 스레드 join을
+      WinSparkleScope dtor가 보장한 다음에야 OleUninitialize가 실행되도록
+      스코프 중첩이 설계되어 있다 (<code>main.cpp:262-411</code>의 중괄호 블록 참조).
+    </li>
+    <li>
+      <strong>스레드-안전 HWND 게시</strong>: <code>g_mainWindowHwnd</code>는
+      <code>std::atomic&lt;HWND&gt;</code>로 정의되어 WinSparkle 워커가
+      <code>load(memory_order_acquire)</code>로 읽고
+      UI 측이 <code>store(release)</code>로 게시
+      (<code>main.cpp:88, 99, 308, 129</code>). HWND가 사라진 뒤
+      <code>PostMessage</code>는 잘 정의된(드롭) 동작이므로 추가 동기화가 없다.</li>
+    <li>
+      <strong>예외 차단 wndProc</strong>: <code>MainWindow::wndProc</code>이
+      <code>try { handleMessage } catch (...) { ... }</code>로 감싸 C++ 예외가
+      Win32 코어로 새지 못하게 한다. <code>WM_CREATE</code>일 경우 -1을
+      반환해 CreateWindowExW가 실패하도록 강제한다
+      (<code>main-window.cpp:1416-1428</code>).
+    </li>
+    <li>
+      <strong>제너레이션 기반 stale-message 폐기</strong>:
+      <code>makePaneWParam(paneIndex, generation)</code> (<code>messages.h:108</code>) +
+      <code>isStaleGeneration</code> (<code>main-window.cpp:1215</code>)로
+      옛 enumeration / sort batch를 폐기한다. 다만 ShellWorker 결과와
+      FsWatcher 통지는 gen=0로 publish되며 의도적으로 gate를 우회한다
+      (<code>main-window.cpp:2473-2481, 2503-2512</code>의 주석 참조).
+    </li>
+    <li>
+      <strong>QPC 기반 디스패치 히스토그램</strong>: 메인 루프에서
+      <code>QueryPerformanceCounter</code> 전후 차이를 <code>1'000'000ULL / hz</code>로
+      마이크로초 환산하여 <code>StallHistogram</code>에 적재하고, 추가로
+      <code>classifyStall</code>로 None/Info/Warn/Error 등급 라벨링
+      (<code>main.cpp:176-189</code>). 동일한 QPC 패턴이 LVN_GETDISPINFO에도
+      적용되어 <code>DispInfoHistogram</code>에 누적된다
+      (<code>main-window.cpp:2968-2983</code>).
+    </li>
+    <li>
+      <strong>타이머 밴드를 통한 디바운싱</strong>: 3개 타이머 밴드가
+      페인별로 슬롯을 갖는다 — <code>kTimerFsCoalesceBase=1</code> (100ms,
+      파일시스템 변경 합치기), <code>kTimerSelSummaryBase=1+kMaxPanes</code>
+      (80ms, Ctrl+A 폭풍 흡수), <code>kTimerFilterDebounceBase=...+kMaxPanes</code>
+      (80ms, 검색 입력 흡수). 각 페인 idx가 base+idx로 매핑되어 충돌이 없다
+      (<code>main-window.cpp:56-69, 2277-2303</code>).
+    </li>
+    <li>
+      <strong>가속기 충돌 회피 (라우팅)</strong>: Ctrl+C/X/V는 글로벌 가속기로
+      등록되어 있어 Edit 컨트롤이 표준 메시지를 먼저 받지 못한다. 이를 위해
+      <code>routeEditClipboardIfFocused</code>(<code>main-window.cpp:413-421</code>)가
+      포커스가 "Edit" 클래스에 있을 때만 WM_COPY/CUT/PASTE를 SendMessage로
+      재발사한다.
+    </li>
+    <li>
+      <strong>다크 모드 다층 후크</strong>: (1) 프로세스 레벨
+      <code>SetPreferredAppMode(AllowDark)</code> (uxtheme ord.135,
+      <code>main.cpp:40-58</code>), (2) 윈도우 레벨
+      <code>AllowDarkModeForWindow</code> (uxtheme ord.133,
+      <code>main-window.cpp:1077-1087</code>), (3) comctl32→uxtheme의
+      <code>OpenNcThemeData</code> IAT 패치(<code>installDarkScrollBarHook</code>,
+      <code>main.cpp:288</code>), (4)
+      DWM 속성 19/20/38(<code>applySystemTheme</code>,
+      <code>main-window.cpp:1895-1909</code>), (5) status bar와 listview header에
+      대한 직접 페인트 서브클래스 (<code>main-window.cpp:1759-1891</code>).
+    </li>
+    <li>
+      <strong>레이아웃 프리셋 + 비율 저장소</strong>:
+      <code>preset_</code>(Single/Dual_V/Dual_H/Tri_*/Quad) + 각 프리셋별
+      <code>SplitterRatios</code> 배열 <code>ratiosPerPreset_</code>
+      (<code>main-window.h:288-293</code>). <code>computePaneLayout</code>이
+      슬롯 RECT와 스플리터 RECT 둘 다 계산, <code>relayout</code>이 결과를
+      각 HWND에 적용 (<code>main-window.cpp:490-587</code>).
+    </li>
+    <li>
+      <strong>LVS_OWNERDATA 가상 리스트뷰</strong>: 행 데이터는 listview에
+      저장되지 않고 LVN_GETDISPINFO에서 <code>FileModelStore::visibleAt(row)</code>로
+      lazy하게 읽힌다 (<code>main-window.cpp:2985-3066</code>). group view를
+      지원하기 위해 <code>IListView::SetOwnerDataCallback</code>으로
+      <code>ListViewGroupCallback</code>을 등록 (<code>main-window.cpp:466-486</code>) —
+      이게 없으면 가상 리스트에서 iGroupId가 무시된다.
+    </li>
+  </ul>
+
+  <h3>1.6 외부 의존성과 Win32 API</h3>
+  <p>주요 헤더 및 .lib 의존성 (<code>CMakeLists.txt:198-211, src/ui/main-window.cpp:1-10</code>):</p>
+<div class="table-wrap">
+  <table>
+    <thead><tr><th>모듈</th><th>용도</th></tr></thead>
+    <tbody>
+      <tr><td><code>comctl32</code></td>
+        <td><code>InitCommonControlsEx</code>(<code>main.cpp:270</code>),
+          ListView/StatusBar/Header 컨트롤,
+          <code>SetWindowSubclass</code>/<code>DefSubclassProc</code>,
+          <code>CreateAcceleratorTableW</code>.</td></tr>
+      <tr><td><code>shell32</code></td>
+        <td><code>CommandLineToArgvW</code>(<code>main.cpp:223</code>),
+          <code>ShellExecuteW</code>/<code>ShellExecuteExW</code>(폴더 properties,
+          Explorer/terminal 열기 — <code>main-window.cpp:325-405</code>),
+          <code>SHFILEINFO</code> (icon-cache).</td></tr>
+      <tr><td><code>shlwapi</code></td>
+        <td>경로 유틸. main.cpp/main-window.cpp는 직접 인용하지 않으나 링크에 포함됨
+          (<code>CMakeLists.txt:201</code>).</td></tr>
+      <tr><td><code>ole32</code> / <code>oleaut32</code></td>
+        <td><code>OleInitialize</code>/<code>OleUninitialize</code>
+          (<code>main.cpp:64-69</code>), <code>RegisterDragDrop</code>/
+          <code>RevokeDragDrop</code>/<code>DoDragDrop</code>
+          (<code>main-window.cpp:1676, 720, 2655</code>),
+          <code>IDataObject</code>/<code>IDropSource</code>/<code>IDropTarget</code>.</td></tr>
+      <tr><td><code>user32</code></td>
+        <td>모든 윈도우 생성/메시지/타이머/가속기 API.</td></tr>
+      <tr><td><code>gdi32</code></td>
+        <td><code>CreateSolidBrush</code>/<code>FillRect</code>/<code>SelectObject</code>/
+          <code>DrawTextW</code>/<code>SetTextColor</code>
+          (다크 페인트 서브클래스).</td></tr>
+      <tr><td><code>uxtheme</code></td>
+        <td><code>SetWindowTheme</code>(<code>main-window.cpp:115, 161, 1100, 1141</code>),
+          ordinal 133 (<code>AllowDarkModeForWindow</code>),
+          ordinal 135 (<code>SetPreferredAppMode</code>),
+          <code>OpenNcThemeData</code>(IAT 패치 대상).</td></tr>
+      <tr><td><code>dwmapi</code></td>
+        <td><code>DwmSetWindowAttribute</code> 19/20 (dark caption),
+          38(Mica backdrop) — <code>main-window.cpp:1902-1908</code>.
+          링크는 <code>#pragma comment(lib, "dwmapi.lib")</code>
+          (<code>main-window.cpp:10</code>) 및
+          <code>CMakeLists.txt</code>에서도 명시적으로 포함되지는 않으나
+          pragma로 충분.</td></tr>
+      <tr><td><code>dbghelp</code></td>
+        <td>CrashHandler MiniDump — main.cpp는 <code>CrashHandler::install</code>
+          호출만 (<code>app-services.cpp:22</code>, <code>main.cpp:243</code>).</td></tr>
+      <tr><td><code>propsys</code> / <code>mpr</code></td>
+        <td>CMakeLists.txt 링크 목록 — main/window 코드에서 직접 호출 없음
+          (코어/셸 백엔드 측).</td></tr>
+      <tr><td><code>WinSparkle::WinSparkle</code></td>
+        <td><code>win_sparkle_set_appcast_url</code>,
+          <code>set_eddsa_public_key</code>,
+          <code>set_shutdown_request_callback</code>,
+          <code>win_sparkle_init</code>/<code>cleanup</code>,
+          <code>check_update_without_ui</code>/<code>with_ui</code>
+          (<code>main.cpp:111-127</code>, <code>main-window.cpp:2088</code>).</td></tr>
+    </tbody>
+  </table></div>
+  <p>
+    추가로 <code>main-window.cpp</code>는 <code>RegOpenKeyExW</code>/
+    <code>RegQueryValueExW</code>로 <code>HKCU\Software\Microsoft\Windows\
+    CurrentVersion\Themes\Personalize</code>의 <code>AppsUseLightTheme</code>
+    DWORD를 읽어 다크 모드 여부를 결정한다
+    (<code>systemPrefersDarkMode</code>, <code>main-window.cpp:1732-1746</code>).
+    또한 <code>CompareStringW</code>(<code>main-window.cpp:3170</code>)로
+    locale 인지 매칭, <code>OpenClipboard</code>/<code>SetClipboardData</code>
+    /<code>GlobalAlloc</code>(<code>main-window.cpp:363-390</code>)으로
+    경로 복사를 직접 수행한다.
+  </p>
+
+  <h3>1.7 주목할 구현 세부사항</h3>
+
+  <h4>1.7.1 시작 인자 파싱</h4>
+  <p>
+    <code>cmdLine</code>이 <code>nullptr</code>이 아닐 때 <code>CommandLineToArgvW</code>로
+    분해하고, 4가지 스위치만 인식: <code>--crash-test</code> (수동 dump),
+    <code>--crash-test=throw</code> (null 포인터 write, SEH 트리거),
+    <code>--crash-test=invalid</code> (<code>printf(nullptr)</code>로 invalid
+    parameter handler), <code>--open &lt;path&gt;</code>
+    (<code>main.cpp:226-260</code>). argv는 <code>LocalFree</code>로 해제
+    (<code>main.cpp:239-241</code>). 알려지지 않은 스위치는 조용히 무시한다.
+    <code>--open</code> 경로는 항상 저장된 <code>panePaths[0]</code>보다
+    우선 (<code>main.cpp:361-366</code>의 주석).
+  </p>
+
+  <h4>1.7.2 DPI 처리</h4>
+  <p>
+    <code>CMakeLists.txt:222-224</code>에서 <code>VS_GLOBAL_EnableDpiAwareness =
+    PerMonitor</code>로 설정되며, 매니페스트는 <code>.rc</code>에 임베딩
+    (<code>CMakeLists.txt:227</code>의 <code>/MANIFEST:NO</code>).
+    <code>onCreate</code>가 <code>GetDpiForWindow(hwnd)</code>로 listview
+    컬럼 폭을 스케일링하고 (<code>main-window.cpp:1627</code>의
+    <code>addColumns(listView_, GetDpiForWindow(hwnd))</code>),
+    <code>onDpiChanged</code> (<code>main-window.cpp:1911-1929</code>)에서
+    <code>SetWindowPos(hwnd, ..., rect-&gt;left/top/...)</code>로 시스템 제안 RECT를
+    수용한 뒤 모든 listview의 컬럼을 <code>rescaleColumnWidths</code>로 재스케일,
+    각 toolbar row의 <code>onDpiChanged(newDpi)</code> 호출로 아이콘/폰트도
+    재생성한다. toolbar row의 높이는
+    <code>scaleForDpi(42, GetDpiForWindow(hwnd_))</code>로 매 relayout마다 계산
+    (<code>main-window.cpp:515</code>).
+  </p>
+
+  <h4>1.7.3 다크 모드 / 테마</h4>
+  <p>
+    네 개의 독립 메커니즘이 합성된다:
+  </p>
+  <ul>
+    <li>프로세스 시작 시
+      <code>SetPreferredAppMode(AllowDark)</code> — listview 그룹 헤더 색상까지
+      먹게 하기 위해 반드시 listview 생성 전에 호출 (<code>main.cpp:40-58</code>의
+      주석에 상세).</li>
+    <li><code>installDarkScrollBarHook</code>: comctl32의
+      <code>OpenNcThemeData</code> 딜레이 로드 thunk를 IAT 레벨에서 redirect.
+      이 단일 후크가 listview/treeview/edit/popup의 모든 스크롤바를 어둡게 만든다
+      (<code>main-window.cpp:1102-1124</code>의 긴 주석에 시도된 두 가지 실패
+      접근 — part-scoped DarkMode_Explorer override와 WM_NCPAINT 서브클래스 —
+      이 왜 폐기되었는지 기록).</li>
+    <li>윈도우별 <code>AllowDarkModeForWindow</code> +
+      <code>WM_THEMECHANGED</code> 강제 발사
+      (<code>main-window.cpp:1125-1128</code>).</li>
+    <li>네이티브 테마가 미지원인 컨트롤(상태바, listview header)은 직접 페인트:
+      <code>statusBarSubclassProc</code> (<code>main-window.cpp:1759-1821</code>)는
+      <code>WM_ERASEBKGND</code>를 먹고 <code>WM_PAINT</code>에서 전 영역을
+      <code>FillRect</code> + 각 파트 텍스트 <code>DrawTextW</code>;
+      <code>listViewHeaderColorSubclass</code> (<code>main-window.cpp:1828-1891</code>)는
+      자식 Header의 <code>NM_CUSTOMDRAW</code>를 listview HWND에서 가로채
+      <code>CDDS_ITEMPREPAINT</code>에서 컬럼 타이틀을 직접 그린다.
+      <code>CDRF_SKIPDEFAULT</code> 반환.</li>
+  </ul>
+  <p>
+    <code>WM_SETTINGCHANGE</code>의 lParam이 "ImmersiveColorSet"일 때만
+    재적용 (<code>main-window.cpp:1466-1474</code>) — 폭이 큰 시스템
+    브로드캐스트를 필터링한다. <code>applyActivePaneAppearance</code>
+    (<code>main-window.cpp:1168-1189</code>)는 매 페인의
+    <code>SetBkColor</code>/<code>SetTextBkColor</code>로 활성/비활성 페인의
+    배경 색조를 갈음한다 (다크: RGB(32,32,32)/RGB(24,24,24), 라이트: COLOR_WINDOW/
+    COLOR_BTNFACE).
+  </p>
+
+  <h4>1.7.4 세션 상태 라운드트립</h4>
+  <p>
+    저장 키 4가지 그룹: window placement(x,y,w,h), 페인 경로 배열
+    (<code>panePaths[0..3]</code>) + paneCount + activePane,
+    레이아웃(preset + orientation + per-preset ratios),
+    view 토글(showHidden, showExtensions). <code>WM_DESTROY</code> 핸들러
+    (<code>main-window.cpp:1546-1581</code>)가 <code>GetWindowPlacement</code>의
+    <code>rcNormalPosition</code>을 캡처하므로 minimize 상태로 종료해도
+    "복원된 사각형"이 기록된다. 또한 legacy v4 필드인 <code>lastPath</code>/
+    <code>secondPath</code>/<code>layoutMode</code>도 호환을 위해 동시 채움
+    (<code>main-window.cpp:1573-1578</code>).
+  </p>
+
+  <h4>1.7.5 멀티 페인 동적 인스톨</h4>
+  <p>
+    슬롯 0은 항상 onCreate에서 만들고, 슬롯 1~3은 <code>installPaneAt</code>
+    (<code>main-window.cpp:597-677</code>)에서 listview/dropTarget/toolbar
+    row/addressBar/dropdownBtn/coordinator/subclass를 같은 순서로 생성.
+    중간에 실패하면 <code>installPaneCoordinators</code>의 partial 상태에서
+    UI 자원을 모두 roll back하고 호출자(<code>enterLayout</code>)가
+    <code>paneManager_-&gt;closePane</code>으로 슬롯을 회수한다.
+    <code>uninstallPaneAt</code> (<code>main-window.cpp:679-737</code>)은
+    역순으로 — 팝업 hide, 모든 페인별 타이머 Kill, coordinator reset,
+    IListView 콜백 해제, refcount drop, dropTarget revoke,
+    listview/addressBar/dropdownBtn DestroyWindow, toolbar row reset.
+  </p>
+
+  <h4>1.7.6 분리된 분류(group-by) 메뉴 ID 영역</h4>
+  <p>
+    <code>kMenuGroupByNone=0x8000</code>부터 <code>kMenuGroupByType=0x8003</code>까지
+    (<code>messages.h:92-95</code>) — 셸 컨텍스트 메뉴의 verb ID 범위
+    (1~0x7FFF) 바로 위에 배치되어 셸 백그라운드 메뉴에 주입되었을 때 충돌하지
+    않는다. <code>onCommand</code> 진입부 (<code>main-window.cpp:1953-1979</code>)
+    가 packed-id 디코드 이전에 이 4개를 먼저 intercept하는데,
+    <code>unpackButton(0x8000)</code>이 잘못된 btn/pane을 만들기 때문이다.
+  </p>
+
+  <h4>1.7.7 그 외 안전장치</h4>
+  <ul>
+    <li><code>MainWindow</code> dtor가 <code>hwnd_</code>이 살아 있으면
+      <code>DestroyWindow</code>를 호출(<code>main-window.cpp:431-436</code>).
+      <code>hwnd_</code> 자체는 <code>WM_NCDESTROY</code>에서 nullptr로 클리어된다.</li>
+    <li>WinSparkle <code>shutdown_request_callback</code>은 worker thread에서
+      호출되므로 <code>g_mainWindowHwnd.load(acquire)</code> 후
+      <code>PostMessageW(hwnd, WM_CLOSE, 0, 0)</code>만 함 — 문서화된 유일한
+      thread-safe poke 경로 (<code>main.cpp:98-103</code>).</li>
+    <li>low-memory 콜백은 <code>memory_.setLowMemoryCallback([hwnd]() {
+      PostMessageW(hwnd, kWmFeLowMemory, 0, 0); })</code>로 등록되고
+      (<code>main-window.cpp:1704-1706</code>),
+      <code>WM_NCDESTROY</code>에서 <code>setLowMemoryCallback(nullptr)</code>으로
+      해제 (<code>main-window.cpp:1613</code>).
+      ProcessMemoryService 내부가 mutex 아래에서 콜백 사본을 만들고 호출하기
+      때문에, mid-destruction PostMessage는 잘 정의된(drop) 동작으로 안전하다.</li>
+    <li><code>WM_NOTIFY</code>가 listView의 children 중 어디서 왔는지를
+      <code>std::find(listViews_.begin(), listViews_.end(), hdr-&gt;hwndFrom)</code>로
+      검사 (<code>main-window.cpp:2680-2684</code>). 외부 위젯 (스플리터/주소바)의
+      통지는 별도 경로로 라우팅되므로 listView_ 패밀리 외 통지는 0을 반환한다.</li>
+  </ul>
+</section>
+<section class="module" id="module-2">
+  <h2>2. Pane System (듀얼 페인 코어)</h2>
+  <p class="scope"><strong>범위:</strong>
+    <code>src/ui/pane-controller.{h,cpp}</code>,
+    <code>src/ui/pane-layout.{h,cpp}</code>,
+    <code>src/ui/pane-manager.{h,cpp}</code>,
+    <code>src/ui/pane-splitter.{h,cpp}</code>,
+    <code>src/ui/pane-toolbar-row.{h,cpp}</code>,
+    <code>src/ui/pane-sort-coordinator.{h,cpp}</code>,
+    <code>src/ui/splitter-ratios.h</code>,
+    <code>src/ui/splitter-resize.h</code>,
+    <code>src/ui/selection-sync.{h,cpp}</code>,
+    <code>src/core/layout-orientation.h</code>,
+    <code>src/core/layout-preset.h</code>.
+  </p>
+
+  <h3>2.1 코드 구조</h3>
+  <p>페인 시스템은 <em>슬롯 컨테이너 (PaneManager)</em> → <em>슬롯별 컨트롤러 (PaneController)</em> →
+    <em>컨트롤러 내부 서브시스템 (PaneSortCoordinator / ShellWorker / FsWatcher / FileModelStore)</em>
+    의 3층 컴포지션이다. 레이아웃·스플리터·툴바 행은 컨트롤러와 분리되어 MainWindow가
+    합성한다 (이 파일들에서는 MainWindow의 직접 정의가 보이지 않으므로 "MainWindow가 합성한다"는
+    표현은 헤더 코멘트와 상호 참조에만 근거한다).</p>
+
+  <pre><code>PaneManager (pane-manager.h)
+  └── std::vector&lt;std::unique_ptr&lt;PaneController&gt;&gt; panes_   // pane-manager.h:64
+       └── PaneController (pane-controller.h)
+            ├── FileModelStore        store_              // pane-controller.h:278
+            ├── Win32FsBackend        backend_            // pane-controller.h:279
+            ├── FsWatcher             fsWatcher_          // pane-controller.h:280
+            ├── PaneSortCoordinator   sortCoord_          // pane-controller.h:288
+            ├── ShellWorker           shellWorker_        // pane-controller.h:289
+            ├── std::jthread          worker_             // pane-controller.h:293
+            └── std::unordered_set&lt;uint32_t&gt; selectedRaws_  // pane-controller.h:286
+
+레이아웃/스플리터/툴바 (MainWindow가 소유, 페인 인덱스로만 연결):
+  PaneLayoutResult  ← computePaneLayout(preset, ratios, …)   // pane-layout.h:76
+  PaneSplitter      ← child HWND per splitter                 // pane-splitter.h:59
+  PaneToolbarRow    ← child HWND per pane (toolbar+addr+ham)  // pane-toolbar-row.h:43
+  SelectionSync     ← LVN_ITEMCHANGED ↔ PaneController       // selection-sync.h:14</code></pre>
+
+  <h3>2.2 핵심 클래스와 책임</h3>
+<div class="table-wrap">
+  <table>
+    <thead><tr><th>클래스 / 자유 함수</th><th>위치</th><th>책임</th></tr></thead>
+    <tbody>
+      <tr>
+        <td><code>PaneManager</code></td>
+        <td><code>src/ui/pane-manager.h:27</code></td>
+        <td>최대 <code>kMaxPanes = 4</code> 슬롯 (<code>pane-manager.h:36</code>) 의
+          <code>unique_ptr&lt;PaneController&gt;</code> 벡터를 보유. <code>openInitial</code>
+          (<code>pane-manager.cpp:9</code>) / <code>openPane</code>
+          (<code>pane-manager.cpp:15</code>) / <code>closePane</code>
+          (<code>pane-manager.cpp:32</code>) / <code>setActive</code>
+          (<code>pane-manager.cpp:40</code>) 만 제공하는 순수 슬롯 컨테이너.
+          <code>openPane</code>은 폴더 로드를 수행하지 않는 "create slot" 프리미티브임을
+          코멘트가 명시 (<code>pane-manager.cpp:23-28</code>).</td>
+      </tr>
+      <tr>
+        <td><code>chooseSecondPaneInitialPath</code></td>
+        <td><code>src/ui/pane-manager.h:22</code></td>
+        <td>두 번째 페인의 초기 경로 결정: <code>requested</code>가 비어 있으면 활성
+          페인의 <code>fallback</code>을 그대로 참조 반환. <code>noexcept</code> 보장을 위해
+          참조를 반환한다고 코멘트가 명시 (<code>pane-manager.h:18-21</code>).</td>
+      </tr>
+      <tr>
+        <td><code>PaneController</code></td>
+        <td><code>src/ui/pane-controller.h:28</code></td>
+        <td>한 페인의 <code>FileModelStore</code>, 백/포워드 스택, 선택 집합, 필터,
+          enumeration jthread, 셸 워커, fs 워처를 모두 소유. 외부 API는
+          <code>openFolder</code> / <code>back</code> / <code>forward</code> / <code>up</code> /
+          <code>refresh</code> / <code>openItem</code> / <code>deleteItem</code> /
+          <code>renameItem</code> / <code>createSubfolder</code>
+          (<code>pane-controller.h:43-84</code>) 와 정렬·선택·필터 위임.</td>
+      </tr>
+      <tr>
+        <td><code>PaneSortCoordinator</code></td>
+        <td><code>src/ui/pane-sort-coordinator.h:29</code></td>
+        <td>정렬 정책·임계값·백그라운드 sort jthread·pending permutation을 보유.
+          <code>requestSort</code> (<code>pane-sort-coordinator.cpp:19</code>) 가
+          <code>SortDispatch::{Rejected, AppliedSync, Dispatched}</code>
+          (<code>pane-sort-coordinator.h:16-20</code>) 중 하나를 반환.
+          store의 lifetime이 외부에 있으므로 reference 멤버
+          (<code>pane-sort-coordinator.h:93</code>).</td>
+      </tr>
+      <tr>
+        <td><code>PaneToolbarRow</code></td>
+        <td><code>src/ui/pane-toolbar-row.h:43</code></td>
+        <td>페인 위쪽 행 (nav 툴바 + 주소창 + 햄버거)의 컨테이너 윈도. 자식 윈도는
+          MainWindow가 생성하고 <code>setAddressBar</code> /
+          <code>setAddressDropdownBtn</code> 으로 reparent
+          (<code>pane-toolbar-row.cpp:514, 527</code>).
+          <code>WM_COMMAND</code> / <code>WM_NOTIFY</code> 등은 부모로
+          포워딩 (<code>pane-toolbar-row.cpp:863-868, 906-910, 947-950</code>).</td>
+      </tr>
+      <tr>
+        <td><code>PaneSplitter</code></td>
+        <td><code>src/ui/pane-splitter.h:59</code></td>
+        <td>스플리터 윈도 클래스 (<code>FastExplorer.PaneSplitter</code>,
+          <code>pane-splitter.h:69</code>) 등록과 인스턴스 생성. 인스턴스별 상태는
+          <code>SplitterContext</code> (<code>pane-splitter.h:12</code>) 가 보유하며
+          <code>WM_NCCREATE</code> 시 HWND에 첨부, <code>WM_NCDESTROY</code>에서 해제
+          (<code>pane-splitter.cpp:57-67</code>).</td>
+      </tr>
+      <tr>
+        <td><code>SelectionSync</code></td>
+        <td><code>src/ui/selection-sync.h:14</code></td>
+        <td><code>LVN_ITEMCHANGED</code> / <code>LVN_ODSTATECHANGED</code> 를
+          <code>PaneController</code>의 raw-index 선택 집합으로 동기화하고,
+          정렬 후 <code>LVIS_SELECTED</code>를 재적용. <code>reapplying_</code>
+          플래그가 reentrancy를 차단 (<code>selection-sync.h:43</code>).</td>
+      </tr>
+      <tr>
+        <td><code>computePaneLayout</code></td>
+        <td><code>src/ui/pane-layout.cpp:38</code></td>
+        <td>10개 프리셋 (<code>Single, Dual_V, Dual_H, Tri_A..C, Quad_A..D</code>)
+          에 대해 <code>PaneLayoutResult</code> 채우기. 슬롯 4개 / 스플리터 3개의
+          고정 배열을 사용 (<code>pane-layout.h:65-69</code>). 헤더 코멘트의
+          "Tri_*/Quad_* 는 미구현"
+          (<code>pane-layout.h:74-75</code>) 과 달리 .cpp는 모든 케이스를 구현해
+          두었다 (<code>pane-layout.cpp:79-183</code>).</td>
+      </tr>
+      <tr>
+        <td><code>resolveLayoutToggle</code></td>
+        <td><code>src/ui/pane-layout.h:42</code></td>
+        <td><code>(isDual, currentOrientation, pressed) → LayoutTransition</code>.
+          정책 함수, <code>constexpr</code> 평가 가능. 동일 seam 키 = ExitToSingle,
+          다른 seam 키 = SwitchOrientation, single 상태 = EnterDual
+          (<code>pane-layout.h:46-52</code>).</td>
+      </tr>
+      <tr>
+        <td><code>computeNewRatio</code> / <code>computeNewCumulativeRatio</code></td>
+        <td><code>src/ui/splitter-resize.h:10, 32</code></td>
+        <td>드래그 변위 → 새 비율 계산. 둘 다 <code>constexpr</code>, pure.
+          <code>computeNewCumulativeRatio</code>는 Quad_B/C/D 처럼 ratios가
+          누적적인 프리셋용으로 인접 ratio 사이의 <code>minGap</code> 을 유지
+          (<code>splitter-resize.h:27-48</code>).</td>
+      </tr>
+      <tr>
+        <td><code>computeRatioFromCursor</code></td>
+        <td><code>src/ui/pane-splitter.h:49</code></td>
+        <td>커서 위치 → [0.1, 0.9] 클램핑된 비율.
+          <code>axisLength &lt;= 0</code> 일 때 0.5 fallback
+          (<code>pane-splitter.h:51-56</code>).</td>
+      </tr>
+      <tr>
+        <td><code>defaultRatiosFor</code></td>
+        <td><code>src/ui/splitter-ratios.h:18</code></td>
+        <td>프리셋별 기본 ratios 테이블. Dual = 0.5, Tri_A/B = (0.4, 0.5),
+          Tri_C = (1/3, 2/3), Quad_B/C = (0.25, 0.5, 0.75) 등
+          (<code>splitter-ratios.h:21-32</code>).</td>
+      </tr>
+      <tr>
+        <td><code>LayoutOrientation</code> / <code>LayoutPreset</code></td>
+        <td><code>src/core/layout-orientation.h:13</code>,
+            <code>src/core/layout-preset.h:13</code></td>
+        <td>core 네임스페이스에 정의된 직렬화 가능 enum. 정수값이
+          settings.json (스키마 v5) 으로 round-trip 되므로 순서 변경/제거는
+          breaking change임을 코멘트가 명시
+          (<code>layout-preset.h:9-12</code>, <code>layout-orientation.h:7-12</code>).
+          <code>ui::LayoutOrientation</code>은 <code>pane-layout.h:20</code>의
+          <code>using</code> alias 로 재노출.</td>
+      </tr>
+    </tbody>
+  </table></div>
+
+  <h3>2.3 레이아웃 모델</h3>
+  <p>레이아웃의 직렬화 가능한 상태는 두 개의 core enum과 한 개의 ui struct에 모여 있다.</p>
+  <ul>
+    <li><strong>Orientation</strong>: <code>core::LayoutOrientation</code>
+      = <code>{ Vertical = 0, Horizontal = 1 }</code>
+      (<code>layout-orientation.h:13</code>). settings.json의 <code>kOrient*</code>
+      문자열 매핑이 <code>settings-store.cpp</code>에 있다고 코멘트가
+      가리키지만 (<code>layout-orientation.h:10-12</code>) 해당 파일은 본 섹션 범위 밖.</li>
+    <li><strong>Preset</strong>: <code>core::LayoutPreset</code>의 10개 값
+      (<code>Single, Dual_V, Dual_H, Tri_A, Tri_B, Tri_C, Quad_A, Quad_B, Quad_C, Quad_D</code>,
+      <code>layout-preset.h:14-23</code>). <code>kLayoutPresetCount = 10</code>은
+      <code>static_assert</code>로 enumerator 개수와 일치하도록 강제됨
+      (<code>layout-preset.h:26-30</code>).</li>
+    <li><strong>Splitter ratios</strong>: <code>ui::SplitterRatios</code>는
+      <code>std::array&lt;float, 3&gt;</code> 의 [0,1] 값
+      (<code>splitter-ratios.h:14-16</code>). 의미는 프리셋별로 다르며
+      "non-cumulative vs cumulative" 라는 두 종류가 있음을 코멘트가 가리키지만
+      (<code>splitter-ratios.h:11-13</code>) 외부 spec 문서에 위임.</li>
+  </ul>
+  <p>레이아웃 토글의 정책은 순수 함수 <code>resolveLayoutToggle</code>에 격리되어 있다
+    (<code>pane-layout.h:42-53</code>). 토글 키가 현재 seam과 같으면 ExitToSingle,
+    다르면 SwitchOrientation, single 상태면 EnterDual을 반환한다.</p>
+  <p>다음 페인 프리셋으로의 순회는 <code>nextPresetInCycle(current, targetSlotCount)</code>
+    (<code>layout-preset.h:48-75</code>) 이 담당한다.
+    targetSlotCount == 2 인 경우 코멘트가 "Dual seam flip은 resolveLayoutToggle 소관"
+    이라고 명시하고 (<code>layout-preset.h:53-54</code>) 이미 Dual_V/H 이면 그대로
+    유지, 그 외에서는 Dual_V 로 진입한다.</p>
+
+  <h3>2.4 스플리터 알고리즘</h3>
+  <h4>2.4.1 비율 → 픽셀 매핑 (computePaneLayout)</h4>
+  <p><code>pane-layout.cpp:38</code>의 <code>computePaneLayout</code>은 각 프리셋에 대해
+    수직 분할선 위치 <code>x = W * ratio[i]</code>, 수평 분할선 위치
+    <code>y = top + totalH * ratio[i]</code> 로 슬롯을 채운다. <code>top</code>은
+    <code>reservedTop</code>, <code>bot</code>은 <code>clientHeight - reservedBottom</code>
+    이며 <code>clientWidth &lt;= 0 || bot &lt;= top</code> 일 때 빈 결과 반환
+    (<code>pane-layout.cpp:47-49</code>).</p>
+  <p>스플리터는 <code>makeVerticalSplitter</code> / <code>makeHorizontalSplitter</code>
+    (<code>pane-layout.cpp:12-32</code>) 가 만든다. 시각 두께는
+    <code>kSplitterThicknessDip = 1</code>, 히트테스트는 양쪽으로
+    <code>kSplitterGrabHalfDip = 2</code> 확장 (<code>pane-layout.cpp:9-10</code>).
+    각 <code>SplitterRect</code>는 <code>hitRect</code>, <code>visualRect</code>,
+    <code>orient</code>, <code>ratioId</code> 4 필드 (<code>pane-layout.h:57-62</code>).</p>
+
+  <h4>2.4.2 드래그 → 비율 갱신 (splitterWndProc)</h4>
+  <p><code>PaneSplitter</code> 윈도는 자체 wndProc에서 5개 메시지를 처리한다
+    (<code>pane-splitter.cpp:53-173</code>).</p>
+<div class="table-wrap">
+  <table>
+    <thead><tr><th>메시지</th><th>위치</th><th>동작</th></tr></thead>
+    <tbody>
+      <tr><td><code>WM_NCCREATE</code></td><td><code>pane-splitter.cpp:57</code></td>
+        <td><code>lpCreateParams</code>로 받은 <code>SplitterContext*</code>를
+          GWLP_USERDATA에 저장.</td></tr>
+      <tr><td><code>WM_NCDESTROY</code></td><td><code>pane-splitter.cpp:64</code></td>
+        <td>heap context <code>delete</code>.</td></tr>
+      <tr><td><code>WM_SETCURSOR</code></td><td><code>pane-splitter.cpp:71</code></td>
+        <td>orient에 따라 <code>IDC_SIZEWE</code> / <code>IDC_SIZENS</code>.</td></tr>
+      <tr><td><code>WM_PAINT</code></td><td><code>pane-splitter.cpp:78</code></td>
+        <td><code>COLOR_3DSHADOW</code> 1픽셀 선.</td></tr>
+      <tr><td><code>WM_LBUTTONDOWN</code></td><td><code>pane-splitter.cpp:96</code></td>
+        <td><code>SetCapture</code>, <code>dragging = true</code>, ratioAtStart 캡처,
+          첫 ghost 라인 그리기.</td></tr>
+      <tr><td><code>WM_MOUSEMOVE</code></td><td><code>pane-splitter.cpp:114</code></td>
+        <td>이전 ghost 위치를 XOR 지우고 새 위치에 XOR 그리기 (
+          <code>drawGhost</code> 는 R2_NOTXORPEN 사용,
+          <code>pane-splitter.cpp:23</code>).</td></tr>
+      <tr><td><code>WM_LBUTTONUP</code></td><td><code>pane-splitter.cpp:131</code></td>
+        <td>commit. ratios 갱신 후 <code>onCommit()</code> 콜백.</td></tr>
+      <tr><td><code>WM_CAPTURECHANGED</code></td><td><code>pane-splitter.cpp:164</code></td>
+        <td>드래그 중 캡처를 잃었을 때 ghost 지우고 상태 리셋.</td></tr>
+    </tbody>
+  </table></div>
+  <p>주목할 만한 버그 수정 코멘트 (<code>pane-splitter.cpp:132-140</code>): WM_LBUTTONUP
+    핸들러는 <code>ReleaseCapture</code>를 호출하기 <em>전</em> 드래그 상태를 로컬로
+    스냅샷한다. <code>ReleaseCapture</code>가 동기적으로 <code>WM_CAPTURECHANGED</code>
+    를 디스패치하면서 <code>lastGhostPos = -1</code> 로 리셋해버려서, 그 이후 비율을
+    계산하면 -1이 들어가 0.1로 클램핑되는 "every drag snaps to 10%" 증상이 생기기
+    때문이다.</p>
+
+  <h4>2.4.3 비율 클램핑 정책</h4>
+  <p>두 개의 pure constexpr 함수가 사용된다.</p>
+  <ul>
+    <li><code>computeNewRatio</code> (<code>splitter-resize.h:10</code>): non-cumulative
+      프리셋용. 기본 <code>[minRatio, maxRatio] = [0.1, 0.9]</code> 로 클램핑하여
+      0-크기 슬롯이 생기지 않도록 (<code>splitter-resize.h:13-15</code>).</li>
+    <li><code>computeNewCumulativeRatio</code> (<code>splitter-resize.h:32</code>):
+      Quad_B/C/D 같은 누적 ratio 프리셋용. raw 값은 [0, 1] 로 먼저 클램핑한 다음
+      이웃 ratio와 <code>minGap = 0.05</code> 의 간격을 유지하도록
+      <code>[prevRatio + minGap, nextRatio - minGap]</code> 로 다시 클램핑
+      (<code>splitter-resize.h:42-47</code>). 이로써 컬럼/로우의 inversion을 방지한다고
+      코멘트가 명시 (<code>splitter-resize.h:28-31</code>).</li>
+    <li><code>computeRatioFromCursor</code> (<code>pane-splitter.h:49</code>): WM_LBUTTONUP
+      커밋 경로에서 실제로 호출되는 함수. <code>[0.1, 0.9]</code> 클램핑 하드코딩.</li>
+  </ul>
+  <p>주: 헤더에 <code>computeNewCumulativeRatio</code> 가 정의되어 있으나 본 섹션
+    파일들 안에서 호출 사이트는 발견되지 않는다 (not present in source within
+    this section's files).</p>
+
+  <h4>2.4.4 드래그 좌표계 보정</h4>
+  <p><code>SplitterContext::axisOriginInParent</code> / <code>axisLengthForRatio</code>
+    (<code>pane-splitter.h:28-29</code>) 는 부모 client 좌표에서의 축 원점과 길이를
+    저장한다. 코멘트가 명시하는 보정:</p>
+  <ul>
+    <li>수직 스플리터: <code>axisOrigin=0</code>, <code>axisLength=clientW</code>
+      (preset 공식은 <code>W * ratio[i]</code>).</li>
+    <li>수평 스플리터: <code>axisOrigin=reservedTop</code>, <code>axisLength=totalH</code>
+      (= <code>clientH - reservedTop - reservedBottom</code>; preset 공식은
+      <code>top + totalH * ratio[i]</code>).</li>
+  </ul>
+  <p>코멘트는 부모의 전체 높이를 쓰면 상태표시줄 높이만큼 어긋난다며 이를
+    v0.4.0의 "drag-feels-off" 버그라고 기록 (<code>pane-splitter.h:23-27</code>).
+    <code>perpLow</code> / <code>perpHigh</code> (<code>pane-splitter.h:35-36</code>) 는
+    ghost line이 자신이 분할하는 컬럼/로우 밖으로 새어 나가지 않도록 perpendicular
+    클립 범위를 정의한다.</p>
+
+  <h3>2.5 정렬과 선택 동기화</h3>
+  <h4>2.5.1 정렬 (PaneSortCoordinator)</h4>
+  <p>정렬은 동기/비동기 두 경로로 분기된다. 분기점은
+    <code>publishedCount() &lt; sortThresholdRows_</code>
+    (<code>pane-sort-coordinator.cpp:50</code>) 이고 기본 임계값은
+    <code>kDefaultSortThresholdRows = 2000</code>
+    (<code>pane-sort-coordinator.h:33</code>) 이다. 코멘트는 "이 미만에서는 sync sort가
+    UI 50ms 예산 안에 끝나서 jthread spin-up 비용을 낼 가치가 없다"라고 명시
+    (<code>pane-sort-coordinator.h:32-33</code>).</p>
+  <p><code>requestSort</code> (<code>pane-sort-coordinator.cpp:19</code>) 의 의사결정 흐름:</p>
+  <ol>
+    <li><code>enumerationActive</code> 이면 즉시 <code>Rejected</code>
+      (<code>pane-sort-coordinator.cpp:23-25</code>). 호출자(<code>PaneController</code>)는
+      이 플래그를 <code>workerActive_.load(memory_order_acquire)</code> 로 전달
+      (<code>pane-controller.h:99</code>).</li>
+    <li>기존 <code>sortWorker_</code> 가 있으면 <code>stopAndJoin</code>으로 정리하고
+      pending order를 클리어 (<code>pane-sort-coordinator.cpp:28-36</code>). 코멘트가
+      "sync sort 후 stale dispatched-sort의 PostMessage가 도착하면 잘못된 permutation
+      이 적용된다"라는 race를 차단함을 명시 (<code>pane-sort-coordinator.cpp:29-34</code>).</li>
+    <li>같은 key로 두 번 호출되면 direction을 토글, 다른 key면 Ascending으로 reset
+      (<code>pane-sort-coordinator.cpp:41-49</code>).</li>
+    <li><code>count &lt; sortThresholdRows_</code>: 동기 경로.
+      <code>groupBy == None</code> 이면 <code>store_.sort(spec)</code> 위임,
+      그렇지 않으면 별도 order 벡터를 만들어 <code>compareWithGroup</code> 로
+      sort 후 <code>store_.applySortedOrder</code>
+      (<code>pane-sort-coordinator.cpp:50-77</code>). <code>AppliedSync</code> 반환.</li>
+    <li>그 이상: <code>sortWorker_</code> jthread 스폰. order 벡터 채우기 → sort →
+      <code>pendingSortedOrder_</code> 에 저장 → <code>PostMessageW</code>로
+      <code>kWmFeSortComplete</code> 전송 (<code>pane-sort-coordinator.cpp:86-110</code>).
+      <code>Dispatched</code> 반환. 두 곳의 <code>tok.stop_requested()</code> 체크
+      (<code>pane-sort-coordinator.cpp:93, 102</code>) 가 협조적 취소를 보장.</li>
+  </ol>
+  <p><code>applyPendingSort</code> (<code>pane-sort-coordinator.cpp:114</code>) 는 UI
+    스레드에서 commit 한다. 주목: <code>request_stop</code> 대신 자연 완료를 기다리는
+    이유를 코멘트가 명시 — request_stop은 worker가 pendingSortedOrder_를 채우기
+    전에 끊어 size-mismatch branch 로 빠질 수 있기 때문
+    (<code>pane-sort-coordinator.cpp:115-117</code>). gen 일치 검사
+    (<code>pane-sort-coordinator.cpp:121</code>) 와 size 일치 검사
+    (<code>pane-sort-coordinator.cpp:125</code>) 두 단계로 stale 결과를 폐기한다.</p>
+  <p><code>cancel()</code> (<code>pane-sort-coordinator.cpp:134</code>) 은
+    <code>sorted_ = false</code>로 리셋하지만 <code>sortSpec_</code> 은 보존해
+    <code>reapplyAfterEnumeration</code> (<code>pane-sort-coordinator.cpp:143</code>) 이
+    다음 enumeration 끝난 뒤 사용자 선택을 복원하도록 한다.</p>
+
+  <h4>2.5.2 선택 동기화 (SelectionSync)</h4>
+  <p><code>PaneController</code>는 raw entry index 기반의
+    <code>std::unordered_set&lt;uint32_t&gt; selectedRaws_</code>
+    (<code>pane-controller.h:286</code>) 를 유지한다. raw index를 쓰는 이유는
+    "정렬 후 row가 다른 visibleOrder 슬롯으로 이동해도 underlying FileEntry는
+    같은 raw index를 유지하기 때문"이라고 코멘트가 명시
+    (<code>pane-controller.h:135-138</code>).</p>
+  <p><code>SelectionSync</code>는 두 방향의 동기화를 수행한다.</p>
+  <ul>
+    <li><strong>ListView → Pane</strong>: <code>handleItemChanged</code>
+      (<code>selection-sync.cpp:40</code>) 또는 <code>handleOdStateChanged</code>
+      (<code>selection-sync.cpp:58</code>) → <code>syncFromListView</code>
+      (<code>selection-sync.cpp:71</code>). per-row delta를 신뢰하지 않고
+      <code>ListView_GetNextItem(LVNI_SELECTED)</code> 로 전체를 다시 읽어
+      pane의 selectedRaws_를 재구성한다.</li>
+    <li><strong>Pane → ListView</strong>: <code>reapplyFromPane</code>
+      (<code>selection-sync.cpp:105</code>). <code>ScopedFlag</code>
+      (<code>selection-sync.cpp:20</code>) 로 <code>reapplying_</code>를 켜고,
+      먼저 <code>ListView_SetItemState(-1, 0, LVIS_SELECTED)</code> 로 전체 클리어 후
+      <code>pane_.selectedRowsUnderCurrentOrder()</code>
+      (<code>pane-controller.cpp:247</code>) 가 반환한 row들에만 LVIS_SELECTED를
+      다시 set 한다.</li>
+  </ul>
+  <p>전체 리싱크를 선택한 근거는 코멘트에 자세히 적혀 있다: LVS_OWNERDATA list-view가
+    "deselect-on-click of the previously-selected row" 케이스에서
+    <code>LVN_ITEMCHANGED</code> / <code>LVN_ODSTATECHANGED</code> 어느 쪽으로도
+    notification을 안정적으로 보내지 않아서 delta tracking 시 selectedRaws_가
+    클릭마다 누수되었다 (<code>selection-sync.cpp:75-86</code>).
+    비용은 O(visible rows) per change, Ctrl+A 100k 행에서도 수 ms라고 같은
+    코멘트가 평가.</p>
+
+  <h3>2.6 도입된 알고리즘/이론</h3>
+  <ul>
+    <li><strong>Pure-function policy 분리</strong>: <code>resolveLayoutToggle</code>,
+      <code>nextPresetInCycle</code>, <code>computeNewRatio</code>,
+      <code>computeNewCumulativeRatio</code>, <code>computeRatioFromCursor</code>,
+      <code>defaultRatiosFor</code>, <code>slotCountForPreset</code>,
+      <code>chooseSecondPaneInitialPath</code> 가 모두 <code>constexpr</code>/<code>noexcept</code>
+      free function 또는 inline policy 함수로 격리. <code>pane-layout.h:39-41</code>의
+      코멘트가 "policy-only (no Win32), constexpr-평가 가능하므로 HWND 없이
+      단위 테스트 가능 (static_assert)" 이라고 의도를 명시.</li>
+    <li><strong>Thread-aware acquire/release ordering</strong>: <code>workerActive_</code>
+      는 <code>std::atomic&lt;bool&gt;</code> 로 release-store / acquire-load
+      페어 (<code>pane-controller.cpp:303, 343</code>) 이며, 코멘트가 "PostMessageW
+      후의 release-store는 향후 worker-side bookkeeping 도 같은 release boundary 로
+      보호하기 위함"이라고 설명 (<code>pane-controller.cpp:339-342</code>).</li>
+    <li><strong>Cooperative cancellation (jthread + stop_token)</strong>: enumeration
+      worker (<code>pane-controller.cpp:307</code>) 와 sort worker
+      (<code>pane-sort-coordinator.cpp:86</code>) 모두 <code>std::jthread</code> +
+      <code>std::stop_token</code> 패턴. <code>jthread-utils.h</code> 의
+      <code>stopAndJoin</code> helper 사용 (<code>pane-controller.cpp:280</code>,
+      <code>pane-sort-coordinator.cpp:28, 135</code>).</li>
+    <li><strong>Generation 기반 stale-result 폐기</strong>: <code>store_.generation()</code>
+      을 캡처해 <code>makePaneWParam(paneIdx, gen)</code>로 메시지에 실어 보내고,
+      <code>applyPendingSort</code> 에서 <code>gen != pendingSortGen_ ||
+      gen != store_.generation()</code> 검사로 navigation 사이에 도착한 결과를 폐기
+      (<code>pane-sort-coordinator.cpp:121-123</code>).</li>
+    <li><strong>RAII 가드</strong>: <code>SelectionSync::ScopedFlag</code>
+      (<code>selection-sync.cpp:20-31</code>) 의 destructor는 <code>std::bad_alloc</code>
+      에서도 flag를 클리어해야 하므로 <code>noexcept</code> 명시. 코멘트가
+      "C++ 예외가 wndProc 밖으로 새는 것은 Win32 UB" 라고 근거 기록
+      (<code>selection-sync.cpp:17-19</code>).</li>
+    <li><strong>State machine for splitter drag</strong>: <code>SplitterContext</code>의
+      <code>dragging</code> 플래그가 idle → dragging → committed/canceled 의 작은
+      FSM 역할. WM_CAPTURECHANGED 와 WM_LBUTTONUP 가 모두 dragging 해제 경로를
+      가지며, WM_LBUTTONUP 는 commit 전 모든 필드를 로컬에 스냅샷한 다음
+      ReleaseCapture를 호출 (<code>pane-splitter.cpp:131-162</code>).</li>
+    <li><strong>XOR rubber-banding</strong>: ghost line은 <code>R2_NOTXORPEN</code>
+      으로 그려져 같은 위치에 두 번 그리면 자기-반전 ("drawing twice at the same
+      position erases", <code>pane-splitter.cpp:12-13</code>) — WM_MOUSEMOVE 마다
+      previous, new 두 번 호출로 깜빡임 없이 이동.</li>
+    <li><strong>Forwarding container 패턴 (PaneToolbarRow)</strong>: <code>WM_NOTIFY</code>,
+      <code>WM_DRAWITEM</code>, <code>WM_COMMAND</code>, <code>WM_CTLCOLOR*</code> 가
+      모두 <code>SendMessageW(parent, …)</code> 로 부모에 위임
+      (<code>pane-toolbar-row.cpp:863-868, 906-910, 947-950</code>). 자식 윈도의
+      생성·라이프타임은 MainWindow 가, 위치 조정만 row 가 책임진다
+      (<code>pane-toolbar-row.h:3-11</code>).</li>
+  </ul>
+  <p>전통적인 GoF observer 명시 구현은 발견되지 않음 (not present in source).
+    대신 콜백 (<code>SplitterContext::onCommit</code>,
+    <code>pane-splitter.h:15</code>) 과 PostMessage (Win32 message pump) 가
+    그 역할을 한다.</p>
+
+  <h3>2.7 주목할 구현 세부사항</h3>
+  <h4>2.7.1 DPI 스케일링</h4>
+  <p><code>PaneToolbarRow</code> 의 모든 픽셀 값은 DIP 상수로 시작해
+    <code>scaleDip(dip, dpi) = MulDiv(dip, dpi, 96)</code>
+    (<code>pane-toolbar-row.cpp:26-28</code>) 으로 변환한다. 폰트도 DPI별로
+    재생성 — <code>createIconFont</code> (<code>pane-toolbar-row.cpp:66</code>),
+    <code>createRowFont</code> (<code>pane-toolbar-row.cpp:308</code>).
+    <code>onDpiChanged</code> (<code>pane-toolbar-row.cpp:679</code>) 는 "atomic swap:
+    먼저 새 폰트 생성 → 자식들에 push → 옛 폰트 delete" 순서를 따른다 (
+    WM_SETFONT 가 HFONT를 복사하지 않으므로,
+    <code>pane-toolbar-row.cpp:680-683</code>).</p>
+  <p>스플리터의 두께 (<code>kSplitterThicknessDip</code>) 와 grab half
+    (<code>kSplitterGrabHalfDip</code>) 는 DIP 상수로 정의되어 있으나
+    (<code>pane-layout.cpp:9-10</code>) <code>computePaneLayout</code> 내부에서는
+    그대로 픽셀로 쓰인다 — 호출자가 이미 픽셀 단위의 <code>clientWidth</code>,
+    <code>clientHeight</code> 를 넘긴다는 의미이고, DPI 스케일은 호출자가 처리해야
+    한다 (해당 호출자는 본 섹션 파일들에는 없으므로 not analyzed here).</p>
+
+  <h4>2.7.2 활성 페인 추적</h4>
+  <p><code>PaneManager::activeIndex_</code> (<code>pane-manager.h:65</code>) 가 단일
+    source of truth. <code>setActive</code> 가 인덱스 범위 검사
+    (<code>pane-manager.cpp:40-43</code>), <code>closePane</code> 이
+    <code>activeIndex_ &gt;= panes_.size()</code> 일 때
+    <code>panes_.size() - 1</code> 로 클램핑
+    (<code>pane-manager.cpp:34-37</code>). PaneController 측에는 자기 인덱스의
+    캐시인 <code>paneIndex_</code> (<code>pane-controller.h:274</code>) 만 있으며,
+    이 값은 <code>makePaneWParam(paneIdx, gen)</code> 으로 메시지에 실리는 데
+    쓰인다 (<code>pane-controller.cpp:321, 336</code>).</p>
+
+  <h4>2.7.3 키보드 포커스 흐름</h4>
+  <p><code>PaneToolbarRow</code>는 <code>WS_EX_CONTROLPARENT</code> 로 생성된다
+    (<code>pane-toolbar-row.cpp:357-360</code>). 코멘트가 명시: "IsDialogMessage가
+    row 안으로 재귀해서 nav 툴바 / 주소창 / 햄버거가 Tab / Shift+Tab 사이클에
+    들어간다. 이게 없으면 keyboard-only 사용자가 row 에 포커스를 줄 수 없다"
+    (<code>pane-toolbar-row.cpp:354-356</code>). 자식 버튼들은
+    <code>WS_TABSTOP</code> 을 명시적으로 부여
+    (<code>pane-toolbar-row.cpp:392, 412</code>).</p>
+
+  <h4>2.7.4 다크 모드 / 테마</h4>
+  <p>다크 모드 판정은 레지스트리
+    <code>Software\Microsoft\Windows\CurrentVersion\Themes\Personalize!AppsUseLightTheme</code>
+    을 매번 읽는다 (<code>pane-toolbar-row.cpp:136-150</code>, 같은 검사가
+    <code>pane-toolbar-row.cpp:240-251</code> 에 중복). <code>enableProcessDarkMode</code>
+    (<code>pane-toolbar-row.cpp:292</code>) 는 <code>uxtheme.dll</code> ordinal 135
+    (undocumented 그러나 Win10 1809 이후 안정)의 <code>SetPreferredAppMode</code>
+    를 <code>PAM_AllowDark</code>로 호출, 코멘트가 "Windows 10 1809 이후 안정"이라고
+    근거를 밝힘 (<code>pane-toolbar-row.cpp:283-286</code>).</p>
+  <p><code>WM_THEMECHANGED</code> / <code>WM_SYSCOLORCHANGE</code> 는 row 를
+    invalidate 한다 (<code>pane-toolbar-row.cpp:835-838</code>).</p>
+
+  <h4>2.7.5 단축키와 접근성 (PaneToolbarRow)</h4>
+  <p>버튼 ID는 12비트 buttonId + 4비트 paneIdx 로 패킹되어 WM_COMMAND의 LOWORD
+    16비트에 실린다 (<code>pane-toolbar-row.h:23-34</code>). 코멘트가 "이전 8/8 split
+    은 ID &gt;= 256 을 truncate 해서 hamburger-menu (kMenu* IDs are in the 300 range)
+    가 깨졌다"고 회귀 기록 (<code>pane-toolbar-row.h:25-29</code>).</p>
+  <p>접근성: 버튼의 WindowText / iString 에 한국어 라벨 ("뒤로", "앞으로", "위로",
+    "새로 고침", "메뉴") 을 박아 두어 Narrator 가 읽도록 한다
+    (<code>pane-toolbar-row.cpp:108-115</code>), 비주얼 글리프는 별도로
+    <code>handleNavToolbarCustomDraw</code>
+    (<code>pane-toolbar-row.cpp:535</code>) / <code>drawHamburgerItem</code>
+    (<code>pane-toolbar-row.cpp:570</code>) 에서 Segoe Fluent Icons (또는 Segoe MDL2
+    Assets fallback, <code>pane-toolbar-row.cpp:57-64</code>) 로 그린다.</p>
+  <p>툴팁은 두 경로 — <code>TBN_GETINFOTIPW</code>
+    (<code>pane-toolbar-row.cpp:849-852</code>) 와 <code>TTN_NEEDTEXTW</code>
+    (<code>pane-toolbar-row.cpp:858-861</code>) — 를 모두 처리하며 코멘트가
+    "common-controls runtime 이 어느 채널을 쓰든 작동하도록" 둘 다 처리한다고
+    명시 (<code>pane-toolbar-row.cpp:853-857</code>).</p>
+
+  <h4>2.7.6 비동기 enumeration 라이프사이클</h4>
+  <p><code>navigateInternal</code> (<code>pane-controller.cpp:276</code>) 의 순서:</p>
+  <ol>
+    <li><code>stopAndJoin(worker_)</code> — 이전 enumeration 정리.</li>
+    <li><code>sortCoord_.cancel()</code> — pending sort가 곧 reset될 entries_를
+      참조 못하도록 (<code>pane-controller.cpp:283-284</code>).</li>
+    <li><code>selectedRaws_.clear()</code>, <code>currentFilter_ = {}</code>,
+      <code>fsWatcher_.stop()</code> (<code>pane-controller.cpp:285-291</code>).</li>
+    <li><code>store_.reset(path)</code>, gen 캡처 (<code>pane-controller.cpp:294-295</code>).</li>
+    <li><code>workerActive_.store(true, release)</code> 후
+      jthread 스폰 (<code>pane-controller.cpp:303-307</code>). 코멘트가
+      "워커가 entries 를 append하기 전에 workerActive_가 true 이어야 하고,
+      성공/오류/취소 어느 종료 경로에서도 클리어해야 한다"고 순서를 못박음
+      (<code>pane-controller.cpp:301-303</code>).</li>
+    <li>worker는 <code>onBatch</code> 콜백에서 <code>store_.publish(count)</code> 후
+      <code>kWmFeEnumBatch</code> 를 PostMessage. publish가 PostMessage 보다 먼저
+      와야 UI 스레드가 acquire-load 시 일치하는 entries 를 본다는 점을 명시
+      (<code>pane-controller.cpp:312-318</code>).</li>
+    <li>최종 <code>publish</code> 는 idempotent — 마지막 배치가 enumerator.run
+      안에서 onBatch 호출되었을 경우의 no-op 대비 (<code>pane-controller.cpp:328-330</code>).</li>
+  </ol>
+  <p>fs watcher는 jthread 스폰 후에 등록한다 (<code>pane-controller.cpp:346-348</code>) —
+    <code>host == nullptr</code> 인 단위 테스트 경로를 회피하기 위한 nullcheck 포함.</p>
+
+  <h4>2.7.7 PaneController 멤버 선언 순서</h4>
+  <p>코멘트가 <em>destruction-reverse order</em> 의도를 명시
+    (<code>pane-controller.h:271-273</code>):
+    <code>worker_</code> 가 가장 마지막에 선언되어 가장 먼저 destroy 되며,
+    그 시점에 jthread destructor 가 join 한 뒤
+    <code>sortCoord_</code>, <code>backend_</code>, <code>store_</code> 가 차례로
+    파괴된다. sortCoord_ 도 자신의 sort worker 를 먼저 join 한 후 store 참조를
+    놓는다.</p>
+
+  <h4>2.7.8 history 스택과 toggle 가능 상태</h4>
+  <p><code>openFolder</code> (<code>pane-controller.cpp:91</code>) 는 성공 시
+    이전 path 를 backStack 에 push 하고 forwardStack 을 clear.
+    <code>back</code> / <code>forward</code> 는 대칭적으로 다른 스택으로 이동.
+    <code>up</code> 은 <code>computeParent</code> (<code>pane-controller.cpp:45</code>) 가
+    빈 문자열을 반환하면 false. <code>computeParent</code> 는
+    UNC 루트 (<code>\\server</code>, <code>\\server\share</code>) 와 드라이브 루트
+    (<code>X:\</code>) 를 명시적으로 거부 (<code>pane-controller.cpp:60-86</code>).
+    <code>canGoUp</code> 은 같은 <code>computeParent</code> 검사를 다시 수행해
+    툴바 enabled 상태가 실제 동작과 일치하도록 한다
+    (<code>pane-controller.cpp:140-142</code>).</p>
+
+  <h4>2.7.9 ShellExecute로의 파일 핸드오프</h4>
+  <p><code>openItem</code> (<code>pane-controller.cpp:181</code>) 는 디렉터리면
+    <code>openFolder</code> 로 재귀, 그렇지 않으면 <code>shellOpenPath</code>
+    (<code>pane-controller.cpp:153</code>) 가 <code>SHELLEXECUTEINFOW</code> 의
+    <code>SEE_MASK_FLAG_NO_UI</code> 로 호출. <code>SEE_MASK_NOCLOSEPROCESS</code>
+    가 의도적으로 빠진 이유 ("we do not track the launched process") 를 코멘트가
+    기록 (<code>pane-controller.cpp:158-161</code>).</p>
+
+  <h4>2.7.10 미완성/한계 표기</h4>
+  <ul>
+    <li><code>PaneManager::openPane</code> 의 <code>initialPath</code> 파라미터는
+      현재 무시되고 호출자가 별도로 <code>openFolder</code> 를 부르도록 설계되어
+      있다 (<code>pane-manager.cpp:23-28</code>). 코멘트는 "single-enum contract
+      on dual-mode entry" 를 유지하고 backStack double-push 를 피하기 위한
+      의도라고 설명.</li>
+    <li><code>pane-layout.h:74-75</code> 헤더 코멘트는 "Tri_*/Quad_* are unimplemented
+      and return an empty result" 라고 적혀 있지만 .cpp 본문은 모든 프리셋을
+      구현했다 (<code>pane-layout.cpp:79-183</code>). 헤더 코멘트가 stale
+      한 것으로 보인다.</li>
+    <li><code>SplitterContext</code> 의 <code>onCommit</code> 콜백 타입은
+      <code>std::function&lt;void()&gt;</code> 이고 코멘트가 "MainWindow::relayout"
+      로 연결됨을 가리키지만 (<code>pane-splitter.h:15</code>) 실제 binding 사이트는
+      이 섹션의 파일들 밖에 있다.</li>
+  </ul>
+</section>
+<section class="module" id="module-3">
+  <h2>3. Shell Integration · Drag/Drop · Clipboard · Popups</h2>
+  <p class="scope"><strong>범위:</strong>
+    <code>src/ui/shell-bind.{h,cpp}</code>,
+    <code>src/ui/shell-context-menu.{h,cpp}</code>,
+    <code>src/ui/shell-worker.{h,cpp}</code>,
+    <code>src/ui/drop-source.{h,cpp}</code>,
+    <code>src/ui/drop-target.{h,cpp}</code>,
+    <code>src/ui/clipboard-ops.{h,cpp}</code>,
+    <code>src/ui/cut-state-tracker.{h,cpp}</code>,
+    <code>src/ui/address-bar-popup.{h,cpp}</code>,
+    <code>src/ui/search-popup.{h,cpp}</code>,
+    <code>src/ui/label-edit-controller.{h,cpp}</code>,
+    <code>src/ui/com-raii.h</code>,
+    <code>src/ui/jthread-utils.h</code>,
+    <code>src/ui/result-channel.h</code>.
+  </p>
+
+  <h3>3.1 COM/Shell 통합 개요</h3>
+  <p>이 모듈은 Windows Shell의 객체 모델을 직접 소비·구현한다. 두 방향이 명확히 갈린다.</p>
+
+  <h4>3.1.1 직접 구현하는 COM 인터페이스 (서버 측)</h4>
+<div class="table-wrap">
+  <table>
+    <thead><tr><th>인터페이스</th><th>구현 클래스</th><th>위치</th></tr></thead>
+    <tbody>
+      <tr><td><code>IDropSource</code></td><td><code>FileDropSource</code></td><td><code>drop-source.h:8</code></td></tr>
+      <tr><td><code>IDropTarget</code></td><td><code>PaneDropTarget</code></td><td><code>drop-target.h:19</code></td></tr>
+    </tbody>
+  </table></div>
+  <p>두 클래스 모두 <code>InterlockedIncrement</code>/<code>InterlockedDecrement</code> 기반의 수동 레퍼런스 카운팅을 사용한다 (<code>drop-source.cpp:16-24</code>, <code>drop-target.cpp:41-49</code>). <code>QueryInterface</code>는 <code>IID_IUnknown</code>과 자신이 구현하는 단일 인터페이스만 허용한다.</p>
+
+  <h4>3.1.2 소비(consume)하는 Shell COM 인터페이스</h4>
+<div class="table-wrap">
+  <table>
+    <thead><tr><th>인터페이스</th><th>호출 위치</th><th>용도</th></tr></thead>
+    <tbody>
+      <tr><td><code>IShellFolder</code></td><td><code>shell-bind.cpp:7-18</code>, <code>address-bar-popup.cpp:112-120</code></td><td>경로 → 폴더 객체 바인딩</td></tr>
+      <tr><td><code>IShellFolder::CreateViewObject</code></td><td><code>shell-bind.cpp:25</code>, <code>shell-context-menu.cpp:134-139</code></td><td>폴더 배경 <code>IDropTarget</code>/<code>IContextMenu</code></td></tr>
+      <tr><td><code>IShellFolder::GetUIObjectOf</code></td><td><code>shell-context-menu.cpp:128</code>, <code>clipboard-ops.cpp:35</code></td><td>다중 PIDL → <code>IContextMenu</code> / <code>IDataObject</code></td></tr>
+      <tr><td><code>IShellFolder::ParseDisplayName</code></td><td><code>shell-context-menu.cpp:109</code>, <code>clipboard-ops.cpp:26</code></td><td>leaf 이름 → child PIDL</td></tr>
+      <tr><td><code>IShellFolder::EnumObjects</code></td><td><code>address-bar-popup.cpp:338, 454</code></td><td>네임스페이스 자식 열거</td></tr>
+      <tr><td><code>IShellFolder::BindToObject</code></td><td><code>address-bar-popup.cpp:115</code></td><td>하위 폴더 바인딩</td></tr>
+      <tr><td><code>IShellFolder::GetDisplayNameOf</code></td><td><code>address-bar-popup.cpp:347, 488</code></td><td>표시 이름 추출</td></tr>
+      <tr><td><code>IShellFolder::GetAttributesOf</code></td><td><code>address-bar-popup.cpp:106, 482</code></td><td><code>SFGAO_FOLDER/STREAM</code> 검사</td></tr>
+      <tr><td><code>IContextMenu / IContextMenu2 / IContextMenu3</code></td><td><code>shell-context-menu.cpp:31-49, 244-246</code></td><td>컨텍스트 메뉴 구축·메시지 전달</td></tr>
+      <tr><td><code>IDataObject</code></td><td><code>clipboard-ops.cpp:14-39, 62</code></td><td>클립보드 포맷 및 PIDL 묶음</td></tr>
+      <tr><td><code>IDropTarget</code></td><td><code>clipboard-ops.cpp:96-114</code>, <code>drop-target.cpp:87-141</code></td><td>shell 폴더의 드롭 처리에 위임</td></tr>
+      <tr><td><code>IEnumIDList</code></td><td><code>address-bar-popup.cpp:337, 449</code></td><td>PIDL 열거자</td></tr>
+      <tr><td><code>IFileOperation</code></td><td><code>shell-worker.cpp:69-156</code></td><td>Rename/Delete/NewItem (휴지통 라우팅 포함)</td></tr>
+      <tr><td><code>IShellItem</code></td><td><code>shell-worker.cpp:86-94</code></td><td><code>SHCreateItemFromParsingName</code>으로 IFileOperation 인자</td></tr>
+    </tbody>
+  </table></div>
+  <p><code>IUnknown_SetSite</code>는 코드 내에서 호출되지 않는다 — 그 자리에는 <code>menu->QueryInterface(IID_IContextMenu2/3)</code> 후 <code>SetWindowSubclass</code>를 통한 메시지 포워딩 패턴이 사용된다 (<code>shell-context-menu.cpp:244-249</code>). 따라서 본 문서에서 다루는 "IUnknown_SetSite" 처리는 not present in source.</p>
+
+  <h3>3.2 핵심 클래스와 책임</h3>
+<div class="table-wrap">
+  <table>
+    <thead><tr><th>클래스</th><th>위치</th><th>책임</th></tr></thead>
+    <tbody>
+      <tr><td><code>ComPtr&lt;T&gt;</code></td><td><code>com-raii.h:10-36</code></td><td>COM 인터페이스 포인터 RAII; 복사 금지, 이동 가능, <code>put()</code>으로 출력 인자 노출, <code>copyFrom()</code>으로 명시적 AddRef.</td></tr>
+      <tr><td><code>PidlOwner</code></td><td><code>com-raii.h:38-62</code></td><td><code>LPITEMIDLIST</code> RAII; 소멸 시 <code>CoTaskMemFree</code>.</td></tr>
+      <tr><td><code>MenuOwner</code></td><td><code>com-raii.h:64-85</code></td><td><code>HMENU</code> RAII; 소멸 시 <code>DestroyMenu</code>.</td></tr>
+      <tr><td><code>FileDropSource</code></td><td><code>drop-source.h:8</code></td><td><code>IDropSource</code> 최소 구현. ESC → 취소, LBUTTON release → 드롭. 기본 커서 사용.</td></tr>
+      <tr><td><code>PaneDropTarget</code></td><td><code>drop-target.h:19</code></td><td>한 pane 리스트뷰의 <code>IDropTarget</code>; hover된 폴더 행 또는 pane 배경의 shell <code>IDropTarget</code>으로 위임.</td></tr>
+      <tr><td><code>ClipboardOps</code></td><td><code>clipboard-ops.h:18</code></td><td>OLE 클립보드 copy/cut/paste; <code>CFSTR_PREFERREDDROPEFFECT</code> 스탬프.</td></tr>
+      <tr><td><code>CutStateTracker</code></td><td><code>cut-state-tracker.h:11</code></td><td>Ctrl+X 표시된 leaf 목록; LVIS_CUT 페인팅 결정용.</td></tr>
+      <tr><td><code>ShellContextMenu</code> (정적)</td><td><code>shell-context-menu.h:17</code></td><td>우클릭 → <code>IContextMenu</code> 구축 → <code>TrackPopupMenuEx</code> → <code>InvokeCommand</code>.</td></tr>
+      <tr><td><code>ShellWorker</code></td><td><code>shell-worker.h:60</code></td><td>STA <code>std::jthread</code> 위에서 IFileOperation 기반 Rename/CreateFolder/Delete 직렬 처리.</td></tr>
+      <tr><td><code>ResultChannel&lt;T&gt;</code></td><td><code>result-channel.h:28</code></td><td>코얼레싱(coalescing) 결과 큐 + 단일 <code>PostMessage</code> 게이트.</td></tr>
+      <tr><td><code>AddressBarPopup</code></td><td><code>address-bar-popup.h:25</code></td><td>주소바 드롭다운 트리뷰; lazy expand, 마우스 훅 기반 outside-click 닫기.</td></tr>
+      <tr><td><code>SearchPopup</code></td><td><code>search-popup.h:28</code></td><td>Mac-Spotlight 풍 부유 검색 박스; EN_CHANGE를 owner로 forwarding.</td></tr>
+      <tr><td><code>LabelEditController</code></td><td><code>label-edit-controller.h:16</code></td><td><code>LVS_EDITLABELS</code> 진입/종료, F2 rename, Ctrl+Shift+N 후 자동 rename armed.</td></tr>
+    </tbody>
+  </table></div>
+
+  <h3>3.3 Drag &amp; Drop 파이프라인</h3>
+  <h4>3.3.1 Drop Source</h4>
+  <p><code>FileDropSource</code>는 자체 데이터를 들지 않는다. <code>QueryContinueDrag</code>의 결정 로직은 단순하다 (<code>drop-source.cpp:26-31</code>):</p>
+  <pre><code>if (escapePressed) return DRAGDROP_S_CANCEL;
+if ((keyState &amp; MK_LBUTTON) == 0) return DRAGDROP_S_DROP;
+return S_OK;</code></pre>
+  <p><code>GiveFeedback</code>는 항상 <code>DRAGDROP_S_USEDEFAULTCURSORS</code>를 반환하여 shell 기본 커서(↗ copy, ↑ move, ⛔ none)를 그대로 사용한다 (<code>drop-source.cpp:33-35</code>). <code>DoDragDrop</code>을 부르는 측의 코드는 본 모듈 밖에 있어 본 분석 범위에서는 not present in source.</p>
+
+  <h4>3.3.2 Drop Target — Row vs Background 위임</h4>
+  <p><code>PaneDropTarget::rebindTarget</code> (<code>drop-target.cpp:60-94</code>)이 파이프라인의 중심이다:</p>
+  <ol>
+    <li><code>ScreenToClient</code> 후 <code>ListView_HitTest</code>로 커서 아래 행을 탐색 (<code>drop-target.cpp:64-69</code>).</li>
+    <li>같은 행이면 <em>리바인딩을 생략</em>. <code>lastHitRow_</code>는 <code>DragOver</code>마다 SHParseDisplayName + SHBindToObject를 반복하지 않도록 캐싱한다 (<code>drop-target.h:50-52</code>, <code>drop-target.cpp:70-72</code>).</li>
+    <li>행이 폴더면 <code>currentPath() + leaf</code>로 경로를 합성, 아니면 pane 배경(<code>currentPath()</code>)을 사용 (<code>drop-target.cpp:73-85</code>).</li>
+    <li><code>queryFolderDropTarget</code>으로 shell <code>IDropTarget</code>을 가져온다 (<code>drop-target.cpp:87</code>).</li>
+  </ol>
+  <p>실제 DROPEFFECT 계산(같은 드라이브 = move, 다른 드라이브 = copy)과 충돌 UI는 shell 폴더의 <code>IDropTarget</code>이 직접 처리한다 — 헤더 주석이 명시한다 (<code>drop-target.h:14-18</code>).</p>
+
+  <h4>3.3.3 DragEnter/Over/Leave/Drop 흐름</h4>
+  <ul>
+    <li><code>DragEnter</code>: <code>currentData_.copyFrom(data)</code>로 데이터 객체를 AddRef하여 보관한 뒤 위임 (<code>drop-target.cpp:96-107</code>).</li>
+    <li><code>DragOver</code>: 행이 바뀌어 <code>rebound</code>가 true면 이전 target에 <code>DragLeave</code>(<code>clearCurrentTarget</code>이 호출됨)를 보내고 <em>새 target에 다시 <code>DragEnter</code></em>를 보낸다 (<code>drop-target.cpp:113-115</code>). 이는 shell 폴더가 DragEnter 이후 DragOver만 받는 contract를 따르기 위함이다.</li>
+    <li><code>DragLeave</code>/<code>Drop</code>: 항상 <code>clearCurrentTarget()</code>로 <code>DragLeave</code>를 forward하고 보관된 데이터 객체를 reset (<code>drop-target.cpp:51-58, 124-141</code>).</li>
+    <li>현재 target이 없을 때는 <code>*effect = DROPEFFECT_NONE</code>으로 거부 (<code>drop-target.cpp:105, 120, 137</code>).</li>
+  </ul>
+  <p>async drop(<code>IAsyncOperation</code>) 지원은 not present in source.</p>
+
+  <h3>3.4 클립보드와 Cut/Copy 상태</h3>
+  <h4>3.4.1 Copy/Cut 쓰기</h4>
+  <p><code>ClipboardOps::copy</code> (<code>clipboard-ops.cpp:72-87</code>)는 다음 단계를 수행한다:</p>
+  <ol>
+    <li><code>bindFolderByPath</code>로 <code>IShellFolder</code> 획득.</li>
+    <li><code>buildDataObject</code>가 각 leaf를 <code>ParseDisplayName</code>로 child PIDL로 변환한 뒤 <code>GetUIObjectOf(IID_IDataObject)</code>로 <code>IDataObject</code>를 만든다 (<code>clipboard-ops.cpp:14-39</code>). 하나라도 실패하면 <em>전체 반환을 비움</em> — 부분 묶음을 허용하지 않는다 (<code>clipboard-ops.cpp:28-31</code>).</li>
+    <li><code>stampPreferredDropEffect</code>가 <code>CFSTR_PREFERREDDROPEFFECT</code>를 <code>RegisterClipboardFormatW</code>로 등록하고, <code>GMEM_MOVEABLE</code> HGLOBAL 4바이트에 <code>DROPEFFECT_MOVE</code>(cut) 또는 <code>DROPEFFECT_COPY</code>를 써서 <code>IDataObject::SetData(fRelease=TRUE)</code>로 주입한다 (<code>clipboard-ops.cpp:41-68, 79-80</code>).</li>
+    <li><code>OleSetClipboard</code> 직후 <code>OleFlushClipboard</code>를 호출 — "프로세스 종료 후에도 Explorer에서 paste 가능" (<code>clipboard-ops.cpp:84-86</code>).</li>
+  </ol>
+  <p>SetData 실패 시 medium을 <em>호출자가</em> 해제해야 하므로 <code>GlobalFree(mem)</code>으로 직접 회수한다 (<code>clipboard-ops.cpp:62-66</code>) — fRelease 의미를 정확히 따르는 분기.</p>
+
+  <h4>3.4.2 Paste 읽기</h4>
+  <p><code>ClipboardOps::paste</code> (<code>clipboard-ops.cpp:89-117</code>)는 <em>IDropTarget으로 위임</em>하는 방식이다:</p>
+  <ol>
+    <li><code>OleGetClipboard</code>로 <code>IDataObject</code>를 회수.</li>
+    <li><code>queryFolderDropTarget(folderPath, ownerHwnd)</code>로 대상 폴더의 shell <code>IDropTarget</code> 획득.</li>
+    <li><code>POINTL{0,0}</code>·<code>MK_LBUTTON</code>으로 <code>DragEnter → DragOver → Drop</code>의 합성 시퀀스를 실행 (<code>clipboard-ops.cpp:98-114</code>).</li>
+    <li><code>effect</code>가 <code>DROPEFFECT_NONE</code>이면 거부; 성공이면 shell이 자체 진행/충돌 UI를 그린다 — 헤더 주석이 명시 (<code>clipboard-ops.h:25-27</code>).</li>
+  </ol>
+  <p>반환값은 4가지 결과를 구분한다: <code>Success</code>, <code>NoData</code>, <code>NoTarget</code>, <code>Rejected</code> (<code>clipboard-ops.h:11-16</code>).</p>
+
+  <h4>3.4.3 Cut 시각 표시 추적</h4>
+  <p><code>CutStateTracker</code>는 "Ctrl+X 표시된 leaf가 어느 폴더에 속하는지"를 단일 폴더 단위로 보유한다 (<code>cut-state-tracker.h:23-25</code>):</p>
+  <ul>
+    <li><code>mark()</code>는 <code>std::move_iterator</code>로 leaf vector를 unordered_set에 흡수 (<code>cut-state-tracker.cpp:5-11</code>).</li>
+    <li><code>contains(leaf)</code>는 LVIS_CUT 페인팅 결정용 — 헤더 주석에 명시 (<code>cut-state-tracker.h:9-10</code>).</li>
+    <li><code>empty()</code>는 <code>cutFolderPath_</code>의 비어있음으로 표현 (<code>cut-state-tracker.h:16</code>) — leaves 집합이 아닌 폴더 경로를 sentinel로 사용.</li>
+  </ul>
+
+  <h3>3.5 컨텍스트 메뉴</h3>
+  <h4>3.5.1 진입 시퀀스</h4>
+  <p><code>ShellContextMenu::show</code> (<code>shell-context-menu.cpp:296-320</code>)의 흐름:</p>
+  <ol>
+    <li><code>parseAbsolute(folderPath)</code> → <code>PidlOwner</code> (<code>shell-context-menu.cpp:76-83</code>).</li>
+    <li><code>bindFolder</code> → <code>IShellFolder</code> (<code>shell-context-menu.cpp:85-90</code>).</li>
+    <li>selectedLeaves가 비어있으면 <code>queryBackgroundMenu</code>(<code>CreateViewObject(IID_IContextMenu)</code>); 아니면 <code>parseChildren</code> 후 <code>queryContextMenuFromChildren</code>(<code>GetUIObjectOf(IID_IContextMenu)</code>) (<code>shell-context-menu.cpp:309-316</code>).</li>
+    <li><code>runMenuAndInvoke</code>로 메뉴 노출 및 verb 실행.</li>
+  </ol>
+  <p><code>parseChildren</code>의 회복 동작이 중요하다: 빈 leaf와 ParseDisplayName 실패 leaf를 <em>건너뛰고 계속</em>한다 — 주석은 "stale 선택 비트 한 줄이 메뉴 전체를 무산시키지 않게 한다" (<code>shell-context-menu.cpp:97-117</code>).</p>
+
+  <h4>3.5.2 IContextMenu2/3 메시지 포워딩</h4>
+  <p>오너 그리는(owner-draw) shell verb (Open With, Share 등)를 위해 메뉴 노출 동안 owner HWND에 subclass를 건다:</p>
+  <pre><code>SubclassGuard guard(ownerHwnd, ownerSubclassProc, kSubclassId,
+                    reinterpret_cast&lt;DWORD_PTR&gt;(&amp;forward));</code></pre>
+  <p><code>ownerSubclassProc</code>(<code>shell-context-menu.cpp:25-56</code>)은 <code>WM_INITMENUPOPUP</code>·<code>WM_DRAWITEM</code>·<code>WM_MEASUREITEM</code>·<code>WM_MENUCHAR</code>를 <code>IContextMenu3::HandleMenuMsg2</code> 우선, 실패 시 <code>IContextMenu2::HandleMenuMsg</code>로 전달한다. <code>WM_MENUCHAR</code>는 cm3 전용 분기 — Unicode 결과가 필요하기 때문 (<code>shell-context-menu.cpp:241-246</code>).</p>
+  <p><code>SubclassGuard</code> (<code>shell-context-menu.cpp:58-74</code>)는 RAII로 install/remove 페어를 보장한다.</p>
+
+  <h4>3.5.3 ID 범위와 Extra 서브메뉴 ID 분리</h4>
+  <p>shell verb id 범위는 <code>[kCmdIdMin=1, kCmdIdMax=0x7FFF]</code>로 고정 (<code>shell-context-menu.cpp:12-17</code>). <code>ExtraSubmenu::Item::id</code>는 호출자가 <em>이 범위 위</em>로 부여하도록 강제되며 (<code>shell-context-menu.h:30, 22-26</code>), <code>TrackPopupMenuEx</code> 반환 후 <code>cmd &gt; kCmdIdMax</code>면 shell verb가 아닌 caller의 추가 메뉴 pick으로 분기하여 <code>PostMessageW(ownerHwnd, WM_COMMAND, ...)</code>로 디스패치한다 (<code>shell-context-menu.cpp:261-263</code>). <code>PostMessage</code>인 이유: "<code>TrackPopupMenuEx</code>가 완전히 unwind되고 <code>DestroyMenu</code>가 끝난 뒤에 핸들러가 실행되도록".</p>
+
+  <h4>3.5.4 verb invoke와 per-item fan-out</h4>
+  <p>id 기반 invoke는 <code>invokeIdCommand</code> (<code>shell-context-menu.cpp:162-178</code>): <code>CMINVOKECOMMANDINFOEX</code>를 채우고 <code>lpVerb = MAKEINTRESOURCEA(verbId)</code>로 지정. 주석: "일부 확장이 lpVerbW가 non-null이면 IS_INTRESOURCE 임에도 문자열로 deref하여 크래시"하므로 ANSI 필드만 사용 (<code>shell-context-menu.cpp:170-173</code>).</p>
+  <p>일부 verb(<code>install</code>, <code>installallusers</code>, <code>print</code>, <code>printto</code>)는 다중 PIDL 묶음을 무시하고 첫 항목만 처리한다. <code>isPerItemFanOutVerb</code>(<code>shell-context-menu.cpp:148-160</code>)이 verb 이름을 케이스 무시 비교로 식별하고, <code>invokeVerbPerItem</code>(<code>shell-context-menu.cpp:184-202</code>)이 파일마다 단일-PIDL <code>IContextMenu</code>를 재구성해 verb 이름으로 동기적으로 호출한다(<code>CMIC_MASK_ASYNCOK</code> 미설정).</p>
+  <p>verb 이름은 <code>menu->GetCommandString(verbId, GCS_VERBA, ...)</code>로 64바이트 ANSI 버퍼에 받는다 (<code>shell-context-menu.cpp:274-279</code>).</p>
+
+  <h4>3.5.5 QueryContextMenu 플래그</h4>
+  <p><code>CMF_NORMAL | CMF_CANRENAME | CMF_EXPLORE</code> (<code>shell-context-menu.cpp:211-213</code>) — rename verb와 Explorer-스타일 메뉴를 요청.</p>
+
+  <h4>3.5.6 Extra 서브메뉴와 라디오 그룹</h4>
+  <p><code>ExtraSubmenu::radioFirst/radioLast/radioChecked</code>가 모두 0이 아니면 <code>CheckMenuRadioItem</code>로 라디오 렌더링 (<code>shell-context-menu.cpp:230-234</code>). <code>AppendMenu(MF_POPUP, ...)</code>로 sub HMENU 소유권을 popup으로 이전 — popup의 <code>DestroyMenu</code>가 sub도 해제 (<code>shell-context-menu.cpp:222</code> 주석).</p>
+
+  <h3>3.6 비동기 쉘 작업</h3>
+  <h4>3.6.1 ShellWorker 라이프사이클</h4>
+  <p>생성자는 <code>std::jthread</code>를 만들면서 <code>workerMain</code>을 시작한다 (<code>shell-worker.cpp:160-162</code>):</p>
+  <pre><code>ShellWorker::ShellWorker(HWND host, std::size_t paneIndex)
+    : results_(host, kWmFeOperationResult, paneIndex),
+      worker_([this](std::stop_token tok) { workerMain(tok); }) {}</code></pre>
+  <p>소멸자는 <code>request_stop()</code> 후 <code>join()</code>으로 멤버가 사라지기 전에 워커를 회수한다 (<code>shell-worker.cpp:164-173</code>).</p>
+
+  <h4>3.6.2 STA 초기화와 IFileOperation</h4>
+  <p>워커 스레드는 <code>CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED)</code>로 시작한다 — IFileOperation 요건 (<code>shell-worker.cpp:230-238</code>). 실패 시(예: 호스트가 MTA로 미리 init한 RPC_E_CHANGED_MODE) <em>루프는 계속 돌며 모든 명령이 silent no-op</em>이 되어 큐는 막히지 않는다 (<code>shell-worker.cpp:232-236</code> 주석).</p>
+
+  <h4>3.6.3 큐와 stop_token</h4>
+  <p>큐는 <code>std::queue&lt;ShellCommand&gt;</code> + <code>std::mutex</code> + <code>std::condition_variable_any</code> 조합 (<code>shell-worker.h:96-98</code>). <code>dequeueOne</code> (<code>shell-worker.cpp:192-205</code>)은 stop-token-aware wait를 사용한다:</p>
+  <pre><code>cv_.wait(lk, tok, [this] { return !pendingCommands_.empty(); });
+if (tok.stop_requested()) return std::nullopt;</code></pre>
+  <p>주석: "pending command는 stop 시 폐기 — 호스트 윈도우 종료시점에만 워커가 내려가므로 사용자가 포기한 셈" (<code>shell-worker.cpp:196-200</code>).</p>
+
+  <h4>3.6.4 IFileOperation 옵션과 verb</h4>
+  <p>silent-recycle 플래그 (<code>shell-worker.cpp:61-65</code>):</p>
+  <pre><code>FOF_ALLOWUNDO | FOFX_RECYCLEONDELETE |
+FOF_NOCONFIRMATION | FOF_NOERRORUI | FOF_SILENT</code></pre>
+  <p>주석: "FOFX_RECYCLEONDELETE는 휴지통 quota 초과 시에도 휴지통 라우팅 강제 — silent permanent delete로 빠지지 않게" (<code>shell-worker.cpp:56-60</code>). 세 verb는 각각 <code>op->DeleteItem</code>(<code>shell-worker.cpp:110</code>), <code>op->RenameItem</code>(<code>shell-worker.cpp:130</code>), <code>op->NewItem(FILE_ATTRIBUTE_DIRECTORY, folderName, nullptr, nullptr)</code>(<code>shell-worker.cpp:150-151</code>) → <code>PerformOperations</code>.</p>
+
+  <h4>3.6.5 ComScope 로컬 RAII</h4>
+  <p><code>shell-worker.cpp</code>의 anon namespace는 <em>독자적인</em> <code>ComScope&lt;T&gt;</code> 템플릿을 가진다 (<code>shell-worker.cpp:21-54</code>). 이는 <code>com-raii.h</code>의 <code>ComPtr</code>과 별개로, 외부 <code>com-raii.h</code> include 없이 TU 내부 helper로만 동작한다. 외부 ComPtr과 동일한 인터페이스(<code>put()</code>, <code>get()</code>, <code>reset()</code>, bool 변환)를 제공한다.</p>
+
+  <h4>3.6.6 처리 카운터와 테스트 동기화</h4>
+  <p><code>processed_</code>는 <code>std::atomic&lt;std::size_t&gt;</code>로 release-store 후 <code>notify_all()</code>하여 (<code>shell-worker.cpp:226-227</code>) 테스트가 <code>std::atomic::wait</code> 기반으로 busy-loop 없이 대기 가능하게 한다 (<code>shell-worker.cpp:183-190</code>).</p>
+
+  <h4>3.6.7 ResultChannel: 코얼레싱 결과 큐</h4>
+  <p><code>ResultChannel&lt;T&gt;</code> (<code>result-channel.h:28-78</code>)는 두 가지 핵심 가드를 결합한다:</p>
+  <ul>
+    <li><strong>코얼레싱 PostMessage</strong>: <code>postPending_</code> atomic bool을 <code>compare_exchange_strong</code>로 false→true 전이에 성공한 게시자만 <code>PostMessageW</code>를 1회 보낸다 (<code>result-channel.h:46-54</code>). 누적 배치에 대해 단 한 번의 메시지.</li>
+    <li><strong>swap-and-clear race seal</strong>: <code>drainResults</code>가 동일 mutex 임계영역에서 큐 swap과 <code>postPending_</code> reset을 함께 수행해 "drain 이후 publish 사이 race"가 닫힘 (<code>result-channel.h:57-63</code>).</li>
+  </ul>
+  <p><code>publish</code>는 rvalue 전용 — "owned handle을 가진 복사 가능 T가 채널과 drain 양쪽으로 silent duplicate되는 것을 막기 위해" (<code>result-channel.h:38-41</code>). 호스트 HWND가 null이면 <code>postPending_</code>을 즉시 false로 복귀 (<code>result-channel.h:51-53</code>).</p>
+
+  <h4>3.6.8 jthread 정리 유틸</h4>
+  <p><code>stopAndJoin</code>(<code>jthread-utils.h:11-16</code>)는 "request_stop을 먼저 시그널한 뒤 join" — 주석: "stop 신호 없이 join만 하면 worker가 caller가 무효로 본 state를 계속 통과할 수 있다" (<code>jthread-utils.h:7-10</code>).</p>
+
+  <h3>3.7 팝업 UI (Address Bar / Search / Label Edit)</h3>
+  <h4>3.7.1 AddressBarPopup — TreeView 드롭다운</h4>
+  <p>구조: top-level <code>WS_POPUP</code> 윈도우 + 자식 <code>WC_TREEVIEWW</code>. lazy class 등록·생성 (<code>address-bar-popup.cpp:221-265</code>). <code>WS_EX_TOOLWINDOW | WS_EX_TOPMOST | WS_EX_NOACTIVATE</code> + <code>WS_POPUP | WS_BORDER</code>.</p>
+  <p>TreeView 스타일: <code>TVS_HASBUTTONS | TVS_SHOWSELALWAYS | TVS_FULLROWSELECT | TVS_TRACKSELECT</code> — 주석: "TVS_FULLROWSELECT와 TVS_HASLINES는 상호배타" (<code>address-bar-popup.cpp:243</code>).</p>
+  <p><strong>PIDL 메모리 모델</strong> (<code>address-bar-popup.h:11-13</code>): 각 <code>TVITEM.lParam</code>은 <code>CoTaskMemFree</code>-able 절대 PIDL을 보유; <code>TVN_DELETEITEM</code> 핸들러(<code>address-bar-popup.cpp:733-739</code>)가 <code>CoTaskMemFree</code>; <code>TreeView_DeleteAllItems</code>가 cascade 알림을 내려 단일 cleanup. 더미 placeholder는 <code>kDummyLParam = -1</code>로 표시되어 free 대상에서 제외 (<code>address-bar-popup.cpp:141-146, 735</code>).</p>
+  <p><strong>Lazy expand</strong>: <code>TVN_ITEMEXPANDINGW</code> + 자식이 dummy면 <code>expandNode</code> 실행 (<code>address-bar-popup.cpp:720-731</code>). <code>kMaxChildrenPerExpand = 512</code>로 폭주 폴더 방지 (<code>address-bar-popup.cpp:22</code>).</p>
+  <p><strong>Network 분기</strong>: <code>FOLDERID_NetworkFolder</code>는 강제로 최상단(<code>TVI_FIRST</code>)에 삽입; Desktop EnumObjects가 자주 누락하기 때문 (<code>address-bar-popup.cpp:370-411</code>). 네트워크 expand에는 <code>SFGAO_FOLDER</code>만 요구하고 <code>STREAM</code> 검사를 완화 (<code>address-bar-popup.cpp:478-486</code>). 일반 폴더는 <code>isRealDirectory</code>로 <code>(FOLDER &amp;&amp; !STREAM)</code>을 강제 — .zip/.cab/.iso 제외 (<code>address-bar-popup.cpp:102-110</code>).</p>
+  <p><strong>다크모드 테마</strong>: <code>AppsUseLightTheme</code> 레지스트리 probe(<code>address-bar-popup.cpp:33-47</code>) → <code>SetWindowTheme(tree, L"DarkMode_Explorer" | L"Explorer", ...)</code> + <code>TreeView_SetBkColor</code>/<code>TextColor</code> (<code>address-bar-popup.cpp:49-66</code>). 매 show마다 재적용하여 런타임 light↔dark 전환을 반영.</p>
+  <p><strong>Outside-click hide</strong>: <code>SetWindowsHookExW(WH_MOUSE, ..., GetCurrentThreadId())</code>로 스레드-로컬 마우스 훅 설치 (<code>address-bar-popup.cpp:304-312</code>). 훅 owner는 <code>thread_local AddressBarPopup* tMouseHookOwner</code> (<code>address-bar-popup.cpp:28</code>). 클릭이 anchor 위(주소바 Edit)면 hide 생략 — "click-to-toggle이 hide→re-show로 무한 토글되는 것 방지" (<code>address-bar-popup.cpp:614-624</code>). <code>CallNextHookEx</code>의 hhk 인자는 <em>nullptr</em>로 전달 — uninstall과의 TOCTOU race 회피 (<code>address-bar-popup.cpp:631-634</code>).</p>
+  <p><strong>경로 매칭</strong>: <code>CompareStringOrdinal(..., bIgnoreCase=TRUE)</code> (<code>address-bar-popup.cpp:135-137</code>). <code>selectPath</code>는 드라이브를 찾아 expand 후 segment 별 누적 매칭 (<code>address-bar-popup.cpp:519-565</code>).</p>
+  <p><strong>커밋 페이로드</strong>: <code>commitSelection</code>은 <code>std::wstring</code>을 heap에 할당해 <code>PostMessageW(owner, kWmFeAddressPopupPick, payload-ptr, paneIdx)</code>로 전달; PostMessage 실패 시 unique_ptr 자동 해제, 성공 시 <code>leaked = payload.release()</code>로 ownership 전이 (<code>address-bar-popup.cpp:567-580</code>).</p>
+
+  <h4>3.7.2 SearchPopup — Spotlight 풍 검색</h4>
+  <p>구조: <code>WS_POPUP</code> + 단일 <code>EDIT</code> 자식, <code>CS_DROPSHADOW</code> 클래스 스타일 (<code>search-popup.cpp:98-104</code>). DWM rounded corners — <code>DwmSetWindowAttribute</code>로 <code>DWMWA_WINDOW_CORNER_PREFERENCE=33</code>, <code>DWMWCP_ROUND=2</code> 시도하며 구버전 Windows는 silent ignore (<code>search-popup.cpp:44-52</code>).</p>
+  <p><strong>폰트</strong>: <code>Segoe UI Variable</code> 우선, fallback <code>Segoe UI</code>; 20pt를 <code>-MulDiv(pt, dpi, 72)</code>로 cell-height 음수 (<code>search-popup.cpp:27-42</code>).</p>
+  <p><strong>위치</strong>: 부모 client 영역 가로 중앙, 상단에서 <code>kTopOffsetDip=120</code> DIP (<code>search-popup.cpp:138-155</code>).</p>
+  <p><strong>키스트로크 전달</strong>: 자식 EDIT의 <code>EN_CHANGE</code>가 popup의 <code>WM_COMMAND</code>로 올라오면 <code>postQueryToOwner()</code>가 <code>kWmFeFilterQuery</code>에 <code>new std::wstring</code> 페이로드를 실어 owner로 PostMessage; PostMessage 실패 시 <code>delete payload</code>로 정리 (<code>search-popup.cpp:194-200, 226-239</code>). 디바운스는 owner 측 atom F3 책임으로 위임됨(헤더 주석, <code>search-popup.h:5-7</code>).</p>
+  <p><strong>ESC</strong>: edit subclass에서 직접 capture → <code>postDismissToOwner()</code>(<code>kWmFeFilterDismiss</code>) + <code>hide()</code> (<code>search-popup.cpp:218-222</code>).</p>
+  <p><strong>Outside-click</strong>: AddressBarPopup과 동일한 마우스 훅 패턴 (<code>thread_local SearchPopup* tHookOwner</code>, <code>search-popup.cpp:254-282</code>). <code>WM_LBUTTONDOWN</code>이 popup 영역 밖이면 dismiss + hide.</p>
+  <p><strong>활성 pane 캐리</strong>: <code>activePaneIdx_</code>를 보유하여 query/dismiss 메시지의 wParam에 실어 보냄 — show 후 사용자가 반대 pane으로 이동해도 원래 pane으로 라우팅 (<code>search-popup.h:14-17, 234-237, 243-244</code>).</p>
+  <p><strong>Re-show 시 select-all</strong>: <code>EM_SETSEL 0, -1</code>로 prior query를 선택 상태로 두어 Ctrl+F 두 번에 자동 clear (<code>search-popup.cpp:161-165</code>).</p>
+
+  <h4>3.7.3 LabelEditController — F2 / Ctrl+Shift+N</h4>
+  <p><code>LVS_EDITLABELS</code> 라이프사이클을 한 곳에 모은다. 주요 함수:</p>
+  <ul>
+    <li><code>beginRenameFocused</code>: <code>GetFocus() == listView_</code> 게이트(주소바에서 F2 hijack 방지) → <code>LVNI_FOCUSED</code> 행 → <code>ListView_EditLabel</code> (<code>label-edit-controller.cpp:23-32</code>).</li>
+    <li><code>beginCreateSubfolder</code>: <code>store.publishedCount()</code> 만큼 leaf view를 모아 <code>uniqueFolderLeaf(existing, L"New folder")</code>로 충돌 없는 이름을 생성, <code>pane.createSubfolder(leaf)</code>가 성공하면 <code>pendingFolderName_ = std::move(leaf)</code>로 arming (<code>label-edit-controller.cpp:34-51</code>).</li>
+    <li><code>maybeStartPendingEdit</code>: 다음 <code>onEnumComplete</code>에서 호출되어 pending name이 일치하는 행을 찾아 selection+focus 후 <code>ListView_EditLabel</code> 진입. swap-then-clear 패턴으로 "중복 onEnumComplete 시 재트리거 방지" (<code>label-edit-controller.cpp:53-75</code>).</li>
+    <li><code>handleBeginEdit</code>는 항상 FALSE(허용); <code>handleEndEdit</code>는 cancel(pszText null) 외에는 <code>pane.renameItem(i, newName)</code>으로 위임, 반환은 항상 FALSE — <code>LVS_OWNERDATA</code>이므로 list-view가 텍스트를 직접 보유하지 않고 watcher의 rename 관찰 후 재열거로 행이 갱신됨 (<code>label-edit-controller.cpp:77-100</code>).</li>
+  </ul>
+
+  <h3>3.8 도입된 알고리즘/이론</h3>
+  <h4>3.8.1 RAII for COM/Shell handles</h4>
+  <ul>
+    <li><code>ComPtr&lt;T&gt;</code>: 복사 금지·이동 허용·소멸 시 <code>Release</code> (<code>com-raii.h:13-25</code>). <code>put()</code>은 <code>reset()</code> 후 <code>T**</code> 반환으로 COM 출력 인자 패턴 지원 (<code>com-raii.h:22</code>). <code>attach</code> vs <code>copyFrom</code>으로 AddRef 의미를 명시 분리 (<code>com-raii.h:27-32</code>).</li>
+    <li><code>PidlOwner</code>: <code>CoTaskMemFree</code> RAII; <code>release()</code>로 ownership 양도 (<code>com-raii.h:38-62</code>).</li>
+    <li><code>MenuOwner</code>: <code>DestroyMenu</code> RAII (<code>com-raii.h:64-85</code>).</li>
+    <li><code>SubclassGuard</code>: <code>SetWindowSubclass</code>/<code>RemoveWindowSubclass</code> 페어 (<code>shell-context-menu.cpp:58-74</code>).</li>
+    <li><code>ComScope&lt;T&gt;</code>: <code>shell-worker.cpp:21-54</code>의 TU-local helper (<code>ComPtr</code>의 별도 사본).</li>
+  </ul>
+
+  <h4>3.8.2 Reference Counting</h4>
+  <p>구현 COM 객체는 <code>InterlockedIncrement</code>/<code>InterlockedDecrement</code>로 atomic refcount. count==0 시점에 <code>delete this</code> (<code>drop-source.cpp:16-24</code>, <code>drop-target.cpp:41-49</code>).</p>
+
+  <h4>3.8.3 Apartment Threading</h4>
+  <p>STA(<code>COINIT_APARTMENTTHREADED</code>)는 IFileOperation 워커 스레드에서만 명시 초기화 (<code>shell-worker.cpp:237-238</code>). RPC_E_CHANGED_MODE 실패 시 silent no-op 정책으로 큐 데드락 회피 (<code>shell-worker.cpp:232-236</code>).</p>
+
+  <h4>3.8.4 Producer-Consumer + Coalesced Notification</h4>
+  <p><code>ResultChannel</code>의 publish-batch-1-PostMessage 패턴 (<code>result-channel.h:41-55</code>) + <code>drainResults</code>의 swap-and-clear 한 critical section (<code>result-channel.h:57-63</code>). <code>ShellWorker</code>는 <code>std::queue</code> + <code>condition_variable_any</code>의 stop-token-aware wait를 사용 (<code>shell-worker.cpp:193-194</code>).</p>
+
+  <h4>3.8.5 Hit-Test Caching</h4>
+  <p><code>PaneDropTarget</code>은 행 hit 결과(<code>lastHitRow_</code>)를 캐싱해 같은 행 위 <code>DragOver</code>마다 발생하는 SHParseDisplayName+SHBindToObject 사슬을 건너뜀 (<code>drop-target.h:50-52</code>, <code>drop-target.cpp:70-72</code>). -2 = uninitialised sentinel.</p>
+
+  <h4>3.8.6 Outside-Click via WH_MOUSE Thread-Local Hook</h4>
+  <p><code>AddressBarPopup</code>·<code>SearchPopup</code> 모두 <code>SetWindowsHookExW(WH_MOUSE, ..., GetCurrentThreadId())</code> + <code>thread_local Self* tOwner</code> 패턴으로 outside click을 감지(각각 <code>address-bar-popup.cpp:304-312</code>, <code>search-popup.cpp:257-262</code>). <code>CallNextHookEx</code>의 hhk를 nullptr로 전달하여 unhook과의 race를 차단 (<code>address-bar-popup.cpp:631-634</code>).</p>
+
+  <h4>3.8.7 Coalesce-by-Atomic-Flag</h4>
+  <p><code>postPending_.compare_exchange_strong(false, true, acq_rel)</code> 게이트로 누적 결과에 대해 단 한 번의 PostMessage 보장 (<code>result-channel.h:46-54</code>).</p>
+
+  <h4>3.8.8 Stop-Token-Aware Wait</h4>
+  <p><code>std::condition_variable_any::wait</code>의 stop_token 오버로드를 직접 사용 (<code>shell-worker.cpp:193-201</code>). <code>std::jthread</code>의 자동 stop_token + join 의미와 결합 (<code>shell-worker.h:101</code>).</p>
+
+  <h4>3.8.9 Heap Payload via PostMessage</h4>
+  <p>스레드 경계를 건너 가변 길이 wstring을 보내는 표준 패턴: <code>new std::wstring(...)</code> → <code>PostMessageW</code>의 LPARAM/WPARAM에 포인터, 수신 측 <code>delete</code>. PostMessage 실패 시 sender가 즉시 해제 (<code>address-bar-popup.cpp:573-578</code>, <code>search-popup.cpp:232-238</code>).</p>
+
+  <h4>3.8.10 fRelease=TRUE 의미 준수</h4>
+  <p><code>IDataObject::SetData(fe, sm, TRUE)</code>로 ownership을 데이터 객체에 넘기고, <em>실패 시에만</em> caller가 <code>GlobalFree</code> (<code>clipboard-ops.cpp:62-67</code>).</p>
+
+  <h3>3.9 주목할 구현 세부사항</h3>
+  <ul>
+    <li><strong>shell-context-menu의 verb fan-out 화이트리스트</strong>는 <code>install</code>, <code>installallusers</code>, <code>print</code>, <code>printto</code> 4개로 명시 고정 — Fontext.dll·PrintTo 등이 다중 PIDL 묶음을 무시하는 알려진 동작에 대한 Explorer-mimic workaround (<code>shell-context-menu.cpp:148-160</code>).</li>
+    <li><strong>verb id ANSI 전용</strong>: <code>info.lpVerb = MAKEINTRESOURCEA(verbId)</code>만 채우고 <code>lpVerbW</code>는 비움 — 일부 확장의 lpVerbW deref crash 방지 (<code>shell-context-menu.cpp:170-173</code>).</li>
+    <li><strong>ExtraSubmenu id 범위 분리</strong>: caller id &gt; 0x7FFF 강제. show()는 caller pick을 <em>PostMessage</em>(Send 아님)로 디스패치하여 TrackPopupMenuEx 완전 unwind 후 실행 보장 (<code>shell-context-menu.cpp:255-263</code>).</li>
+    <li><strong>parseChildren의 부분 허용</strong>: 빈 leaf 또는 ParseDisplayName 실패 leaf를 skip하여 stale 선택 1건이 메뉴 전체를 막지 않도록 함 (<code>shell-context-menu.cpp:97-117</code>).</li>
+    <li><strong>WM_MENUCHAR는 cm3 전용</strong>: cm2의 HandleMenuMsg는 <code>WM_MENUCHAR</code>에 대해 사용되지 않음 — Unicode return 필요 (<code>shell-context-menu.cpp:30-37</code>).</li>
+    <li><strong>kSubclassId = 0x46435853</strong> (ASCII "XSCF" 역바이트) — owner subclass 충돌 방지용 매직 (<code>shell-context-menu.cpp:18</code>).</li>
+    <li><strong>OleFlushClipboard</strong>: 프로세스 종료 후에도 Explorer paste 가능하도록 호출 (<code>clipboard-ops.cpp:84-86</code>).</li>
+    <li><strong>PasteResult</strong>는 NoData/NoTarget/Rejected/Success 4-way 결과 — UI 상태바 문구를 분기시키기 위함 (<code>clipboard-ops.h:11-16</code>, <code>clipboard-ops.cpp:91-116</code>).</li>
+    <li><strong>DragOver의 row-change re-DragEnter</strong>: target이 바뀌면 새 target에 <code>DragEnter</code>(아닌 <code>DragOver</code>)를 보냄 — shell IDropTarget contract 준수 (<code>drop-target.cpp:113-115</code>).</li>
+    <li><strong>FOFX_RECYCLEONDELETE</strong>: 휴지통 quota 초과 시 silent permanent delete로 다운그레이드되지 않도록 강제 (<code>shell-worker.cpp:56-65</code>).</li>
+    <li><strong>STA 실패는 silent no-op</strong>: CoInitializeEx 실패해도 큐는 계속 drain되며 모든 명령은 false를 반환 — 큐가 영원히 막히지 않음 (<code>shell-worker.cpp:232-251</code>).</li>
+    <li><strong>processed_ notify_all + atomic::wait</strong>: 테스트가 busy-loop 없이 진행률 대기 (<code>shell-worker.cpp:183-190, 226-227</code>).</li>
+    <li><strong>ResultChannel::publish는 rvalue 전용</strong>: owned handle을 가진 payload의 silent duplicate 방지 (<code>result-channel.h:38-41</code>).</li>
+    <li><strong>ResultChannel host==nullptr</strong>: postPending_을 즉시 false로 되돌려 다음 publish가 정상 동작 (<code>result-channel.h:50-53</code>).</li>
+    <li><strong>AddressBarPopup PIDL은 TVITEM.lParam</strong>이며 <code>kDummyLParam=-1</code>은 placeholder sentinel — <code>TVN_DELETEITEM</code>에서 sentinel 검사로 잘못된 CoTaskMemFree 방지 (<code>address-bar-popup.cpp:141-146, 733-739</code>).</li>
+    <li><strong>kMaxChildrenPerExpand=512</strong>: 폭주 폴더 expand에 따른 UI freeze 한계 (<code>address-bar-popup.cpp:22, 474-475</code>).</li>
+    <li><strong>Network root 강제 삽입</strong>: Desktop EnumObjects 누락 가능성 때문에 <code>TVI_FIRST</code>로 무조건 추가; 중복 발생 가능성보다 누락 위험이 더 큰 paper-cut으로 평가 (<code>address-bar-popup.cpp:370-411</code>).</li>
+    <li><strong>다크모드 매 show마다 재적용</strong>: 런타임 light↔dark 토글 반영 (<code>address-bar-popup.cpp:273-275</code>).</li>
+    <li><strong>anchor click 검사로 hide→reshow 무한 토글 방지</strong>: 마우스 훅이 anchor 영역 click을 skip (<code>address-bar-popup.cpp:614-624</code>).</li>
+    <li><strong>CallNextHookEx hhk=nullptr</strong>: uninstall과의 TOCTOU 회피 (<code>address-bar-popup.cpp:631-634</code>).</li>
+    <li><strong>경로 비교는 CompareStringOrdinal(... TRUE)</strong>로 대소문자 무시 ordinal 비교 (<code>address-bar-popup.cpp:135-137</code>).</li>
+    <li><strong>SearchPopup EM_SETSEL all on re-show</strong>: Ctrl+F 두 번이 prior query를 silent clear (<code>search-popup.cpp:161-165</code>).</li>
+    <li><strong>SearchPopup heap payload</strong>: <code>new std::wstring</code> → PostMessage; 실패 시 sender delete (<code>search-popup.cpp:232-238</code>).</li>
+    <li><strong>SearchPopup activePaneIdx 캐리</strong>: show 사이에 사용자가 활성 pane을 바꿔도 query/dismiss는 원래 pane으로 라우팅 (<code>search-popup.cpp:158, 235, 244</code>).</li>
+    <li><strong>SubclassGuard 수명을 InvokeCommand 이후까지 유지</strong>: shell verb가 중첩 메뉴를 띄울 때도 WM_INITMENUPOPUP/WM_DRAWITEM/WM_MEASUREITEM이 cm2/3로 라우팅됨 (<code>shell-context-menu.cpp:247-289</code>).</li>
+    <li><strong>LabelEditController swap-then-clear</strong>: 지연된 두 번째 onEnumComplete가 auto-edit를 재트리거하지 못함 (<code>label-edit-controller.cpp:57-60</code>).</li>
+    <li><strong>handleEndEdit return FALSE (LVS_OWNERDATA)</strong>: 리스트뷰가 자체 텍스트를 보관하지 않으므로 watcher의 on-disk rename 관찰 + 재열거로 행이 갱신됨 (<code>label-edit-controller.cpp:97-99</code>).</li>
+    <li><strong>F2 focus gate</strong>: <code>GetFocus() == listView_</code>가 아니면 no-op — 주소바에서 F2를 hijack하지 않음 (<code>label-edit-controller.cpp:23-26</code>).</li>
+    <li><strong>queryFolderDropTarget은 SHParseDisplayName 실패·ACL deny에 빈 ComPtr 반환</strong> — 호출자는 truthy 검사만으로 분기 (<code>shell-bind.cpp:7-28</code>).</li>
+    <li><strong>FileDropSource는 기본 커서만</strong>: GiveFeedback에서 DRAGDROP_S_USEDEFAULTCURSORS만 반환 (<code>drop-source.cpp:33-35</code>).</li>
+    <li><strong>processOne의 결과 publish 순서</strong>: <code>results_.publish</code> 후 <code>processed_.fetch_add + notify_all</code> — 테스트가 processed 카운트를 본 시점에는 drainResults에서 결과가 보장됨 (<code>shell-worker.cpp:225-227</code>).</li>
+  </ul>
+</section>
+<section class="module" id="module-4">
+  <h2>4. Cache · Format · Virtual ListView Rendering</h2>
+  <p class="scope"><strong>범위:</strong>
+    <code>src/ui/icon-cache.{h,cpp}</code>,
+    <code>icon-cache-coordinator.{h,cpp}</code>,
+    <code>icon-provider.{h,cpp}</code>,
+    <code>extension-icon-cache.{h,cpp}</code>,
+    <code>format-cache.{h,cpp}</code>,
+    <code>column-formatter.{h,cpp}</code>,
+    <code>folder-name.{h,cpp}</code>,
+    <code>filter-pattern.{h,cpp}</code>,
+    <code>listview-group-callback.{h,cpp}</code>,
+    <code>dispinfo-histogram.{h,cpp}</code>,
+    <code>status-text.{h,cpp}</code>,
+    <code>dpi-scale.h</code>.
+  </p>
+
+  <h3>4.1 캐시 계층 개요</h3>
+  <p>아이콘 렌더링 경로는 세 계층으로 분리되어 있다.</p>
+  <ul>
+    <li><strong>L0 — placeholder <code>HIMAGELIST</code></strong>
+      (<code>IconCache</code>, <code>icon-cache.h:29</code>):
+      윈도우당 하나의 <code>HIMAGELIST</code>를 소유하고, 폴더/파일 두 개의
+      synchronous placeholder 아이콘만 미리 채워 둔다
+      (<code>icon-cache.cpp:34-61</code>). <code>LVS_SHAREIMAGELISTS</code>
+      스타일이 이 핸들을 참조한다 (<code>icon-cache.h:25-28</code>).
+    </li>
+    <li><strong>L1 — 확장자→슬롯 LRU</strong>
+      (<code>ExtensionIconCache</code>, <code>extension-icon-cache.h:28-64</code>):
+      이미 해결된 시스템 아이콘이 L0의 어느 슬롯에 있는지 확장자 키로
+      O(1) 평균 조회한다. 기본 256 entry 한계
+      (<code>extension-icon-cache.h:30</code>).
+    </li>
+    <li><strong>L2 — 백그라운드 STA 워커</strong>
+      (<code>IconProvider</code>, <code>icon-provider.h:34</code>):
+      L1 miss 시 확장자를 큐에 enqueue하고, COM STA로 초기화된
+      <code>std::jthread</code> 위에서 <code>SHGetFileInfoW</code>를 호출한다
+      (<code>icon-provider.cpp:95-113</code>). 결과는
+      <code>ResultChannel</code>로 UI 스레드에 <code>kWmFeIconBatch</code>
+      메시지로 합쳐 전달된다 (<code>icon-provider.cpp:12-14</code>,
+      <code>result-channel.h:41-55</code>).
+    </li>
+  </ul>
+  <p>이와 별개로 <strong>텍스트 컬럼 캐시</strong>
+    (<code>FormatCache</code>, <code>format-cache.h:20</code>)가 존재한다.
+    이는 아이콘과 무관하게 <code>LVN_GETDISPINFOW</code> 핫패스에서
+    크기/타입/수정시각 문자열을 키별 LRU로 메모이즈한다.
+    <code>IconCacheCoordinator</code>가 L0~L2를 한 묶음으로
+    소유하고 (<code>icon-cache-coordinator.h:20-60</code>),
+    <code>FormatCache</code>는 별도로 pane이 보유한다
+    (소스의 다른 모듈에서 사용).
+  </p>
+
+  <h3>4.2 핵심 클래스와 책임</h3>
+<div class="table-wrap">
+  <table>
+    <thead><tr><th>클래스</th><th>위치</th><th>책임</th></tr></thead>
+    <tbody>
+      <tr>
+        <td><code>IconCache</code></td>
+        <td><code>icon-cache.h:29-60</code></td>
+        <td>per-window <code>HIMAGELIST</code> RAII. placeholder
+          두 슬롯을 항상 보유; <code>swap()</code>으로 통째 교체 가능
+          (<code>icon-cache.h:56</code>).</td>
+      </tr>
+      <tr>
+        <td><code>ExtensionIconCache</code></td>
+        <td><code>extension-icon-cache.h:28-64</code></td>
+        <td>확장자(소문자 정규화)→imagelist slot index의 bounded
+          LRU. capacity 기본 256, 0이면 1로 클램프
+          (<code>extension-icon-cache.cpp:31-32</code>).</td>
+      </tr>
+      <tr>
+        <td><code>IconProvider</code></td>
+        <td><code>icon-provider.h:34-114</code></td>
+        <td>STA jthread, mutex+condition_variable_any로 stop-token
+          aware dequeue (<code>icon-provider.cpp:52-61</code>).
+          결과는 <code>ResultChannel&lt;IconResult&gt;</code>를 통해
+          coalesced post.</td>
+      </tr>
+      <tr>
+        <td><code>IconCacheCoordinator</code></td>
+        <td><code>icon-cache-coordinator.h:20-60</code></td>
+        <td>위 세 가지를 묶어 <code>resolveIconIndex</code>,
+          <code>onIconBatch</code>, <code>shrinkIconCache</code>
+          세 진입점으로 노출 (<code>icon-cache-coordinator.h:41-52</code>).</td>
+      </tr>
+      <tr>
+        <td><code>FormatCache</code></td>
+        <td><code>format-cache.h:20-89</code></td>
+        <td>size/type/modified 세 개의 LRU; 각각 키 타입이
+          <code>uint64_t</code>, <code>std::wstring</code>,
+          <code>uint64_t</code> (분 단위 truncation)
+          (<code>format-cache.h:84-86</code>).</td>
+      </tr>
+      <tr>
+        <td>column formatters</td>
+        <td><code>column-formatter.h:15-39</code></td>
+        <td>순수 함수: 바이트→"1.2 GB", FILETIME→"YYYY-MM-DD HH:MM",
+          attribute 비트→"HSRJLC" 등.</td>
+      </tr>
+      <tr>
+        <td><code>FilterPattern</code></td>
+        <td><code>filter-pattern.h:43-83</code></td>
+        <td>Plain/Wildcard/Regex 세 모드를 한 클래스에. invalid regex는
+          내부에서 잡혀 <code>isValid()==false</code>로 표면화
+          (<code>filter-pattern.cpp:105-111</code>).</td>
+      </tr>
+      <tr>
+        <td><code>ListViewGroupCallback</code></td>
+        <td><code>listview-group-callback.h:190-248</code></td>
+        <td>LVS_OWNERDATA + grouping을 잇는 undocumented
+          <code>IOwnerDataCallback</code> 구현. 자체 ref-count
+          (<code>listview-group-callback.cpp:46-56</code>).</td>
+      </tr>
+      <tr>
+        <td><code>DispInfoHistogram</code></td>
+        <td><code>dispinfo-histogram.h:22-53</code></td>
+        <td><code>LVN_GETDISPINFO</code> 핸들러 지연시간을 7-bucket
+          히스토그램으로 집계, p99 추정값 노출.</td>
+      </tr>
+      <tr>
+        <td><code>uniqueFolderLeaf</code></td>
+        <td><code>folder-name.h:12-15</code></td>
+        <td>"base", "base (2)", "base (3)" 순으로 중복 없는 leaf 생성;
+          ordinal case-insensitive 비교.</td>
+      </tr>
+      <tr>
+        <td>status-text helpers</td>
+        <td><code>status-text.h:14-67</code></td>
+        <td>로딩/진행/완료/오류 상태 문자열 + KB/MB/... 변환.
+          한국어 오류 메시지 매핑은 <code>status-text.cpp:13-30</code>.</td>
+      </tr>
+      <tr>
+        <td><code>scaleForDpi</code></td>
+        <td><code>dpi-scale.h:10-17</code></td>
+        <td>96 DPI 기준값을 임의 DPI로 nearest-rounding 정수 스케일.</td>
+      </tr>
+    </tbody>
+  </table></div>
+
+  <h3>4.3 Icon Cache 알고리즘</h3>
+
+  <p><strong>Placeholder 생성</strong>
+    (<code>createPlaceholderImageList</code>,
+    <code>icon-cache.cpp:34-61</code>):
+    DPI에 맞춰 <code>SM_CXSMICON/SM_CYSMICON</code>을 스케일하고
+    <code>ImageList_Create(ILC_COLOR32 | ILC_MASK, 2, 8)</code>로
+    초기 2슬롯, 8슬롯씩 증가하는 list를 만든다 (성장 정책:
+    <code>icon-cache.cpp:29-30</code>의 <code>kInitialImageListSlots=2</code>,
+    <code>kImageListGrowSlots=8</code>).
+    <code>SHGetFileInfoW</code>를 <code>SHGFI_USEFILEATTRIBUTES</code>로
+    호출해 디스크 I/O 없이 폴더/파일 generic 아이콘을 얻고
+    (<code>icon-cache.cpp:15-27</code>), 인덱스 0/1에 정확히
+    들어가는지 검증한다 (<code>icon-cache.cpp:55-59</code>).
+    sentinel 문자열로 <code>L"x"</code>를 쓰는 이유는, 드라이브 루트
+    형태(<code>"C:\\"</code>)면 shell이 드라이브 볼륨 아이콘을 반환하기
+    때문이라고 주석에 명시되어 있다 (<code>icon-cache.cpp:18-21</code>).
+  </p>
+
+  <p><strong>Slot 해상도</strong>
+    (<code>IconCacheCoordinator::resolveIconIndex</code>,
+    <code>icon-cache-coordinator.cpp:30-51</code>):</p>
+  <pre><code>const int placeholder = placeholderIndexFor(entry);
+if (isDirectory(entry) || !extensionCache_ || !iconProvider_) {
+  return placeholder;
+}
+const auto extView = extensionView(entry);
+if (extView.empty()) return placeholder;
+const int cached = extensionCache_-&gt;lookup(extView);
+if (cached != ExtensionIconCache::kMissingIndex) return cached;
+// 첫 사용: placeholder slot에 고정해 두고 워커에 요청
+extensionCache_-&gt;insert(extView, placeholder);
+iconProvider_-&gt;request(std::wstring(extView));
+return placeholder;</code></pre>
+  <p>"첫 사용 시 placeholder 인덱스로 미리 insert" 패턴이 핵심이다.
+    덕분에 동일 확장자의 후속 행은 placeholder를 그대로 받지만
+    더 이상 <code>request()</code>를 중복 발사하지 않는다
+    (<code>icon-cache-coordinator.cpp:47-49</code> 주석 참조).</p>
+
+  <p><strong>비동기 로딩 파이프라인</strong>
+    (<code>IconProvider::workerMain</code>,
+    <code>icon-provider.cpp:95-113</code>):
+    워커는 <code>CoInitializeEx(COINIT_APARTMENTTHREADED)</code>로 STA를
+    열고, stop-token aware한
+    <code>cv_.wait(lk, tok, predicate)</code>로 큐를 비운다
+    (<code>icon-provider.cpp:52-61</code>).
+    실제 해상도는 <code>resolveIconForExtension</code>
+    (<code>icon-provider.cpp:63-81</code>)이 sentinel 파일명
+    <code>"x" + extension</code>으로 <code>SHGetFileInfoW</code>를
+    <code>SHGFI_USEFILEATTRIBUTES</code>와 함께 호출.</p>
+
+  <p><strong>Eviction / 메모리 압박 응답</strong>
+    (<code>shrinkIconCache</code>,
+    <code>icon-cache-coordinator.cpp:89-108</code>):
+    <code>kWmFeLowMemory</code> 수신 시 — 새 placeholder-only imagelist를
+    만들어 <code>iconCache_-&gt;swap()</code>으로 교체하고,
+    <code>ListView_SetImageList</code>로 listview 포인터를 다시 걸고,
+    옛 핸들을 <code>ImageList_Destroy</code>한 후
+    <code>extensionCache_-&gt;clear()</code>로 매핑 테이블도 비운다.
+    "통째 교체" 방식이며 부분 eviction은 없다.</p>
+
+  <p><strong>Batch 수신</strong>
+    (<code>onIconBatch</code>, <code>icon-cache-coordinator.cpp:53-87</code>):
+    <code>iconProvider_-&gt;drainResults()</code>로 누적된 모든
+    <code>IconResult</code>를 한 번에 받아, 각 HICON을
+    <code>ImageList_AddIcon</code>으로 imagelist에 추가하고
+    슬롯 인덱스를 <code>extensionCache_-&gt;insert(ext, slot)</code>로
+    덮어쓴다. <code>DestroyIcon</code>은
+    <code>AddIcon</code> 직후 호출 (<code>icon-cache-coordinator.cpp:78-79</code>;
+    Win32 의미: <code>AddIcon</code>이 비트맵을 copy하므로 원본 HICON은
+    바로 해제 가능). 의존성 누락 시 누수 방지를 위해 results의
+    HICON을 그대로 <code>DestroyIcon</code>하는 방어 경로가
+    <code>icon-cache-coordinator.cpp:61-71</code>에 있다.</p>
+
+  <p><strong>HICON 누수 방지 종료 시퀀스</strong>
+    (<code>~IconProvider</code>, <code>icon-provider.cpp:16-33</code>):
+    소멸자에서 <code>worker_.request_stop(); worker_.join();</code>로
+    먼저 워커를 정지·합류시킨 뒤
+    <code>results_.drainResults()</code>에 남은 orphan HICON을
+    <code>DestroyIcon</code>한다. 주석에 "default jthread 파괴는
+    이 본문 이후에 실행되므로 그 사이 완료된 HICON이 leak된다"는
+    근거가 명시되어 있다 (<code>icon-provider.cpp:17-22</code>).</p>
+
+  <h3>4.4 Extension Icon Cache</h3>
+  <p><code>ExtensionIconCache</code>는 전형적인
+    <strong>list + unordered_map</strong> LRU다 (CLRS 11장의 표준
+    형태). 자료구조는 <code>extension-icon-cache.h:60-63</code>:</p>
+  <pre><code>std::list&lt;Entry&gt; entries_;
+std::unordered_map&lt;std::wstring, EntryIt&gt; index_;
+std::size_t capacity_;</code></pre>
+  <p>키 정규화는 ASCII 핫패스 + 비-ASCII fallback 이중 경로다
+    (<code>extension-icon-cache.cpp:9-27</code>):
+    <code>'A'..'Z'</code>는 비트차이 더하기로 빠르게 변환,
+    <code>&gt;= 0x80</code>은 <code>std::towlower</code>로 fallback.
+    주석은 "Windows 실제 파일 확장자는 사실상 ASCII"라고 가정한다
+    (<code>extension-icon-cache.cpp:16-19</code>).</p>
+  <p><strong>lookup</strong>(<code>extension-icon-cache.cpp:34-43</code>)
+    은 hit 시 <code>entries_.splice(begin, entries_, it-&gt;second)</code>
+    로 MRU 위치로 promotion 시킨다. <strong>insert</strong>
+    (<code>extension-icon-cache.cpp:45-68</code>)는 기존 키면 값
+    갱신 + splice; 신규면 push_front + 인덱스 등록, capacity 초과
+    시 <code>entries_.back()</code>을 evict하고 evict된 imagelist
+    index를 <code>evictedOut</code>에 돌려주어 호출자가 슬롯을
+    회수할 수 있게 한다 (<code>extension-icon-cache.h:42-47</code>).</p>
+  <p>주의: <code>IconCacheCoordinator</code>의 <code>insert</code>
+    호출은 두 곳 모두 <code>evictedOut=nullptr</code>로 호출되며
+    (<code>icon-cache-coordinator.cpp:48,83</code>),
+    L0 imagelist 슬롯은 명시적으로 회수되지 않는다 — 압박 시
+    <code>shrinkIconCache</code>가 전체를 갈아엎는다.</p>
+
+  <h3>4.5 Format Cache &amp; Column Formatter</h3>
+
+  <p><strong>FormatCache</strong>는 동일한 LRU 구조
+    (<code>list + unordered_map</code>)를 <code>Lru&lt;Key&gt;</code>로
+    템플릿화하여 세 종류 컬럼에 재사용한다
+    (<code>format-cache.h:46-73</code>).</p>
+  <ul>
+    <li><strong>sizeLru_</strong>: <code>uint64_t</code> 바이트 → "1.2 GB"
+      형식 문자열. directory는 <code>emptyText_</code> 반환
+      (<code>format-cache.cpp:21-28</code>).</li>
+    <li><strong>typeLru_</strong>: 확장자 <code>std::wstring</code> → "PDF File"
+      등. directory는 미리 만든 <code>folderText_=L"File folder"</code>
+      반환 (<code>format-cache.cpp:30-38</code>).</li>
+    <li><strong>modifiedLru_</strong>: <strong>분 단위 truncation</strong>으로
+      키 collision을 늘려 hit rate를 올린다
+      (<code>format-cache.cpp:9, 40-47</code>):
+      <code>kTicksPerMinute = 60 * 10'000'000</code>,
+      <code>minuteKey = ft100ns - (ft100ns % kTicksPerMinute)</code>.
+      포맷 문자열이 "분"까지만 표시되기 때문에 정확하며
+      (<code>column-formatter.cpp:136-137</code>),
+      동일 분에 수정된 모든 파일이 한 슬롯을 공유한다.</li>
+  </ul>
+  <p>capacity 기본 256, 0 입력 시 1로 클램프
+    (<code>format-cache.cpp:13-19</code>). 핵심 helper
+    <code>getOrFill</code>(<code>format-cache.h:75-82</code>)은 hit면 ref 반환,
+    miss면 compute 람다 호출 후 <code>put</code>. 캐시는
+    <strong>UI 스레드 전용</strong>이며 워커가 호출하면 안 됨이
+    명시되어 있다 (<code>format-cache.h:17-19</code>).</p>
+
+  <p><strong>column-formatter</strong>(순수 함수들):</p>
+  <ul>
+    <li><code>formatSize</code> (<code>column-formatter.cpp:45-55</code>):
+      KB/MB/GB/TB ladder를 위에서 아래로 훑어 첫 매치를 쓴다.
+      나누기와 나머지를 분리해 곱셈 overflow를 회피하는 의도가
+      <code>column-formatter.cpp:32-35</code> 주석에 명시 — "remainder *
+      10 / scale" 패턴.</li>
+    <li><code>formatType</code> (<code>column-formatter.cpp:64-83</code>):
+      디렉터리 → "File folder", 확장자 없음 → "File", 그 외엔
+      확장자에서 leading dot 제거 후 대문자화 + " File" 접미.</li>
+    <li><code>formatModified</code> (<code>column-formatter.cpp:120-139</code>):
+      <code>FileTimeToLocalFileTime → FileTimeToSystemTime →
+      swprintf "YYYY-MM-DD HH:MM"</code>. 실패 시 빈 문자열.</li>
+    <li><code>formatAttributesForEntry</code>
+      (<code>column-formatter.cpp:90-114</code>): "H S R J L C" 순으로
+      고정 — Hidden / System / Read-only / reparse-not-symlink /
+      Symlink / Cloud placeholder. J와 L의 분기는
+      <code>isReparse(e) &amp;&amp; !isSymlink(e)</code> vs
+      <code>isSymlink(e)</code>.</li>
+    <li><code>shouldRenderDimmed</code>
+      (<code>column-formatter.cpp:116-118</code>): hidden ∨ system 이면
+      <code>NM_CUSTOMDRAW COLOR_GRAYTEXT</code>로 dim. 주석에 Windows
+      Explorer의 "보호된 OS 파일 숨기기 해제" 뷰와 동등하다고 명시.</li>
+  </ul>
+
+  <h3>4.6 LVN_GETDISPINFO 파이프라인</h3>
+
+  <p><strong>가상 리스트뷰의 일반적 흐름</strong>:
+    LVS_OWNERDATA 리스트뷰는 행 렌더링 직전 각 (row, column)에 대해
+    <code>LVN_GETDISPINFOW</code>를 보낸다. 본 모듈은 이 콜백 자체의
+    핸들러 구현은 포함하지 않지만 두 가지 보조 인프라를 제공한다.</p>
+
+  <p><strong>(1) Group bridge</strong>
+    (<code>ListViewGroupCallback</code>):
+    LVS_OWNERDATA는 기본적으로 LVM_INSERTGROUP과 결합되지 않는다.
+    comctl32의 undocumented <code>IListView::SetOwnerDataCallback</code>
+    (vtable slot 112, <code>listview-group-callback.h:180-182</code>)에
+    <code>IOwnerDataCallback</code> (IID
+    <code>{44C09D56-8D3B-419D-A462-7B956B105B47}</code>,
+    <code>listview-group-callback.cpp:15-20</code>)을 넘기면
+    comctl32가 row→group을 이 콜백으로 조회한다.</p>
+
+  <p><strong>인터페이스 획득 메커니즘</strong>: 헤더는
+    <code>LVM_QUERYINTERFACE = LVM_FIRST + 189</code>
+    (<code>listview-group-callback.h:23</code>)와
+    Windows 7+용 <code>IID_IListView_FE
+    {E5B16AF2-3990-4681-A609-1F060CD14269}</code>
+    (<code>listview-group-callback.h:33,
+    listview-group-callback.cpp:26-31</code>)를 정의한다. Vista의
+    이전 IID는 더 이상 통하지 않는다는 점이 주석에 명시되어 있다
+    (<code>listview-group-callback.cpp:24-25</code>).
+    <code>IListView_FE</code> 더미 vtable은 IUnknown(3) + IOleWindow(2)
+    이후 <code>Slot_05</code>~<code>Slot_111</code>의 stub과
+    113번째 슬롯 <code>SetOwnerDataCallback</code>으로 정확한
+    오프셋을 맞춘다 (<code>listview-group-callback.h:61-183</code>).
+    각 stub에 주석으로 실제 의미(GetImageList 등)를 표시해
+    Geoff Chappell 리버스 엔지니어링 자료를 추적할 수 있다.</p>
+
+  <p><strong>매핑 자료구조</strong>
+    (<code>listview-group-callback.h:239-247</code>):</p>
+  <pre><code>struct GroupRange { int32_t id; int32_t firstRow; int32_t count; };
+std::vector&lt;int32_t&gt; rowToGroupIdx_;  // size == visible row count
+std::vector&lt;GroupRange&gt; groups_;       // size == enumeratedIds.size()</code></pre>
+  <p><strong>rebuild</strong>
+    (<code>listview-group-callback.cpp:119-167</code>): 우선
+    <code>iGroupId → groupIndex</code> 임시 unordered_map을 만든 뒤
+    visible row를 한 번 훑으며 각 row의 group id를
+    <code>groupIdForEntry(key, entry, nowFiletime)</code>로 계산해
+    인덱스로 변환한다. id가 enumerate되지 않았으면 group 0으로
+    묶어 comctl에 E_INVALIDARG 반환을 피하는 방어 코드가
+    <code>listview-group-callback.cpp:148-154</code>에 있다.
+    각 그룹의 <code>firstRow</code>는 첫 행에서만 set, <code>count</code>는
+    증가시킨다 — 즉 visible order가 이미 그룹별로 클러스터링되어
+    있다고 전제한다(헤더 주석 <code>listview-group-callback.h:218-222</code>).</p>
+
+  <p>콜백 메서드 의미:</p>
+  <ul>
+    <li><code>GetItemPosition</code>/<code>SetItemPosition</code>
+      (<code>listview-group-callback.cpp:58-74</code>):
+      details 뷰만 사용하므로 (0,0) 반환 / no-op.</li>
+    <li><code>GetItemGroup</code>
+      (<code>listview-group-callback.cpp:92-102</code>):
+      <code>rowToGroupIdx_[itemIndex]</code> O(1) lookup.</li>
+    <li><code>GetItemInGroup</code>
+      (<code>listview-group-callback.cpp:76-90</code>):
+      <code>groups_[gi].firstRow + itemIndexInGroup</code> O(1).</li>
+    <li><code>GetItemGroupCount</code>
+      (<code>listview-group-callback.cpp:104-110</code>):
+      항상 1 — 행 하나가 정확히 한 그룹에 속함.</li>
+    <li><code>OnCacheHint</code>
+      (<code>listview-group-callback.cpp:112-117</code>): no-op
+      (advisory).</li>
+  </ul>
+
+  <p><strong>(2) Histogram</strong>
+    (<code>DispInfoHistogram</code>):
+    <code>LVN_GETDISPINFO</code> 핸들러에서 측정한 QPC 틱 delta를
+    누적 (<code>dispinfo-histogram.cpp:26-37</code>:
+    <code>(delta * 1'000'000) / hz</code>). 7개의 upper-exclusive
+    bucket [0,1)/[1,5)/[5,20)/[20,50)/[50,100)/[100,500)/[500,∞) μs로
+    버킷팅하여 raw sample 저장 없이 p99를 추정한다.
+    버킷 경계가 50 μs를 포함하는 것은 §14.3 게이트(p99 ≤ 50 μs)에
+    버킷 경계가 정확히 맞도록 한 의도라고 주석이 밝힌다
+    (<code>dispinfo-histogram.h:18-21</code>).
+    <code>p99EstimateMicros</code>
+    (<code>dispinfo-histogram.cpp:39-59</code>)는
+    <code>target = (total * 99 + 99) / 100</code>의 ceil 랭크를 찾아
+    그 버킷의 upper bound를 반환 (마지막 버킷은
+    <code>UINT64_MAX</code>).
+    <code>dumpDispInfoHistogram</code>
+    (<code>dispinfo-histogram.cpp:61-98</code>)은
+    <code>DispInfoHistogramLineSink</code> 콜백으로 헤더 + 7 라인을
+    내보낸다.</p>
+
+  <h3>4.7 Filter Pattern</h3>
+
+  <p>세 모드의 표현
+    (<code>filter-pattern.h:16-20</code>):
+    Plain(부분 문자열), Wildcard(<code>*</code>, <code>?</code> 글롭),
+    Regex(<code>std::wregex</code> ECMAScript). 세 모드 모두 <strong>ASCII
+    case-insensitive</strong>를 <code>std::towlower</code> + C 로케일로
+    구현 — 비-ASCII는 fold 안 됨이 헤더에 명시되어 있다
+    (<code>filter-pattern.h:34-37</code>).</p>
+
+  <p><strong>구성 시</strong>(<code>filter-pattern.cpp:105-111</code>):
+    쿼리를 <code>toLowerCopy</code>로 소문자화한 뒤 보관. Regex 모드는
+    <code>tryCompileRegex</code>(<code>filter-pattern.cpp:89-99</code>)가
+    <code>std::regex_error</code>와 <code>std::bad_alloc</code>을 try/catch로
+    삼켜 <code>std::nullopt</code>를 반환, 그러면 <code>valid_=false</code>가
+    되고 <code>matches</code>가 항상 false를 돌려준다.
+    icase 플래그는 명시적으로 제거됨 — 이중 case fold를 피하고
+    리터럴 fast path를 보존하기 위해 (주석
+    <code>filter-pattern.cpp:84-88</code>).</p>
+
+  <p><strong>매칭</strong> (<code>filter-pattern.cpp:113-142</code>):
+    <ol>
+      <li>empty query → true.</li>
+      <li>!valid → false.</li>
+      <li>Regex 모드 + 입력 길이 &gt; <code>kMaxRegexInputWchars=4096</code>
+        → false (ReDoS 가드,
+        <code>filter-pattern.h:48</code> /
+        <code>filter-pattern.cpp:117-121</code>).</li>
+      <li><code>foldToBuffer</code>로 입력명을 lower-fold.
+        ≤ 256 wchar는 스택 버퍼, 초과는 힙 (<code>kStackBufWchars</code>,
+        <code>filter-pattern.cpp:17, 35-56</code>). 힙 alloc 실패는
+        <code>oom</code> out-flag로 우회 — <code>matches</code>가
+        noexcept 계약을 유지하기 위함.</li>
+      <li>모드별 분기: Plain은
+        <code>loweredName.find(query_)</code>; Wildcard는
+        <code>wildcardMatch</code> 호출; Regex는
+        <code>std::regex_search</code> + try/catch.</li>
+    </ol>
+  </p>
+
+  <p><strong>Wildcard 알고리즘</strong>
+    (<code>filter-pattern.cpp:62-81</code>): 고전적인
+    <strong>iterative star-backtrack 글롭</strong>. <code>starPi/starNi</code>
+    두 변수로 마지막 <code>*</code> 위치를 기억하고 진행이 막히면
+    그 시점으로 되돌아간다. 최악 O(name × pat), 평균은 대부분
+    backtrack 없이 O(name + pat). 패턴 끝의 연속 <code>*</code>를
+    consume하는 trailing 루프(<code>filter-pattern.cpp:79</code>)가
+    있다.</p>
+
+  <p><strong>모드 자동 감지</strong>
+    (<code>detectFilterMode</code>, <code>filter-pattern.cpp:144-161</code>):
+    <ul>
+      <li><code>"r:"</code> prefix → Regex (prefix 제거).</li>
+      <li>그 외 <code>*</code> 또는 <code>?</code> 포함 → Wildcard.</li>
+      <li>나머지 → Plain.</li>
+    </ul>
+    "r:" 검사가 와일드카드 스캔보다 먼저라서
+    <code>r:foo.*\.txt</code> 같이 regex 안에 <code>?</code>/<code>*</code>가
+    들어가도 정상적으로 regex로 라우팅된다 (주석
+    <code>filter-pattern.cpp:146-147</code>).</p>
+
+  <p><strong>applyFilter</strong>
+    (<code>filter-pattern.cpp:163-185</code>):
+    <code>FileModelStore::publishedCount()</code> 전수를 raw index 순으로
+    훑어 매치하는 항목을 <code>std::vector&lt;uint32_t&gt;</code>로
+    리턴. empty 쿼리는 0..N-1을 그대로 채운다.
+    <code>assert</code>로 published count가
+    <code>uint32_t</code>를 넘지 않음을 강제 (4.29B 한계,
+    <code>filter-pattern.cpp:168-169</code>).</p>
+
+  <h3>4.8 도입된 알고리즘/이론</h3>
+
+  <ul>
+    <li><strong>이중 자료구조 LRU</strong>(doubly-linked list +
+      hash map): <code>ExtensionIconCache</code>
+      (<code>extension-icon-cache.h:60-63</code>)와
+      <code>FormatCache::Lru</code> (<code>format-cache.h:46-73</code>)가
+      동일한 패턴을 각자 구현. 평균 O(1) lookup/insert,
+      MRU promotion은 <code>std::list::splice</code>로 O(1)
+      (<code>extension-icon-cache.cpp:41</code>,
+      <code>format-cache.h:58</code>).</li>
+    <li><strong>키 정규화 — ASCII 비트 트릭</strong>:
+      <code>extension-icon-cache.cpp:18-19</code>의
+      <code>ch + (L'a' - L'A')</code> 분기는 ASCII 핫패스, 나머지는
+      <code>std::towlower</code>로 fallback.</li>
+    <li><strong>분 단위 키 truncation</strong>:
+      <code>format-cache.cpp:44</code> —
+      <code>minuteKey = ft100ns - (ft100ns % kTicksPerMinute)</code>.
+      포맷 출력 해상도와 키 해상도를 맞춰 hit rate를 극대화하는
+      classic 캐시 라이닝 트릭.</li>
+    <li><strong>Iterative wildcard with star-backtrack</strong>:
+      <code>filter-pattern.cpp:62-81</code> — Bell Labs glob 스타일,
+      재귀 없음.</li>
+    <li><strong>Bucketed histogram</strong>으로 streaming p99 추정:
+      <code>dispinfo-histogram.cpp:11-24, 39-59</code> — raw sample
+      저장 없이 7-bucket으로 게이트 경계만 정확히 판정.</li>
+    <li><strong>Coalesced cross-thread post</strong> via
+      <code>ResultChannel</code>(<code>result-channel.h:27-78</code>):
+      <code>std::atomic&lt;bool&gt; postPending_</code> CAS로 다중
+      <code>publish</code>당 <code>PostMessage</code> 1회만 발생;
+      drain이 같은 mutex 임계 영역에서 flag 클리어해
+      worker-publish-between-swap-and-clear race를 봉인 (주석
+      <code>result-channel.h:15-23</code>).</li>
+    <li><strong>STA 아파트 + jthread stop-token</strong>:
+      <code>icon-provider.cpp:95-113</code>의
+      <code>CoInitializeEx(COINIT_APARTMENTTHREADED)</code>가
+      <code>SHGetFileInfoW</code>가 반환한 HICON을 마샬링 없이
+      UI 스레드로 넘길 수 있게 함 (주석
+      <code>icon-provider.cpp:96-100</code>).
+      <code>cv_.wait(lk, tok, predicate)</code>은
+      <code>condition_variable_any</code>의 stop-token 오버로드
+      (<code>icon-provider.cpp:54</code>).</li>
+    <li><strong>Atomic-wait test sync</strong>:
+      <code>processed_.wait(current)</code> /
+      <code>notify_all()</code>로 부가 채널 없이 테스트가 완료를
+      대기 (<code>icon-provider.cpp:43-50, 91-93</code>).</li>
+    <li><strong>Win32 ordinal case folding</strong>(<code>NTFS</code>
+      케이스 폴딩과 일치): <code>folder-name.cpp:18-23</code>의
+      <code>CompareStringOrdinal(..., TRUE)</code>. 주석에
+      "<code>towlower</code>는 ASCII만 옳게 fold함"이라고
+      명시 (<code>folder-name.cpp:19-20</code>).</li>
+    <li><strong>Vtable padding을 통한 undocumented COM</strong>
+      슬롯 호출: <code>listview-group-callback.h:61-183</code>가
+      가상 stub 113개로 spacing을 맞춰 정확한
+      vtable index 112의
+      <code>SetOwnerDataCallback</code>에 도달.</li>
+    <li><strong>Ceil-rank 분위수</strong>:
+      <code>dispinfo-histogram.cpp:45</code>의
+      <code>target = (total * 99 + 99) / 100</code>는
+      <code>ceil(0.99 × total)</code>의 정수 표현.</li>
+    <li><strong>Nearest-integer DPI scaling</strong>:
+      <code>dpi-scale.h:14-15</code>의
+      <code>(v * dpi + kDefaultDpi/2) / kDefaultDpi</code> — round-half-up
+      정수 곱셈.</li>
+  </ul>
+
+  <h3>4.9 주목할 구현 세부사항</h3>
+
+  <ul>
+    <li><strong>DPI 스케일링</strong>: icon size는 생성 시점 한 번만
+      반영되며 (<code>icon-cache.cpp:35-36</code>의
+      <code>scaleForDpi(GetSystemMetrics(SM_CXSMICON), dpi)</code>),
+      DPI 변경 시 <code>shrinkIconCache</code>처럼 통째 재생성이
+      필요하다. <code>IconCacheCoordinator</code>는 ctor에서 받은
+      <code>dpi_</code>를 멤버에 보관해
+      <code>shrinkIconCache</code>가 동일 DPI로 재생성하지만
+      (<code>icon-cache-coordinator.h:56,
+      icon-cache-coordinator.cpp:93</code>), DPI 변경 시
+      coordinator를 다시 만드는 별도 경로가 필요함은 명시되어 있지
+      않다(소스 범위 밖).</li>
+    <li><strong>byteSize() 진단</strong>(<code>icon-cache.cpp:80-99</code>):
+      ILC_COLOR32 = 4 bytes/pixel + ILC_MASK = 1 bit/pixel 가정으로
+      메모리 사용량 추정. 주석 명시 진단 전용.</li>
+    <li><strong>Placeholder slot 인덱스 정확성 검증</strong>:
+      <code>icon-cache.cpp:55-59</code>에서
+      <code>ImageList_AddIcon</code>이 정확히 0과 1을 반환하는지
+      확인하고 아니면 전체를 폐기. 후속 코드가
+      <code>kPlaceholderFolderIndex=0</code>,
+      <code>kPlaceholderFileIndex=1</code>(<code>icon-cache.h:15-16</code>)에
+      의존하기 때문.</li>
+    <li><strong>"placeholder pin" 패턴</strong>으로 중복 요청 차단:
+      L1 miss 시 정답이 오기 전에 placeholder index로
+      <code>insert</code>해 두어 (<code>icon-cache-coordinator.cpp:48</code>)
+      후속 행이 다시 enqueue하지 않게 함.
+      <code>onIconBatch</code>가 도착하면
+      <code>insert(ext, slot)</code>로 진짜 슬롯으로 덮어쓴다
+      (<code>icon-cache-coordinator.cpp:83</code>; <code>insert</code>의
+      "기존 키면 값 갱신" 분기,
+      <code>extension-icon-cache.cpp:51-56</code>).</li>
+    <li><strong>HICON 핸들 소유 이전</strong>:
+      <code>IconResult</code>는 move-only로 구현되어 copy가
+      컴파일 단계에서 차단 (<code>icon-provider.h:53-69</code>) —
+      두 객체가 같은 HICON을 claim하는 버그를 막는 의도가
+      <code>icon-provider.h:47-49</code> 주석에 명시.</li>
+    <li><strong>Low-memory 응답이 부분 evict 아닌 전량 reset</strong>:
+      <code>shrinkIconCache</code>가 placeholder-only 상태로 통째
+      교체 (<code>icon-cache-coordinator.cpp:89-108</code>).
+      <code>ExtensionIconCache::insert</code>가 evicted slot을
+      out-param으로 돌려주는 기능은 정의만 되어 있고 실제 호출자가
+      이를 사용하지 않는다 (위 4.4 참조).</li>
+    <li><strong>Defensive HICON cleanup</strong>:
+      <code>onIconBatch</code>의 의존성 누락 분기
+      (<code>icon-cache-coordinator.cpp:61-71</code>),
+      <code>~IconProvider</code>의 stop-then-drain 시퀀스
+      (<code>icon-provider.cpp:23-33</code>),
+      <code>createPlaceholderImageList</code>의 실패 시 폐기
+      (<code>icon-cache.cpp:55-59</code>) — 모든 실패 경로에서
+      HICON/HIMAGELIST가 정확히 한 번 해제되도록 짜여 있다.</li>
+    <li><strong>Worker shutdown 순서</strong>:
+      <code>~IconProvider</code>에서 명시적으로
+      <code>request_stop+join</code>한 뒤 drain — 기본 jthread
+      소멸은 dtor 본문 이후이므로 그 사이의 HICON이 leak된다는
+      구체적 근거가 <code>icon-provider.cpp:17-22</code>에 적혀
+      있다.</li>
+    <li><strong>FormatCache 참조 무효화 계약</strong>: 반환된
+      <code>const std::wstring&amp;</code>는 동일 캐시의 다음 mutation
+      전까지만 유효하다 (<code>format-cache.h:27-30</code>) — caller가
+      복사 전에 다른 컬럼을 캐시에 채우면 reference가 evict로
+      날아간다.</li>
+    <li><strong>FilterPattern noexcept matches</strong>:
+      heap alloc 실패조차 throw가 아닌 oom out-flag로 처리해
+      (<code>filter-pattern.cpp:35-56, 124-127</code>) message-pump
+      너머로 예외가 새는 일을 막는다.</li>
+    <li><strong>regex_search 예외 안전</strong>:
+      <code>filter-pattern.cpp:134-139</code>가
+      <code>std::regex_search</code> 호출을 try/catch로 감싸
+      false로 변환 — 일부 std::regex 구현이 runtime exception을
+      던지는 경우 대비.</li>
+    <li><strong>folder-name 중복 회피 cap</strong>: suffix 루프가
+      <code>2..999'999</code>로 제한 (<code>folder-name.cpp:45</code>) —
+      이론적 무한 루프 차단; 최후엔 마지막 candidate을 반환.</li>
+    <li><strong>statusBarPartLayout</strong>이 인자를 무시하고 항상
+      1-part full-width 레이아웃 반환
+      (<code>status-text.h:83-88</code>). "API 안정성을 위해 인자
+      유지"라는 의도가 주석에 명시. <code>kStatusBarPartExtendsToEdge=-1</code>
+      sentinel을 사용.</li>
+    <li><strong>EnumerationError 메시지 다국어</strong>:
+      <code>status-text.cpp:13-30</code>의 에러 메시지는 한국어,
+      나머지 status 텍스트(<code>Loading:</code>, <code>items</code>,
+      <code>Moved ... to Recycle Bin</code>)는 영어로 혼재.
+      <code>None</code> / <code>Canceled</code>는 nullptr로 처리해
+      caller가 빈 문자열을 받아 상태바 쓰기를 skip하도록 설계
+      (<code>status-text.cpp:115-124</code>).</li>
+    <li><strong>opResultBatchStatusText</strong>의 분기 전략
+      (<code>status-text.cpp:186-232</code>): all-Delete 케이스만 "N개
+      이동/실패" aggregate, mixed kind는 "최신 결과 + (+N more)"로
+      fallback. Rename/CreateFolder는 단발성 UI 액션이라
+      배치되지 않는다는 근거가 주석에 명시.</li>
+    <li><strong>humanReadableSize 경계 트릭</strong>:
+      <code>status-text.cpp:80-83</code>의
+      <code>kNextUnitThreshold = 1023.95</code> — <code>swprintf</code>가
+      1023.99를 "1024.0 KB"로 잘못 반올림하지 않게 다음 단위로
+      미리 점프시키는 안전장치.</li>
+    <li><strong>Group rebuild 방어</strong>:
+      enumerated id에 없는 row를 group 0으로 강제 매핑하여
+      stale snapshot 상황에서도 E_INVALIDARG를 comctl에 돌려주지
+      않는다 (<code>listview-group-callback.cpp:148-154</code>).
+      또한 firstRow가 음수로 남은 group은 0으로 보정해
+      <code>GetItemInGroup</code> bounds check가 깔끔히 거절하도록
+      함 (<code>listview-group-callback.cpp:164-166</code>).</li>
+    <li><strong>Histogram 마지막 버킷 표기</strong>:
+      <code>p99EstimateMicros</code>가 마지막 버킷이면
+      <code>UINT64_MAX</code>를 반환,
+      <code>dumpDispInfoHistogram</code>이 이를 감지해
+      <code>"p99&gt;=500us"</code>로 (그 외엔 <code>"p99&lt;=N us"</code>로)
+      출력 (<code>dispinfo-histogram.cpp:69-80</code>).</li>
+  </ul>
+</section>
+<section class="module" id="module-5">
+  <h2>5. Core Data Model · Filesystem · Performance · Diagnostics</h2>
+  <p class="scope"><strong>범위:</strong>
+    <code>src/core/</code>의 데이터 모델·FS 백엔드·성능/진단 모듈
+    (<code>directory-enumerator</code>, <code>file-entry</code>,
+    <code>file-grouping</code>, <code>file-model-store</code>,
+    <code>file-sort</code>, <code>fs-backend</code>, <code>fs-watcher</code>,
+    <code>name-arena</code>, <code>path-utils</code>, <code>perf-tracker</code>,
+    <code>process-memory</code>, <code>ring-logger</code>,
+    <code>settings-store</code>, <code>text-utf</code>,
+    <code>win32-fs-backend</code>, <code>memory-fs-backend</code>,
+    <code>crash-handler</code>) 및 perf/진단과 결합된 UI 헬퍼
+    (<code>ui/dark-scrollbar-hook</code>, <code>ui/stall-probe</code>).
+  </p>
+
+  <h3>5.1 데이터 모델 개요</h3>
+  <p>
+    한 pane의 디렉터리 데이터는
+    <code>FileModelStore</code>(<code>src/core/file-model-store.h:43</code>)가
+    소유하며, 내부에 세 가지 고정 크기 자원을 한 번에 잡아 둡니다.
+  </p>
+  <ul>
+    <li>
+      <code>entries_</code>: <code>std::unique_ptr&lt;FileEntry[]&gt;</code>,
+      길이 <code>kMaxEntries = 100'000</code>
+      (<code>file-model-store.h:49</code>). 생성자에서
+      <code>make_unique&lt;FileEntry[]&gt;(kMaxEntries)</code>로 한 번에
+      예약되어 push_back 재할당을 원천 차단합니다
+      (<code>file-model-store.cpp:13</code>).
+    </li>
+    <li>
+      <code>visibleOrder_</code>: <code>std::uint32_t[kMaxEntries]</code>,
+      <code>entries_</code>에 대한 정렬/필터링용 인덱스 퍼뮤테이션
+      (<code>file-model-store.h:182</code>,
+      <code>file-model-store.cpp:14</code>).
+    </li>
+    <li>
+      <code>nameArena_</code>: <code>NameArena</code> (<code>file-model-store.h:180</code>).
+      <code>FileEntry::namePtr</code>(<code>file-entry.h:49</code>)는
+      이 아레나 내부 주소를 alias 합니다. 소유 관계는
+      <em>store → arena → entry.namePtr</em>이며,
+      <code>store</code>가 살아 있는 동안 <code>namePtr</code>이 유효함이
+      <code>file-model-store.h:103-104</code>의 주석으로 명시됩니다.
+    </li>
+  </ul>
+  <p>
+    <code>FileEntry</code>는 정확히 40바이트로 고정되어 있으며
+    (<code>file-entry.h:61</code>) <code>std::is_trivial_v</code>·
+    <code>standard_layout</code>·<code>trivially_copyable</code>임이
+    static_assert로 강제됩니다(<code>file-entry.h:61-74</code>). 이는
+    "100k entries → 4MB 구조체 + ~4.8MB name arena per-pane 예산"이라는
+    설계 한도를 만족시키기 위한 손튜닝 레이아웃입니다
+    (<code>file-entry.h:9-20</code>).
+  </p>
+  <p>
+    동시성: <code>workerSize_</code>·<code>publishedCount_</code>가
+    <code>std::atomic&lt;uint32_t&gt;</code>이고, 단일 writer(enum worker)가
+    append 후 release-store, 모든 reader는 acquire-load 합니다
+    (<code>file-model-store.h:188-191</code>,
+    <code>file-model-store.cpp:36-56</code>).
+    UI는 <code>publishedCount()</code>를, worker 내부 로직은
+    <code>itemCount()</code>를 보는 두 단계 게이트가
+    <code>file-model-store.h:76-99</code>에 분리되어 있습니다.
+  </p>
+
+  <h3>5.2 핵심 클래스와 책임</h3>
+<div class="table-wrap">
+  <table>
+    <thead><tr><th>클래스</th><th>위치</th><th>책임</th></tr></thead>
+    <tbody>
+      <tr>
+        <td><code>FileEntry</code> (struct)</td>
+        <td><code>file-entry.h:48</code></td>
+        <td>40바이트 POD. namePtr/size/mtime/attributes/flags/states 등을 비트팩.</td>
+      </tr>
+      <tr>
+        <td><code>FileModelStore</code></td>
+        <td><code>file-model-store.h:43</code></td>
+        <td>pane 단위 entry 저장 + arena 소유 + visibleOrder/displaySubset 관리.</td>
+      </tr>
+      <tr>
+        <td><code>NameArena</code></td>
+        <td><code>name-arena.h:10</code></td>
+        <td>VirtualAlloc 기반 reserve+commit 아레나. <code>intern()</code> 호출 시 wchar 복사.</td>
+      </tr>
+      <tr>
+        <td><code>IFsBackend</code> (인터페이스)</td>
+        <td><code>fs-backend.h:74</code></td>
+        <td><code>openEnumeration()</code> / <code>next()</code> 두 메서드의 추상 FS.</td>
+      </tr>
+      <tr>
+        <td><code>EnumerationHandle</code></td>
+        <td><code>fs-backend.h:58</code></td>
+        <td>backend별 핸들 베이스. RTTI 대신 <code>BackendKind</code> tag로 dispatch.</td>
+      </tr>
+      <tr>
+        <td><code>Win32FsBackend</code></td>
+        <td><code>win32-fs-backend.h:17</code></td>
+        <td>FindFirstFileExW + WNetEnum 기반 운영용 백엔드.</td>
+      </tr>
+      <tr>
+        <td><code>MemoryFsBackend</code> / <code>FaultInjectingMemoryFsBackend</code></td>
+        <td><code>memory-fs-backend.h:19</code>, <code>:60</code></td>
+        <td>테스트용 in-memory FS와 fault injection 변종.</td>
+      </tr>
+      <tr>
+        <td><code>DirectoryEnumerator</code></td>
+        <td><code>directory-enumerator.h:27</code></td>
+        <td>open→next 루프 driver. batch flush·sharing-violation retry 담당.</td>
+      </tr>
+      <tr>
+        <td><code>FsWatcher</code></td>
+        <td><code>fs-watcher.h:18</code></td>
+        <td>ReadDirectoryChangesW + IOCP, 변경 시 HWND로 메시지 post.</td>
+      </tr>
+      <tr>
+        <td><code>SortSpec</code>·<code>compareEntries</code></td>
+        <td><code>file-sort.h:27</code>, <code>:36</code></td>
+        <td>SortKey × Direction 트라이스테이트 비교, 폴더 우선·name tiebreak.</td>
+      </tr>
+      <tr>
+        <td>group helpers</td>
+        <td><code>file-grouping.h:18-56</code></td>
+        <td>Name/Modified/Type 그룹 ID 계산 + 헤더 라벨링.</td>
+      </tr>
+      <tr>
+        <td><code>RingLogger</code></td>
+        <td><code>ring-logger.h:27</code></td>
+        <td>MPSC ring + 백그라운드 writer 스레드, %LOCALAPPDATA% 로그 파일.</td>
+      </tr>
+      <tr>
+        <td><code>PerfTracker</code></td>
+        <td><code>perf-tracker.h:19</code></td>
+        <td>10k 슬롯 lock-free 이벤트 링, QPC 기반 측정.</td>
+      </tr>
+      <tr>
+        <td><code>ProcessMemoryService</code></td>
+        <td><code>process-memory.h:35</code></td>
+        <td>Working-set 힌트 + Low-memory notification + EmptyWorkingSet.</td>
+      </tr>
+      <tr>
+        <td><code>CrashHandler</code></td>
+        <td><code>crash-handler.h:23</code></td>
+        <td>UnhandledExceptionFilter + invalid-parameter/purecall → MiniDump.</td>
+      </tr>
+      <tr>
+        <td><code>StallHistogram</code></td>
+        <td><code>ui/stall-probe.h:32</code></td>
+        <td>UI thread 디스패치 latency 7-버킷 히스토그램.</td>
+      </tr>
+      <tr>
+        <td>dark-scrollbar hook</td>
+        <td><code>ui/dark-scrollbar-hook.h:38</code></td>
+        <td>comctl32 delay-load IAT 패치로 ScrollBar→Explorer::ScrollBar.</td>
+      </tr>
+    </tbody>
+  </table></div>
+
+  <h3>5.3 Filesystem Backend 추상화</h3>
+  <p>
+    <code>IFsBackend</code>(<code>fs-backend.h:74-98</code>)는 두 개의
+    순수 가상 메서드만 노출합니다:
+  </p>
+  <pre><code>virtual Result&lt;std::unique_ptr&lt;EnumerationHandle&gt;&gt; openEnumeration(
+    const std::wstring&amp; path, std::stop_token tok) = 0;
+virtual Result&lt;std::optional&lt;FileEntry&gt;&gt; next(
+    EnumerationHandle&amp; handle, std::stop_token tok) = 0;</code></pre>
+  <p>
+    <code>Result&lt;T&gt;</code>(<code>fs-backend.h:38-56</code>)는
+    <code>value</code>와 <code>EnumerationError</code>를 함께 담는 단순
+    sum 타입입니다. <code>EnumerationHandle</code>은 <code>BackendKind</code>
+    tag를 들고 있어(<code>fs-backend.h:65</code>), 각 백엔드의
+    <code>next()</code>는 <code>handle.kind() != BackendKind::&lt;X&gt;</code>이면
+    <code>Internal</code>을 반환하는 방식으로 RTTI 비용 없이 핸들 출처를
+    검증합니다(<code>win32-fs-backend.cpp:355-358</code>,
+    <code>memory-fs-backend.cpp:94-97</code>).
+  </p>
+  <h4>Win32FsBackend</h4>
+  <p>
+    <code>win32-fs-backend.cpp</code>의 핵심은 두 가지 모드를 같은 핸들
+    타입에 포개는 것입니다(<code>win32-fs-backend.cpp:17-52</code>):
+  </p>
+  <ul>
+    <li>
+      <code>Mode::FileFind</code>: <code>FindFirstFileExW</code> 호출 시
+      <code>FindExInfoBasic</code> + <code>FindExSearchNameMatch</code> +
+      <code>FIND_FIRST_EX_LARGE_FETCH</code> 플래그를 사용합니다
+      (<code>win32-fs-backend.cpp:324-330</code>).
+      <code>FindExInfoBasic</code>은 short-name(8.3) 채우기를 생략시키며,
+      <code>FIND_FIRST_EX_LARGE_FETCH</code>는 큰 배치로 fetch 하라는
+      힌트입니다.
+    </li>
+    <li>
+      <code>Mode::ShareEnum</code>: 서버 단독 UNC(예 <code>\\10.10.10.23</code>)에
+      대해 <code>WNetOpenEnumW</code>/<code>WNetEnumResourceW</code>로
+      share 목록을 미리 수집해 두고 <code>next()</code>에서 하나씩
+      FileEntry로 합성합니다(<code>win32-fs-backend.cpp:223-285</code>,
+      <code>:364-378</code>). 주석에 따르면 NetShareEnum(RPC over named
+      pipe)을 차단하는 NAS 대응을 위해 WNetEnum 경로를 택했다고 명시되어
+      있습니다(<code>win32-fs-backend.cpp:226-232</code>).
+    </li>
+  </ul>
+  <p>
+    핸들은 자체적인 1MB <code>NameArena</code>를 들고 있어
+    (<code>win32-fs-backend.cpp:45</code>) 백엔드 단계의 namePtr이
+    handle 수명 동안 유효합니다. <code>buildEntry()</code>가
+    <code>WIN32_FIND_DATAW</code> →
+    <code>FileEntry</code> 변환을 담당하며, FILETIME 두 DWORD를
+    uint64로 결합하고 reparse tag가
+    <code>IO_REPARSE_TAG_SYMLINK</code>일 때만 <code>kIsSymlink</code>를
+    세팅합니다(<code>win32-fs-backend.cpp:138-159</code>).
+  </p>
+  <p>
+    Win32 에러 → <code>EnumerationError</code> 매핑은
+    <code>mapWin32Error</code>(<code>win32-fs-backend.cpp:54-87</code>)와
+    <code>mapWNetError</code>(<code>win32-fs-backend.cpp:208-221</code>)
+    두 테이블에 정리되어 있고, 네트워크 도달 실패(53, 67, 64, 1231,
+    1232, 52)는 <code>PathNotFound</code>로, 인증 실패(1326, 1311, 1219)는
+    <code>AccessDenied</code>로 정규화됩니다.
+  </p>
+
+  <h4>MemoryFsBackend</h4>
+  <p>
+    테스트용 in-memory 트리는 <code>tree_</code>를 <code>unordered_map&lt;
+    wstring, DirState&gt;</code>로 보관하고(<code>memory-fs-backend.h:54</code>),
+    공유된 <code>nameArena_</code>에 이름을 intern합니다
+    (<code>memory-fs-backend.cpp:39-54</code>). 핸들 카운터를 acquire-release로
+    추적해(<code>memory-fs-backend.cpp:31-33</code>) 살아 있는 핸들이
+    있는 채로 백엔드가 파괴되면 assert로 잡습니다.
+    <code>FaultInjectingMemoryFsBackend</code>는
+    <code>openHook</code>/<code>nextHook</code>를 override 해 특정 경로/
+    위치에서 에러를 주입합니다(<code>memory-fs-backend.cpp:117-151</code>).
+  </p>
+
+  <h3>5.4 Directory Enumeration</h3>
+  <p>
+    <code>DirectoryEnumerator::run()</code>(<code>directory-enumerator.cpp:55-133</code>)는
+    self-contained synchronous driver입니다. 클래스 자체는 스레드를 소유하지
+    않으며, 호출자가 <code>std::jthread</code>로 감싸 사용합니다
+    (<code>directory-enumerator.h:16-27</code>).
+  </p>
+  <p>핵심 흐름:</p>
+  <ol>
+    <li>
+      <code>backend.openEnumeration()</code> 시도. 에러가
+      <code>SharingViolation</code>이고 retry 카운트 잔여가 있으면
+      <code>interruptibleSleep(config_.sharingViolationRetryMs)</code> 후
+      다시 시도(<code>directory-enumerator.cpp:65-87</code>).
+      sleep 함수는 stop_token을 <code>kPollingQuantumMs = 10</code>ms
+      간격으로 폴링해 종료 시 즉시 빠져나옵니다
+      (<code>directory-enumerator.cpp:37-51</code>).
+    </li>
+    <li>
+      루프: <code>backend.next()</code> → <code>batch.push_back()</code>.
+      <code>batch.size() &gt;= config_.batchSize</code>(기본 256,
+      <code>directory-enumerator.h:30</code>)이면
+      <code>flushBatch()</code> 호출 → <code>store.appendBatch()</code> +
+      <code>onBatch(startIndex, count)</code> 콜백
+      (<code>directory-enumerator.cpp:20-32</code>,
+      <code>:128-131</code>).
+    </li>
+    <li>
+      <code>config_.includeHidden == false</code>이면
+      <code>FILE_ATTRIBUTE_HIDDEN</code> entry를 store 도달 전에 drop
+      (<code>directory-enumerator.cpp:125-127</code>).
+    </li>
+    <li>
+      중간에 <code>AccessDenied</code>가 발생해도 <code>store.itemCount() &gt; 0</code>
+      이면 success로 변환해 부분 결과를 UI에 보냅니다
+      (<code>directory-enumerator.cpp:106-114</code>).
+    </li>
+    <li>
+      취소(<code>stop_token</code>): open/next 경계마다 체크,
+      pending batch는 항상 flush 후 <code>Canceled</code> 반환
+      (<code>directory-enumerator.cpp:66-68</code>,
+      <code>:97-100</code>).
+    </li>
+  </ol>
+  <p>
+    Store 측 batching은 <code>FileModelStore::appendBatch()</code>
+    (<code>file-model-store.cpp:60-69</code>) → 단건 append를 한 entry씩
+    수행하며, 한 번 실패(arena/capacity/length)하면 즉시 중단해 실제
+    저장된 개수만 반환합니다.
+  </p>
+
+  <h3>5.5 Filesystem Watcher</h3>
+  <p>
+    <code>FsWatcher</code>(<code>fs-watcher.h:18-52</code>,
+    <code>fs-watcher.cpp</code>)는 <code>ReadDirectoryChangesW</code>를
+    <code>FILE_FLAG_OVERLAPPED</code>로 켜고
+    <code>CreateIoCompletionPort</code>로 IOCP에 묶어 백그라운드
+    <code>std::jthread</code>에서 대기합니다(<code>fs-watcher.cpp:22-43</code>).
+  </p>
+  <p>알림 필터(<code>fs-watcher.cpp:73-75</code>):</p>
+  <pre><code>constexpr DWORD kNotifyFilter =
+    FILE_NOTIFY_CHANGE_FILE_NAME | FILE_NOTIFY_CHANGE_DIR_NAME |
+    FILE_NOTIFY_CHANGE_SIZE | FILE_NOTIFY_CHANGE_LAST_WRITE;</code></pre>
+  <p>
+    버퍼는 <code>alignas(8) BYTE buffer[8192]</code>(<code>fs-watcher.cpp:71</code>)이며,
+    매 iteration 마다 <code>OVERLAPPED</code>을 zero-init 합니다(이전 완료의
+    <code>Internal</code>/<code>InternalHigh</code> 잔여 방지,
+    <code>fs-watcher.cpp:78-81</code>).
+  </p>
+  <p>
+    중요한 점: 이 layer에서는
+    <strong>이벤트 파싱·debounce·coalescing이 의도적으로 생략</strong>되어 있고
+    (<code>fs-watcher.h:13-15</code>의 주석에 명시), 단지
+    <code>bytes &gt; 0</code>이면 "뭔가 바뀌었으니 재평가해라"는 신호로
+    <code>PostMessageW(target_, message_, wp, 0)</code>를 보냅니다
+    (<code>fs-watcher.cpp:105-112</code>). <code>WPARAM</code>의 high
+    8 bits(offset 32)에 <code>paneIndex</code>를 담는 패킹은
+    <code>ui/messages.h::makePaneWParam</code>과 동일하게 inline
+    되어 있습니다(<code>fs-watcher.cpp:106-110</code>의 주석).
+  </p>
+  <p>
+    종료: <code>worker_.request_stop()</code> →
+    <code>CancelIoEx(dirHandle_, nullptr)</code> →
+    <code>PostQueuedCompletionStatus(iocp_, 0, 0, nullptr)</code>
+    (synthetic completion)으로 GetQueuedCompletionStatus를 강제 unblock
+    하고 join 합니다(<code>fs-watcher.cpp:45-68</code>).
+  </p>
+
+  <h3>5.6 정렬과 그룹핑</h3>
+  <h4>file-sort</h4>
+  <p>
+    <code>SortKey</code>(Name/Size/Modified/Type/None) ×
+    <code>SortDirection</code>(Asc/Desc)이 <code>SortSpec</code>으로 묶입니다
+    (<code>file-sort.h:14-30</code>).
+  </p>
+  <p>
+    <code>compareEntries</code>(<code>file-sort.cpp:110-127</code>)의
+    계약:
+  </p>
+  <ol>
+    <li>
+      디렉터리는 정렬 키와 방향에 관계없이 <strong>항상 파일 위에</strong>
+      옵니다(<code>file-sort.cpp:115-118</code>).
+      "Group folders first"는 fixed policy.
+    </li>
+    <li>
+      primary 비교는 키에 따라 분기. <code>SortKey::Name</code>·<code>Type</code>은
+      <code>CompareStringOrdinal(..., TRUE)</code> ignore-case
+      (<code>file-sort.cpp:23-31</code>)로 처리되며,
+      <code>SortKey::Size</code>/<code>Modified</code>는 정수/필타임 직접 비교
+      (<code>file-sort.cpp:92-99</code>).
+    </li>
+    <li>
+      <code>Descending</code>이면 primary를 부호 반전
+      (<code>file-sort.cpp:119-122</code>).
+    </li>
+    <li>
+      tiebreak은 항상 name ascending — <code>compareNameAsc</code>
+      (<code>file-sort.cpp:126</code>). <code>std::sort</code>의
+      stability에 의존하지 않는 결정적 순서를 보장합니다
+      (<code>file-sort.h:32-35</code>).
+    </li>
+  </ol>
+  <p>
+    Type 키는 자연어 정렬(<code>StrCmpLogicalW</code>)이 아니라
+    Explorer의 column formatter 출력 ("File folder" / "EXT File" / "File")을
+    스택 32-wchar 버퍼에 만든 뒤 비교합니다
+    (<code>file-sort.cpp:42-84</code>). 32 char 버퍼 한도는 trailing
+    " File"(5자) 예약을 빼면 27자까지의 확장자만 그대로 들어가도록 cap이
+    걸려 있습니다(<code>file-sort.cpp:69-77</code>). 자연어/논리 정렬
+    API(<code>StrCmpLogicalW</code>)는 이 파일에서 사용되지 않습니다.
+  </p>
+
+  <h4>file-grouping</h4>
+  <p>
+    <code>GroupKey</code>는 None/Name/Modified/Type 4종
+    (<code>file-grouping.h:18-23</code>).
+  </p>
+  <ul>
+    <li>
+      <strong>Name 그룹</strong>(<code>file-grouping.cpp:156-177</code>):
+      첫 글자가 한글 음절(U+AC00–U+D7A3)이면
+      <code>(c - 0xAC00) / 588</code>로 초성 인덱스 0~18을 계산합니다
+      (<code>file-grouping.cpp:20-22</code>, <code>:162-164</code>).
+      한글 호환 자모(U+3131–U+314E)는 <code>kCompatJamoToChoseong</code>
+      테이블(<code>:28-39</code>)로 매핑. ASCII 숫자→45, 알파벳→19+(c-'A'),
+      그 외→46("기타"). 헤더 라벨은
+      <code>kChoseongGlyph</code>(<code>:43-47</code>)와
+      <code>groupTitleForId</code>(<code>:217-267</code>).
+    </li>
+    <li>
+      <strong>Modified 그룹</strong>(<code>file-grouping.cpp:98-124</code>):
+      0=오늘, 1=어제, 2=이번 주(월요일 시작 — <code>daysFromMonday</code>가
+      Sunday=6으로 변환, <code>:83-86</code>), 3=이번 달, 4=올해, 5=더 오래전.
+      모든 경계는 local-midnight FILETIME 비교로 처리됩니다.
+    </li>
+    <li>
+      <strong>Type 그룹</strong>(<code>file-grouping.cpp:144-154</code>):
+      디렉터리=0, 확장자 없음=1, 확장자 있음=FNV-1a 해시
+      (<code>:129-142</code>, <code>kFnvOffset=0x811C9DC5</code>,
+      <code>kFnvPrime=0x01000193</code>, case-fold 후 hash → [2,
+      0x7FFFFFFE] 범위로 폴딩). 헤더 라벨은
+      <code>FormatCache::typeForEntry</code>를 통해 결정됩니다
+      (<code>:242-264</code>).
+    </li>
+  </ul>
+  <p>
+    <code>compareWithGroup</code>(<code>file-grouping.cpp:269-280</code>)는
+    group ID를 primary key로 둔 뒤 group tie에서 기존
+    <code>compareEntries</code>로 fall-through 합니다.
+  </p>
+
+  <h3>5.7 Name Arena</h3>
+  <p>
+    <code>NameArena</code>(<code>name-arena.h:10-51</code>)는
+    Windows <strong>VirtualAlloc reserve + commit on demand</strong>
+    아레나입니다.
+  </p>
+  <ul>
+    <li>
+      기본 reserve 16MB, commit chunk 64KB
+      (<code>name-arena.h:12-13</code>: <code>kDefaultReserveBytes</code>,
+      <code>kCommitChunkBytes</code>).
+    </li>
+    <li>
+      생성자에서 reserve를 64KB 배수로 올림 후
+      <code>VirtualAlloc(MEM_RESERVE, PAGE_NOACCESS)</code>
+      (<code>name-arena.cpp:27-31</code>). NOACCESS로 잡혀 있어 누가
+      실수로 reserved-but-not-committed 영역을 읽으면 즉시 폴트가 납니다.
+    </li>
+    <li>
+      <code>intern(view)</code>은 size_t 곱셈 오버플로우 가드
+      (<code>name-arena.cpp:76-83</code>) → 잔여 공간 체크
+      (<code>:85-91</code>) → 부족하면 한 chunk씩
+      <code>VirtualAlloc(addr, MEM_COMMIT, PAGE_READWRITE)</code>로 확장
+      (<code>:93-107</code>) → memcpy 후 view 반환(<code>:108-112</code>).
+    </li>
+    <li>
+      <code>reset()</code>은 <code>VirtualFree(base_, committed_,
+      MEM_DECOMMIT)</code>로 commit만 풀고 reserve는 유지해 즉시 재사용
+      가능합니다(<code>name-arena.cpp:115-133</code>).
+    </li>
+    <li>
+      소멸자: <code>VirtualFree(base_, 0, MEM_RELEASE)</code>
+      (<code>name-arena.cpp:33-38</code>).
+    </li>
+    <li>
+      copy 금지, move-only(<code>name-arena.cpp:40-70</code>).
+    </li>
+  </ul>
+  <p>
+    실패 모드: 임의의 <code>intern</code>이 비어 있지 않은 입력에 대해
+    빈 view를 반환하면 호출자가 fatal-per-pane으로 다루도록 명시되어
+    있습니다(<code>name-arena.h:27-31</code>).
+  </p>
+
+  <h3>5.8 텍스트 변환과 경로 유틸</h3>
+  <h4>text-utf</h4>
+  <p>
+    <code>widenUtf8</code>/<code>narrowUtf8</code>은
+    <code>MultiByteToWideChar</code>/<code>WideCharToMultiByte</code>를
+    "size query → allocate → 실제 변환"의 2-pass 패턴으로 호출하며,
+    실패 시 빈 문자열을 반환합니다(<code>text-utf.cpp:7-38</code>).
+    헤더(<code>text-utf.h:13-16</code>)에서
+    <code>ring-logger.cpp</code>는 의도적으로 이 helper를 쓰지 않고
+    스택 버퍼만 쓴다고 명시 — 크래시 핸들러 재진입 시 안전성 때문.
+  </p>
+
+  <h4>path-utils</h4>
+  <p>
+    표시용 경로(<em>display</em>)와 내부 경로(<em>internal</em>,
+    <code>\\?\</code> prefix) 간 변환 + 안전한 디렉터리 생성 helper를
+    제공합니다(<code>path-utils.h:8-56</code>).
+  </p>
+  <ul>
+    <li>
+      <code>toInternal</code>(<code>path-utils.cpp:167-253</code>):
+      UNC 우선 처리 → <code>\\?\UNC\server\share</code> 형식으로 정규화
+      (<code>:179-220</code>), 그 외에는 슬래시 정규화 후 드라이브 절대
+      경로 검증 → <code>\\?\</code> 접두를 붙입니다(<code>:240-252</code>).
+      금지문자(<code>&lt; &gt; " | ? *</code> + ADS <code>:</code> + 0x00–0x1F)는
+      <code>containsInvalidPathChar</code>(<code>:35-50</code>).
+    </li>
+    <li>
+      <code>toDisplay</code>(<code>path-utils.cpp:255-269</code>):
+      <code>\\?\UNC\</code>는 <code>\\</code>로, <code>\\?\</code>는 strip.
+    </li>
+    <li>
+      <code>joinPath</code>(<code>:271-280</code>): trailing separator
+      유무에 따라 single <code>\</code>를 안전하게 삽입.
+    </li>
+    <li>
+      <code>ensureDirectoryRecursive</code>(<code>:84-137</code>):
+      iterative + heap buffer로 long path 지원,
+      <code>CreateDirectoryW</code> + <code>ERROR_ALREADY_EXISTS</code>/
+      <code>ERROR_ACCESS_DENIED</code> 무시. noexcept이며 crash handler 등
+      제한된 컨텍스트에서 호출 가능하도록 설계됨(<code>path-utils.h:10-16</code>).
+    </li>
+    <li>
+      <code>resolveAppDataSubdir</code>(<code>:282-310</code>):
+      <code>FAST_EXPLORER_PORTABLE_ROOT</code> 환경변수 우선
+      (<code>:287-295</code>), 없으면
+      <code>SHGetKnownFolderPath(FOLDERID_LocalAppData)</code> +
+      <code>"\\FastExplorer\\" + sub</code>
+      (<code>:297-309</code>).
+    </li>
+  </ul>
+
+  <h3>5.9 설정 저장</h3>
+  <p>
+    저장소는 <strong>레지스트리가 아니라 JSON 파일</strong>이며
+    위치는 <code>resolveAppDataSubdir(L"settings.json")</code>로 결정됩니다
+    (<code>settings-store.cpp:562-568</code>). 즉
+    <code>%LOCALAPPDATA%\FastExplorer\settings.json</code> 또는 portable
+    root.
+  </p>
+  <p>
+    JSON 직렬화는 hand-rolled입니다. 의존성을 늘리지 않으려는 듯,
+    <code>JsonReader</code> 클래스(<code>settings-store.cpp:224-526</code>)가
+    object/string/int/float/skip 파서를 직접 구현합니다. boolean 리터럴은
+    지원하지 않으며 toggle 값은 0/1 정수로 직렬화됩니다
+    (주석: <code>settings-store.cpp:42-46</code>).
+  </p>
+  <p>스키마 v5(<code>kSchemaVersionCurrent = 5</code>, <code>:59</code>) 키 목록:</p>
+  <ul>
+    <li>v5 신규: <code>schema_version</code>, <code>pane_paths</code>(array),
+      <code>pane_count</code>, <code>active_pane</code>, <code>preset</code>(label),
+      <code>ratios</code>(preset→float[] map)
+      (<code>settings-store.cpp:52-57</code>).
+    </li>
+    <li>v4 view toggle: <code>view_show_hidden</code>,
+      <code>view_show_extensions</code> (<code>:44-45</code>).
+    </li>
+    <li>window geometry: <code>window_x/y/w/h</code> (<code>:33-37</code>).
+    </li>
+    <li>legacy(읽기만): <code>last_path</code>, <code>second_path</code>,
+      <code>layout_mode</code>, <code>orientation</code>
+      (<code>:32-49</code>, <code>settings-store.h:31-35</code>).
+    </li>
+  </ul>
+  <p>
+    <code>loadSessionState</code>(<code>settings-store.cpp:570-605</code>):
+    파일 64KB 상한(<code>kMaxSettingsBytes</code>, <code>:23</code>) 안에서
+    읽고 파싱 실패 시 state를 default로 리셋. 스키마 버전이 현재보다
+    낮으면 legacy 필드에서 v5 필드로 마이그레이션
+    (<code>:587-603</code>). leniency 정책: 알 수 없는 layout_mode/
+    orientation 문자열은 default로 fallback(<code>:411-431</code>).
+  </p>
+  <p>
+    <code>saveSessionState</code>(<code>:607-634</code>): 384 바이트
+    reserve 한 string에 append, <strong>temp 파일에 write+
+    FlushFileBuffers → MoveFileExW(MOVEFILE_REPLACE_EXISTING |
+    MOVEFILE_WRITE_THROUGH)</strong>로 원자 교체
+    (<code>:626-633</code>). FlushFileBuffers 호출 이유는
+    <code>:544-548</code>의 주석에 — MOVEFILE_WRITE_THROUGH는 rename
+    메타데이터만 보장하므로 데이터 extents flush를 별도로 강제해야 함.
+  </p>
+
+  <h3>5.10 Perf Tracker · Ring Logger · Stall Probe · Process Memory</h3>
+
+  <h4>PerfTracker</h4>
+  <p>
+    Lock-free MPSC 이벤트 링 (<code>perf-tracker.h:19-89</code>).
+    capacity = 10,000, slot size = 24 byte
+    (<code>perf-tracker.h:21</code>, <code>:41</code>의 static_assert).
+    슬롯당 <code>std::atomic&lt;uint64_t&gt; seq</code>를 두고
+    sequence-lock 방식으로 게시합니다:
+  </p>
+  <pre><code>// record(): ticket = cursor_.fetch_add(1);
+// seq.store(2*gen + 1, release);  // odd = in-progress
+// write payload …
+// seq.store(2*gen + 2, release);  // even = published</code></pre>
+  <p>
+    구현: <code>perf-tracker.cpp:38-62</code>. dumpToCallback은
+    <code>seq</code>가 홀수인 slot은 skip, baseline을 첫 패스에서 결정한
+    뒤 ms 단위로 출력(<code>:80-133</code>). QPC frequency는 생성자에서
+    캐싱(<code>:31-36</code>). EventId 종류는
+    <code>AppLaunchStart</code>(1), <code>AppInteractive</code>(2),
+    <code>AppShutdownStart</code>(3), <code>PaneOpenStart</code>(4),
+    <code>PaneFirstBatch</code>(5), <code>MemoryProbe</code>(6) —
+    <code>perf-tracker.h:23-32</code>.
+  </p>
+  <p>
+    Crash dump 통합: <code>rawSlotBuffer()</code>/<code>rawSlotBufferBytes()</code>
+    (<code>perf-tracker.h:71-72</code>)가 MiniDumpWriteDump의 user stream
+    제공자로 사용됩니다(§5.11 참조).
+  </p>
+
+  <h4>RingLogger</h4>
+  <p>
+    파일 위치: <code>%LOCALAPPDATA%\FastExplorer\logs\fast-explorer-YYYYMMDD.log</code>
+    (<code>ring-logger.cpp:29-36</code>의 <code>buildLogFileName</code>,
+    <code>:108-123</code>의 <code>openLogFile</code>).
+  </p>
+  <p>구조:</p>
+  <ul>
+    <li>
+      MPSC ring with <code>kSlotCount = 512</code>, <code>kSlotBytes = 256</code>,
+      메시지 cap <code>kMaxMessageBytes = 256 - 24</code>
+      (<code>ring-logger.h:38-40</code>).
+    </li>
+    <li>
+      Slot 구조: <code>seq</code>, FILETIME, threadId, level, length,
+      message[]; 슬롯 publication도 PerfTracker와 동일한 odd=in-progress /
+      even=published 패턴(<code>ring-logger.h:62-70</code>,
+      <code>ring-logger.cpp:174-187</code>).
+    </li>
+    <li>
+      백프레셔: writer가 reader를 <code>kSlotCount</code>만큼 추월할
+      위치라면 메시지를 drop하고 <code>dropped_</code> 카운터 증가 +
+      <code>OutputDebugStringA</code> fallback
+      (<code>ring-logger.cpp:156-172</code>, <code>:297-314</code>).
+      ticket 획득 후 한 번 더 재확인하는 double-check도 들어 있습니다.
+    </li>
+    <li>
+      Writer 스레드(<code>writerLoop</code>, <code>:249-295</code>):
+      <code>flushEvent_</code>(<code>kFlushIntervalMs = 100</code>ms,
+      <code>:15</code>)와 <code>stopEvent_</code>를
+      <code>WaitForMultipleObjects</code> 하다가 깨어나면 published slot을
+      drain. INFO+ 메시지는 즉시 flushEvent를 set 해 leveled urgency를
+      구현(<code>:189-191</code>). 종료 drain 시 in-flight slot이 publish 될 때까지
+      최대 100회 <code>Sleep(0)</code> spin-wait(<code>:275-281</code>).
+    </li>
+    <li>
+      WideChar → UTF-8 변환은 <code>WideCharToMultiByte(CP_UTF8, …)</code>로
+      슬롯에 직접 인코딩(<code>:138-149</code>).
+    </li>
+    <li>
+      shutdown 순서가 헤더 코멘트에 명시되어 있음
+      (<code>ring-logger.cpp:82-106</code>): stopEvent → join writer →
+      running=false → close handles.
+    </li>
+  </ul>
+
+  <h4>ProcessMemoryService</h4>
+  <p>
+    <code>process-memory.h:35-101</code> / <code>.cpp</code>.
+  </p>
+  <ul>
+    <li>
+      <code>start()</code>에서
+      <code>SetProcessWorkingSetSizeEx(min=8MB, max=128MB,
+      QUOTA_LIMITS_HARDWS_{MIN,MAX}_DISABLE)</code>로
+      <strong>advisory</strong> working-set 힌트를 설정합니다
+      (<code>process-memory.cpp:17-18</code>, <code>:54-62</code>).
+      HARDWS_*_DISABLE 플래그로 강제력은 없고 OS의 페이저 힌트로만 작용.
+    </li>
+    <li>
+      <code>CreateMemoryResourceNotification(LowMemoryResourceNotification)</code>
+      를 받아 <code>notifierLoop</code>가 백그라운드에서 대기
+      (<code>:64-78</code>, <code>:180-219</code>). state-based 객체라
+      신호가 계속 켜진 채로 있을 수 있으므로
+      <code>QueryMemoryResourceNotification</code>로 현재 상태를 확인하고
+      callback 1회 호출 후 <code>kLowMemoryReArmIntervalMs = 5000</code>ms
+      동안 stopEvent로 interruptible sleep(<code>:217</code>).
+    </li>
+    <li>
+      <code>notifyMinimized()</code>(<code>:103-141</code>): UI 스레드가
+      WM_SIZE에서 호출. <code>kEmptyWorkingSetThrottleMs = 1000</code>
+      throttle을 CAS로 적용(<code>:107-117</code>), 통과 시
+      <code>SetPriorityClass(PROCESS_MODE_BACKGROUND_BEGIN)</code> →
+      <code>EmptyWorkingSet</code> 호출 → QPC로 latency(µs) 측정.
+      <code>EmptyWorkingSetProbe</code>에 before/after WSS와 µs를 저장
+      (<code>:122-141</code>).
+    </li>
+    <li>
+      <code>notifyRestored()</code>는 BACKGROUND_END
+      (<code>:149-151</code>).
+    </li>
+    <li>
+      <code>workingSetBytes()</code>/<code>privateBytes()</code>:
+      <code>GetProcessMemoryInfo</code> + <code>PROCESS_MEMORY_COUNTERS_EX</code>
+      (<code>:158-178</code>).
+    </li>
+    <li>
+      편의 함수 <code>recordMemoryProbe(PerfTracker&amp;)</code>은
+      <code>EventId::MemoryProbe</code> + <code>workingSetBytes()</code>를
+      한 번에 기록(<code>process-memory.cpp:10-13</code>).
+    </li>
+  </ul>
+
+  <h4>StallProbe</h4>
+  <p>
+    <code>ui/stall-probe.h:32</code> / <code>.cpp</code>.
+    UI 스레드 message-pump의 디스패치 간 지연(µs)을 7 버킷
+    히스토그램으로 누적합니다.
+  </p>
+  <p>임계치(<code>stall-probe.h:16-18</code>):</p>
+  <ul>
+    <li><code>kStallInfoMicros = 50,000</code> (50ms)</li>
+    <li><code>kStallWarnMicros = 100,000</code> (100ms)</li>
+    <li><code>kStallErrorMicros = 500,000</code> (500ms)</li>
+  </ul>
+  <p>
+    버킷 경계(<code>kBucketUpperMicros</code>,
+    <code>stall-probe.h:35-37</code>): 1ms · 5ms · 16ms · 50ms · 100ms ·
+    500ms · ∞ — Info/Warn/Error와 동일한 경계에서 cross 하도록 정렬
+    (<code>stall-probe.h:28-31</code>). UI thread 단일 소비자이므로
+    동기화 없음(<code>:22-26</code>).
+  </p>
+
+  <h3>5.11 Crash Handler</h3>
+  <p>
+    <code>crash-handler.cpp</code>는
+    <strong>RingLogger 의존을 의도적으로 제거</strong>합니다(파일 헤더
+    주석 <code>:11-15</code>): heap이 깨졌거나 logger가 mid-write일
+    수 있어, Win32 + 스택 버퍼만 사용.
+  </p>
+  <p>설치되는 핸들러(<code>crash-handler.cpp:184-187</code>):</p>
+  <ul>
+    <li><code>SetUnhandledExceptionFilter(&amp;unhandledExceptionFilter)</code>
+      (<code>:142-145</code>) — top-level SEH filter.</li>
+    <li><code>_set_invalid_parameter_handler(&amp;invalidParameterHandler)</code>
+      (<code>:147-162</code>) — CRT invalid param에서
+      <code>wsprintfW</code>(signal-safer)로 메시지 빌드 후
+      <code>TerminateProcess(STATUS_ASSERTION_FAILURE)</code>.</li>
+    <li><code>_set_purecall_handler(&amp;purecallHandler)</code>
+      (<code>:164-167</code>) — 순수 가상 호출 시 dump 후
+      <code>STATUS_ACCESS_VIOLATION</code>으로 종료.</li>
+    <li><code>_set_abort_behavior(0, _WRITE_ABORT_MSG | _CALL_REPORTFAULT)</code>
+      (<code>:187</code>).</li>
+  </ul>
+  <p>
+    Vectored exception handler가 아닌 <strong>top-level</strong>
+    <code>SetUnhandledExceptionFilter</code>가 사용됨에 유의
+    (<code>:184</code>).
+  </p>
+  <p>덤프 작성(<code>writeDumpInternal</code>, <code>:64-140</code>):</p>
+  <ol>
+    <li>
+      재진입 가드: <code>std::atomic&lt;bool&gt; writing</code>의 CAS
+      (<code>:68-72</code>).
+    </li>
+    <li>
+      디렉터리 보장: <code>ensureDirectoryRecursive(g_state.dumpDirectory)</code>
+      — install 시 <code>resolveAppDataSubdir(L"crashdumps")</code>로 사전 결정
+      (<code>:40-51</code>).
+    </li>
+    <li>
+      파일명: <code>fast-explorer-&lt;PID&gt;-YYYYMMDD-HHMMSS.dmp</code>
+      (<code>:53-62</code>).
+    </li>
+    <li>
+      <code>MINIDUMP_USER_STREAM</code>에 PerfTracker ring을 통째로
+      attach: <code>Type = 0x46455031 ('FEP1')</code>
+      (<code>:23</code>, <code>:103-112</code>). 이걸로 post-mortem에서
+      마지막 perf 이벤트들을 그대로 볼 수 있습니다.
+    </li>
+    <li>
+      덤프 타입: <code>MiniDumpNormal | MiniDumpWithThreadInfo |
+      MiniDumpWithUnloadedModules</code>(<code>:114-115</code>).
+    </li>
+    <li>
+      <code>MiniDumpWriteDump(GetCurrentProcess(), GetCurrentProcessId(),
+      file, dumpType, meiPtr, &amp;streamInfo, nullptr)</code>
+      (<code>:117-120</code>).
+    </li>
+  </ol>
+  <p>
+    <code>writeManualDump(reason)</code>(<code>:202-210</code>)은 진단/스모크
+    테스트용 수동 트리거. <code>uninstall()</code>은 Windows가 filter
+    제거 API를 제공하지 않으므로 PerfTracker 포인터만 null로 만들고
+    installed 플래그를 false로 돌리는 short-circuit 방식
+    (<code>:195-200</code>).
+  </p>
+
+  <h3>5.12 Dark Scrollbar Hook</h3>
+  <p>
+    <code>ui/dark-scrollbar-hook.cpp</code>의 <code>installDarkScrollBarHook()</code>는
+    <code>comctl32.dll</code>이 delay-load 하는 <code>uxtheme.dll</code>의
+    <code>OpenNcThemeData</code>(ordinal 49) 함수 포인터를
+    프로세스 자체의 IAT 레벨에서 패치합니다.
+  </p>
+  <p>단계(<code>dark-scrollbar-hook.cpp:112-150</code>):</p>
+  <ol>
+    <li>
+      <code>installed</code> static flag로 idempotent 보장
+      (<code>:113-115</code>).
+    </li>
+    <li>
+      <code>LoadLibraryExW(L"uxtheme.dll", LOAD_LIBRARY_SEARCH_SYSTEM32)</code>
+      → <code>GetProcAddress(uxtheme, MAKEINTRESOURCEA(49))</code>로
+      원본 함수 포인터 캐싱(<code>:120-125</code>).
+    </li>
+    <li>
+      <code>LoadLibraryExW(L"comctl32.dll", …)</code>로 모듈 핸들 확보
+      (<code>:131-133</code>).
+    </li>
+    <li>
+      <code>findDelayLoadThunkByOrdinal(comctl, "uxtheme.dll", 49)</code>:
+      <code>IMAGE_DIRECTORY_ENTRY_DELAY_IMPORT</code>의
+      <code>IMAGE_DELAYLOAD_DESCRIPTOR</code> 테이블을 워크해
+      DLL 이름이 일치하면 ImportNameTable/ImportAddressTable을 같이
+      훑어 ordinal 49 슬롯을 찾습니다(<code>:70-86</code>,
+      <code>:53-63</code>).
+    </li>
+    <li>
+      <code>VirtualProtect(thunk, sizeof(IMAGE_THUNK_DATA),
+      PAGE_READWRITE, &amp;oldProtect)</code> → <code>thunk-&gt;u1.Function = (ULONG_PTR)&amp;myOpenNcThemeData</code>
+      → 원 protection 복원(<code>:139-145</code>). 8바이트짜리 단일 슬롯만
+      잠깐 쓰기 가능으로 풀고 즉시 닫는 패턴.
+    </li>
+  </ol>
+  <p>
+    <code>myOpenNcThemeData</code>(<code>:100-108</code>)는
+    <code>classList</code>가 <code>L"ScrollBar"</code>일 때만
+    <code>L"Explorer::ScrollBar"</code>로 치환해 dark variant를 강제하고,
+    HWND를 nullptr로 비우는데(주석에 따르면 Win11 Explorer가 같은
+    트릭을 씀), 다른 클래스는 그대로 chain.
+  </p>
+  <p>
+    출처/라이선스: 헤더 코멘트(<code>:1-22</code>)에 PolyHook_2_0(MIT) /
+    ysc3839/win32-darkmode / Notepad++ DarkMode 참조가 명시되어 있고,
+    트램폴린은 의도적으로 leak(uxtheme + comctl32는 프로세스 끝까지 pin됨,
+    <code>:147-149</code>).
+  </p>
+
+  <h3>5.13 도입된 알고리즘/이론</h3>
+  <ul>
+    <li>
+      <strong>Reserve + commit-on-demand arena</strong> (NameArena):
+      <code>VirtualAlloc(MEM_RESERVE, PAGE_NOACCESS)</code>로 큰 영역을
+      잡고 64KB 청크 단위로
+      <code>MEM_COMMIT, PAGE_READWRITE</code>(<code>name-arena.cpp:29</code>,
+      <code>:93-107</code>).
+    </li>
+    <li>
+      <strong>Sequence-lock 기반 lock-free MPSC ring</strong>
+      (PerfTracker, RingLogger): odd=in-progress / even=published
+      형태의 per-slot seq counter
+      (<code>perf-tracker.cpp:48-62</code>,
+      <code>ring-logger.cpp:174-187</code>).
+    </li>
+    <li>
+      <strong>Acquire/Release single-writer atomic size</strong>
+      (FileModelStore): worker만 <code>workerSize_</code>를 증가시키며
+      UI는 acquire-load + 별도 <code>publishedCount_</code>로 batch
+      boundary visibility 게이트(<code>file-model-store.h:177-191</code>).
+    </li>
+    <li>
+      <strong>IAT(delay-load) hooking</strong>: PE
+      <code>IMAGE_DIRECTORY_ENTRY_DELAY_IMPORT</code> 테이블을 직접 워크해
+      함수 포인터 슬롯을 교체(<code>dark-scrollbar-hook.cpp:38-86</code>).
+    </li>
+    <li>
+      <strong>Hangul syllable arithmetic decomposition</strong>:
+      <code>(c - 0xAC00) / 588</code>로 초성 인덱스 직접 산출
+      (<code>file-grouping.cpp:20-22</code>, <code>:162-164</code>).
+    </li>
+    <li>
+      <strong>FNV-1a 32-bit hash</strong> on case-folded extension
+      (<code>file-grouping.cpp:129-142</code>).
+    </li>
+    <li>
+      <strong>Atomic file-replace via write-temp + MoveFileExW</strong>
+      with <code>FlushFileBuffers</code> + <code>MOVEFILE_WRITE_THROUGH</code>
+      (<code>settings-store.cpp:626-633</code>).
+    </li>
+    <li>
+      <strong>IOCP-driven directory change polling</strong>: overlapped
+      ReadDirectoryChangesW + CreateIoCompletionPort + synthetic
+      PostQueuedCompletionStatus wakeup(<code>fs-watcher.cpp:22-43</code>,
+      <code>:51-56</code>).
+    </li>
+    <li>
+      <strong>Bounded retry with stop_token-aware polling sleep</strong>
+      (DirectoryEnumerator, <code>directory-enumerator.cpp:37-51</code>).
+    </li>
+    <li>
+      <strong>BackendKind tag instead of dynamic_cast</strong>로 RTTI
+      비용 회피(<code>fs-backend.h:32-36</code>).
+    </li>
+    <li>
+      <strong>MiniDump user stream</strong>: PerfTracker ring을
+      <code>0x46455031 ('FEP1')</code> 타입으로 minidump에 attach
+      (<code>crash-handler.cpp:23</code>, <code>:103-112</code>).
+    </li>
+    <li>
+      <strong>State-based memory notification + throttled re-arm</strong>
+      (ProcessMemoryService, <code>process-memory.cpp:180-219</code>).
+    </li>
+    <li>
+      <strong>Histogram-style stall classification</strong>(StallHistogram,
+      <code>stall-probe.cpp:15-28</code>).
+    </li>
+    <li>
+      <strong>CompareStringOrdinal</strong> 기반 ordinal IgnoreCase
+      비교; 자연어/논리 정렬(StrCmpLogicalW)은 사용되지 않음
+      (<code>file-sort.cpp:23-31</code>; 이 코드베이스에 StrCmpLogicalW
+      참조 not present in source).
+    </li>
+  </ul>
+
+  <h3>5.14 주목할 구현 세부사항</h3>
+  <ul>
+    <li>
+      <code>FileEntry</code>의 <code>states</code> 한 바이트는 nibble 두 개로
+      쪼개져 (low 4bit = icon state, high 4bit = metadata state) 16개씩의
+      enum을 packed로 보관합니다(<code>file-entry.h:33-42</code>,
+      accessor <code>:131-138</code>).
+    </li>
+    <li>
+      <code>kIsSymlink</code>는 <code>FILE_ATTRIBUTE_REPARSE_POINT</code>가
+      세팅된 경우에서도 <code>dwReserved0 == IO_REPARSE_TAG_SYMLINK</code>
+      일 때만 true. junction(<code>IO_REPARSE_TAG_MOUNT_POINT</code>) 등은
+      kIsReparse만 켜집니다(<code>file-entry.h:114-119</code>,
+      <code>win32-fs-backend.cpp:152-157</code>).
+    </li>
+    <li>
+      <code>extensionView</code>가 trailing dot을 1글자 view로 honor 하는
+      코너 케이스는 producer가 <code>kNoExtension</code>이나
+      <code>offset == nameLength</code>를 명시적으로 emit 해야 Explorer parity가
+      유지된다고 명시(<code>file-entry.h:85-97</code>).
+    </li>
+    <li>
+      <code>FileModelStore::reset()</code>은 <code>workerSize_</code>·
+      <code>publishedCount_</code>를 release-store로 0으로 돌리고
+      <code>displaySubset_.clear()</code>를 함께 호출해 이전 필터의
+      raw index가 새 store와 섞이지 않게 합니다
+      (<code>file-model-store.cpp:20-29</code>).
+    </li>
+    <li>
+      <code>visibleAt</code>는 displaySubset이 살아 있으면 subset
+      lookup, 아니면 sorted permutation lookup의 양분된 경로
+      (<code>file-model-store.cpp:76-90</code>); UI는
+      <code>displayedCount()</code>를 통해 두 경로를 균일하게 봅니다
+      (<code>file-model-store.h:160-162</code>).
+    </li>
+    <li>
+      <code>compareTypeDescriptionAsc</code>가 std::sort 비교 함수에서
+      매번 heap 할당하지 않도록 <code>std::array&lt;wchar_t, 32&gt;</code>
+      스택 버퍼를 쓰는 것은 의식적 최적화
+      (<code>file-sort.cpp:42-79</code>의 주석).
+    </li>
+    <li>
+      Enumerator의 mid-stream <code>AccessDenied</code> "부분 결과로
+      승격" 정책은 <code>store.itemCount() &gt; 0</code> 조건부이며,
+      0인 상태에서의 AccessDenied는 그대로 에러로 surface 됩니다
+      (<code>directory-enumerator.cpp:106-114</code>).
+    </li>
+    <li>
+      <code>FsWatcher</code>는 <strong>변경 이벤트의 내용을 전달하지 않습니다</strong>.
+      coalescing/debounce는 receiver(HWND owner) 책임이라고 헤더
+      주석에 명시(<code>fs-watcher.h:13-15</code>) — debounce 로직 자체는
+      이 파일들에 not present in source.
+    </li>
+    <li>
+      <code>Win32FsBackend</code>의 server-only UNC 분기는
+      "왜 NetShareEnum이 아니라 WNetEnumResource인가"의 사유를 코드
+      주석에 두텁게 적어 두었음(<code>win32-fs-backend.cpp:226-232</code>) —
+      모던 SMB2-only NAS에서 NetShareEnum의 named pipe 채널이 자주
+      차단되기 때문.
+    </li>
+    <li>
+      <code>RingLogger</code>의 dropped fallback 경로
+      (<code>OutputDebugStringA</code>)는 ticket을 얻은 직후에도 한 번 더
+      백프레셔를 재확인합니다 — concurrent producer가 사이에 끼어
+      cursor를 진전시킬 수 있어 double-check 필요
+      (<code>ring-logger.cpp:165-172</code>).
+    </li>
+    <li>
+      <code>RingLogger</code>는 INFO 이상에서만 즉시 flushEvent를 signal
+      해, low-level 메시지는 100ms timed flush까지 모아 쓰는 leveled
+      urgency를 채택(<code>ring-logger.cpp:189-191</code>,
+      <code>:15</code>).
+    </li>
+    <li>
+      <code>settings-store</code>의 ratios serializer는 <code>r.ratios[0..2]</code>가
+      모두 0인 preset은 출력에서 skip (<code>settings-store.cpp:202-205</code>),
+      reader는 그렇게 빠진 항목을 <code>defaultRatiosFor(preset)</code>로
+      채워 round-trip 일관성 유지(<code>settings-store.cpp:581-586</code>).
+    </li>
+    <li>
+      <code>JsonReader::parseIntInto</code>는 <code>INT_MIN</code> 정확
+      처리를 위해 누적 한도를 <code>kAccCap = INT_MAX + 1</code>로 잡고
+      음수 변환 후 범위를 재검사하는 미세 처리를 합니다
+      (<code>settings-store.cpp:300-325</code>).
+    </li>
+    <li>
+      <code>CrashHandler</code>가 <code>_vsnwprintf_s</code> 대신
+      <code>wsprintfW</code>를 쓰는 것은, vsnwprintf가 동일한
+      invalid-parameter handler를 다시 부를 수 있어 재귀를 유발하기 때문
+      (<code>crash-handler.cpp:152-154</code>의 주석).
+    </li>
+    <li>
+      <code>ProcessMemoryService::setLowMemoryCallback</code>은 callback을
+      mutex로 보호하지만, 호출 시점에는 lock을 풀고 로컬 복사본으로
+      invoke해 user code가 mutex 안에서 실행되지 않게 합니다
+      (<code>process-memory.cpp:200-211</code>의 패턴).
+    </li>
+    <li>
+      <code>PerfTracker</code>는 <code>rawSlotBuffer()</code>를
+      <code>void*</code>로 노출하지만 슬롯의 <code>std::atomic</code>은
+      평범한 <code>uint64_t</code>와 layout-compatible 하므로 minidump가
+      그대로 바이트 복사로 attach 가능합니다
+      (<code>perf-tracker.h:71-86</code>,
+      <code>crash-handler.cpp:103-112</code>).
+    </li>
+    <li>
+      <code>dark-scrollbar-hook</code>은 호출 타이밍 제약이 헤더에 명시:
+      <code>InitCommonControlsEx</code> 이후, MainWindow 생성 이전
+      (<code>dark-scrollbar-hook.h:26-30</code>). idempotency는
+      <code>static bool installed</code>로 보장
+      (<code>dark-scrollbar-hook.cpp:113-115</code>).
+    </li>
+    <li>
+      <code>file-entry.h</code>의 <code>static_assert(std::is_trivial_v)</code>는
+      "crash handler가 mid-write의 FileEntry를 raw bytes로 reinterpret
+      해도 정의되지 않은 init 코드가 들어가지 않게" 하기 위한 명시적
+      계약(<code>file-entry.h:69-74</code>).
+    </li>
+  </ul>
+</section>
+</main>
+
+<footer class="meta">
+  <p><strong>생성 메타데이터</strong></p>
+  <p>· 생성일: 2026-05-23</p>
+  <p>· 베이스 커밋: <code>e63ffff</code> (chore(appcast): publish v0.6.0)</p>
+  <p>· 분석 영역: 5개 모듈로 분할, 각 모듈별 독립 에이전트가 정독 후 작성</p>
+  <p>· 인용 원칙: 코드에 직접 보이지 않는 사실은 기재하지 않음. 부재 사실은 "not present in source"로 명시.</p>
+  <p>· 본 문서는 리팩토링 작업의 비교 기준선이며, 코드 변경 시 갱신되지 않습니다.</p>
+</footer>
+
+<a href="#" class="totop" aria-label="맨 위로">↑</a>
+</body>
+</html>
