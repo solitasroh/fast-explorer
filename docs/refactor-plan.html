@@ -1,0 +1,317 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>메인 윈도우 쪼개기 계획</title>
+<style>
+  :root {
+    --bg: #fafaf7;
+    --fg: #1f1f1f;
+    --muted: #5f5f5f;
+    --line: #e3e3dc;
+    --accent: #2c5d8a;
+    --warn: #b25600;
+    --code-bg: #f0efe9;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #1c1c1c;
+      --fg: #e8e6df;
+      --muted: #a8a59c;
+      --line: #3a3a3a;
+      --accent: #74a8d6;
+      --warn: #e29550;
+      --code-bg: #2a2a2a;
+    }
+  }
+  html { -webkit-text-size-adjust: 100%; }
+  body {
+    background: var(--bg);
+    color: var(--fg);
+    font-family: -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo",
+                 "Malgun Gothic", "Segoe UI", sans-serif;
+    line-height: 1.7;
+    max-width: 760px;
+    margin: 0 auto;
+    padding: 24px 20px 64px;
+    font-size: 16px;
+  }
+  h1 {
+    font-size: 1.6rem;
+    margin: 0 0 8px;
+    padding-bottom: 12px;
+    border-bottom: 2px solid var(--line);
+  }
+  h1 + p { color: var(--muted); margin-top: 0; }
+  h2 {
+    font-size: 1.15rem;
+    margin-top: 36px;
+    margin-bottom: 8px;
+    padding-left: 10px;
+    border-left: 4px solid var(--accent);
+  }
+  h3 {
+    font-size: 1rem;
+    margin-top: 20px;
+    margin-bottom: 4px;
+    color: var(--accent);
+  }
+  ul, ol { padding-left: 22px; }
+  li { margin: 4px 0; }
+  code, .file {
+    background: var(--code-bg);
+    padding: 1px 6px;
+    border-radius: 4px;
+    font-family: "SF Mono", Consolas, "Courier New", monospace;
+    font-size: 0.92em;
+  }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 12px 0;
+    font-size: 0.95rem;
+  }
+  th, td {
+    text-align: left;
+    padding: 8px 10px;
+    border-bottom: 1px solid var(--line);
+    vertical-align: top;
+  }
+  th { background: var(--code-bg); font-weight: 600; }
+  .step {
+    background: var(--code-bg);
+    border-left: 3px solid var(--accent);
+    padding: 10px 14px;
+    margin: 10px 0;
+    border-radius: 0 6px 6px 0;
+  }
+  .step .num {
+    display: inline-block;
+    background: var(--accent);
+    color: #fff;
+    width: 22px; height: 22px;
+    text-align: center;
+    border-radius: 50%;
+    margin-right: 8px;
+    font-size: 0.85rem;
+    line-height: 22px;
+    font-weight: 700;
+  }
+  .note {
+    background: rgba(178, 86, 0, 0.08);
+    border-left: 3px solid var(--warn);
+    padding: 10px 14px;
+    margin: 12px 0;
+    border-radius: 0 6px 6px 0;
+  }
+  .muted { color: var(--muted); font-size: 0.92em; }
+  .check { color: var(--accent); font-weight: 700; }
+</style>
+</head>
+<body>
+
+<h1>메인 윈도우 쪼개기 계획</h1>
+<p>한 파일 3,242줄을 7개 작은 파일로 나누는 작업입니다. 동작은 그대로 두고, 코드 위치만 옮깁니다.</p>
+
+<h2>지금 어떤 상태인가</h2>
+<ul>
+  <li><span class="file">src/ui/main-window.cpp</span> 한 파일이 <b>3,242줄</b>입니다.</li>
+  <li>그 안에 <span class="file">MainWindow</span> 클래스가 가지고 있는 함수가 <b>56개</b>입니다.</li>
+  <li>이 한 클래스가 지금 다 합니다:
+    <ul>
+      <li>창 만들기, 크기 조절, 다크/라이트 테마 전환</li>
+      <li>패널 배치 (1패널 / 2패널 좌우 / 2패널 위아래 / 3패널 / 4패널)</li>
+      <li>주소창 입력 처리, 폴더 열기</li>
+      <li>메뉴 클릭과 단축키 처리</li>
+      <li>파일 목록 표시, 정렬, 그룹화, 아이콘</li>
+      <li>복사 / 잘라내기 / 붙여넣기 / 드래그 / 삭제</li>
+      <li>상태바 글자 갱신, 선택한 파일 갯수 표시</li>
+      <li>파일이 바깥에서 바뀌었을 때 새로고침</li>
+    </ul>
+  </li>
+</ul>
+
+<h2>왜 쪼개려는 건가</h2>
+<ul>
+  <li>새 기능 하나 넣으려고 해도 <b>관련 코드 찾는 데만 한참</b> 걸립니다.</li>
+  <li>예: "단축키 하나 추가" → 약 3,200줄짜리 함수 묶음 안에서 비슷한 단축키 찾고, 그 옆에 끼워 넣고, 메뉴 ID 정의도 어딘가에서 찾아서 추가해야 합니다.</li>
+  <li>코드가 한 곳에 다 있으니 <b>한 곳을 고치면 다른 데가 깨질 위험</b>이 큽니다.</li>
+  <li>지금 이 파일을 여러 명이 동시에 수정하면 깃 충돌이 거의 무조건 납니다.</li>
+</ul>
+
+<h2>어떻게 쪼갤 건가</h2>
+<p>지금 56개 함수를 비슷한 일끼리 7개 묶음으로 나눕니다.</p>
+
+<table>
+  <thead>
+    <tr><th>묶음 이름</th><th>새 파일</th><th>이 묶음이 책임지는 일</th></tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>창 본체</td>
+      <td><span class="file">main-window.cpp</span>(남는 부분)</td>
+      <td>창 만들기, 윈도우 메시지 받아서 아래 묶음들에게 전달, DPI 변경, 테마 변경</td>
+    </tr>
+    <tr>
+      <td>패널 배치</td>
+      <td><span class="file">pane-manager.{h,cpp}</span></td>
+      <td>1/2/3/4 패널 만들고 없애기, 패널 크기 계산, 활성 패널 표시</td>
+    </tr>
+    <tr>
+      <td>명령 처리</td>
+      <td><span class="file">command-router.{h,cpp}</span></td>
+      <td>메뉴 클릭과 단축키를 받아서 "지금 무슨 일을 해야 하나" 판단</td>
+    </tr>
+    <tr>
+      <td>파일 목록 이벤트</td>
+      <td><span class="file">listview-events.{h,cpp}</span></td>
+      <td>리스트뷰 클릭/우클릭/정렬/그리기/아이콘 표시</td>
+    </tr>
+    <tr>
+      <td>탐색 + 새로고침</td>
+      <td><span class="file">pane-navigation.{h,cpp}</span></td>
+      <td>주소창 입력 → 폴더 열기, 백그라운드에서 파일 목록 받아서 화면에 채우기, 바깥 변경 감지</td>
+    </tr>
+    <tr>
+      <td>클립보드 / 드래그</td>
+      <td><span class="file">clipboard-ops.{h,cpp}</span></td>
+      <td>복사 / 잘라내기 / 붙여넣기 / 드래그 / 삭제와 그 결과 처리</td>
+    </tr>
+    <tr>
+      <td>상태바</td>
+      <td><span class="file">status-bar-controller.{h,cpp}</span></td>
+      <td>아래쪽 상태바 글자, 선택한 파일 갯수/크기 계산</td>
+    </tr>
+  </tbody>
+</table>
+
+<p class="muted">결과: 메인 윈도우 파일은 <b>약 400~500줄</b>로 줄어듭니다. 나머지는 각 묶음 파일에 들어갑니다. 합산 줄 수는 비슷하지만, 한 파일을 열었을 때 보이는 양이 훨씬 적어집니다.</p>
+
+<h2>단계 (한 번에 하나씩)</h2>
+
+<div class="step">
+  <span class="num">1</span><b>준비</b>
+  <ul>
+    <li>메인 윈도우 파일에서 함수들을 위 7개 묶음 중 어디에 속하는지 표시 (주석 한 줄씩)</li>
+    <li>지금 빌드 통과하고 앱이 정상 동작하는지 확인 (기준선)</li>
+  </ul>
+</div>
+
+<div class="step">
+  <span class="num">2</span><b>상태바 분리</b> <span class="muted">— 가장 간단</span>
+  <ul>
+    <li>상태바 관련 함수 3개만 새 파일로 옮기기</li>
+    <li>다른 묶음과 거의 안 얽힘 → 연습 삼아 먼저</li>
+  </ul>
+</div>
+
+<div class="step">
+  <span class="num">3</span><b>클립보드 / 드래그 분리</b>
+  <ul>
+    <li>복사·붙여넣기·드래그·삭제 함수 묶음 새 파일로</li>
+    <li>윈도우 메시지 받는 부분만 메인에 남기고, 받자마자 새 파일로 넘김</li>
+  </ul>
+</div>
+
+<div class="step">
+  <span class="num">4</span><b>파일 목록 이벤트 분리</b>
+  <ul>
+    <li>리스트뷰 알림 처리 함수들 (10개 정도) 새 파일로</li>
+    <li>가장 큰 묶음 중 하나. 약 700줄 이동 예상</li>
+  </ul>
+</div>
+
+<div class="step">
+  <span class="num">5</span><b>탐색 + 새로고침 분리</b>
+  <ul>
+    <li>주소창 → 폴더 열기, 백그라운드 결과 처리, 외부 변경 감지</li>
+    <li>약 500줄 이동 예상</li>
+  </ul>
+</div>
+
+<div class="step">
+  <span class="num">6</span><b>패널 배치 분리</b>
+  <ul>
+    <li>패널 생성/삭제, 레이아웃 계산, 활성 패널</li>
+    <li>약 600줄 이동 예상</li>
+  </ul>
+</div>
+
+<div class="step">
+  <span class="num">7</span><b>명령 처리 분리</b> <span class="muted">— 가장 큰 함수 분해</span>
+  <ul>
+    <li><span class="file">onCommand</span> 함수 하나가 약 330줄 → 큰 switch문</li>
+    <li>case 묶음별로 작은 함수로 쪼개서 새 파일로</li>
+    <li>마지막에 하는 이유: 다른 묶음이 먼저 빠져나가야 case가 호출할 대상이 명확해짐</li>
+  </ul>
+</div>
+
+<div class="step">
+  <span class="num">8</span><b>마무리</b>
+  <ul>
+    <li>남은 메인 윈도우 파일 다시 훑어서 안 쓰는 include / 멤버 제거</li>
+    <li>전체 빌드 + 앱 실행 + 주요 동작 다 눌러보기</li>
+  </ul>
+</div>
+
+<h2>각 단계에서 매번 하는 일</h2>
+<ol>
+  <li>옮길 함수들 목록 만들기</li>
+  <li>새 <span class="file">.h</span> / <span class="file">.cpp</span> 파일 만들기</li>
+  <li>함수들 그대로 잘라서 새 파일에 붙이기 (몸통은 안 바꿈)</li>
+  <li>메인 윈도우에는 "이 묶음에게 일 시키기" 한 줄짜리 호출만 남김</li>
+  <li>빌드 통과 확인</li>
+  <li>앱 켜서 그 묶음이 책임지는 기능 다 눌러보기 <span class="check">✓</span></li>
+  <li>commit 1개</li>
+</ol>
+
+<h2>까다로운 부분</h2>
+
+<h3>1. 멤버 변수가 다 같이 묶여 있음</h3>
+<p>예를 들어 <span class="file">panes_</span> 배열은 거의 모든 묶음이 봐야 합니다.</p>
+<p><b>해결:</b> 일단 메인 윈도우가 데이터 보관소 역할을 합니다. 각 묶음은 메인 윈도우 포인터를 받아서 데이터에 접근합니다. 나중에 (옵션 2 단계에서) 더 깔끔하게 정리할 여지를 남겨둡니다.</p>
+
+<h3>2. <span class="file">onCommand</span>가 한 함수에 330줄</h3>
+<p>메뉴 ID에 따라 분기하는 거대한 switch문입니다. 한 번에 옮기지 말고, 단계 7에서 case 그룹별로 따로 함수로 추출합니다.</p>
+
+<h3>3. 윈도우 메시지 라우팅</h3>
+<p>모든 마우스 클릭, 키보드 입력은 결국 <span class="file">handleMessage</span> 한 곳에 들어옵니다. 이건 메인 윈도우에 그대로 두고, 메시지를 받자마자 해당 묶음에게 넘기는 식으로 합니다.</p>
+
+<h2>예상 시간</h2>
+<table>
+  <tr><th>단계</th><th>예상 시간</th></tr>
+  <tr><td>1. 준비</td><td>20분</td></tr>
+  <tr><td>2. 상태바</td><td>30분</td></tr>
+  <tr><td>3. 클립보드 / 드래그</td><td>45분</td></tr>
+  <tr><td>4. 파일 목록 이벤트</td><td>1시간</td></tr>
+  <tr><td>5. 탐색 + 새로고침</td><td>1시간</td></tr>
+  <tr><td>6. 패널 배치</td><td>1시간</td></tr>
+  <tr><td>7. 명령 처리</td><td>1시간 30분</td></tr>
+  <tr><td>8. 마무리</td><td>30분</td></tr>
+  <tr><th>합계</th><th>약 6시간 30분</th></tr>
+</table>
+<p class="muted">한 번에 다 하지 말고 단계마다 끊어서 빌드 + 실행 확인하는 게 안전합니다.</p>
+
+<h2>이번에 안 할 것</h2>
+<ul>
+  <li><b>사용자가 보는 동작은 하나도 안 바뀝니다.</b> 단축키, 메뉴, 화면 다 똑같이 동작해야 합니다.</li>
+  <li>새 기능 추가 안 함.</li>
+  <li>버그 수정 안 함 (눈에 띄어도 별도 commit으로 미룸).</li>
+  <li>인터페이스 / 추상화 도입 안 함 (그건 다음 단계 옵션 2).</li>
+  <li>파일 이름 통일 같은 코스메틱 정리 안 함.</li>
+</ul>
+
+<div class="note">
+<b>확인 부탁:</b> 이 계획대로 단계 1부터 시작해도 될까요? 아니면 묶음 나눈 방식에서 바꾸고 싶은 부분이 있을까요?
+<br><br>
+예를 들어:
+<ul>
+  <li>"클립보드 + 드래그"를 더 쪼개고 싶다 / 더 합치고 싶다</li>
+  <li>"명령 처리"부터 먼저 손보고 싶다 (위험하지만)</li>
+  <li>한 PR로 다 묶지 말고 단계마다 PR을 따로 내달라</li>
+</ul>
+</div>
+
+</body>
+</html>
