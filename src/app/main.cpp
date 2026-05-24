@@ -17,45 +17,12 @@
 #include "core/settings-store.h"
 #include "winui_lite/chrome/dark-scrollbar-hook.h"
 #include "winui_lite/chrome/dispinfo-histogram.h"
+#include "winui_lite/chrome/theme-watcher.h"
 #include "ui/main-window.h"
 #include "ui/messages.h"
 #include "ui/stall-probe.h"
 
 namespace {
-
-// Undocumented but stable since Windows 10 1809: uxtheme.dll ordinal 135
-// is SetPreferredAppMode(AppMode). Telling Windows "AllowDark" at process
-// start lets the dark-themed listview classes (DarkMode_Explorer,
-// DarkMode_ItemsView) take effect on ALL parts including the LVS_OWNERDATA
-// group header band — which otherwise renders with the default theme's
-// dim orange/yellow caption color even after SetWindowTheme is applied
-// on the listview. Must run before any listview is created; calling it
-// after a control's first WM_THEMECHANGED leaves group-header drawing
-// stuck on the old theme until the next theme change event.
-//
-// A duplicate (anon-namespace, static-guarded) copy exists in
-// pane-toolbar-row.cpp so toolbar rows are correctly themed even on
-// the off chance this entry-point path is bypassed (tests, alt hosts).
-// Both copies are idempotent.
-enum PreferredAppMode {
-  PreferredAppModeDefault    = 0,
-  PreferredAppModeAllowDark  = 1,
-  PreferredAppModeForceDark  = 2,
-  PreferredAppModeForceLight = 3,
-};
-using SetPreferredAppMode_t = int (WINAPI*)(PreferredAppMode);
-
-void enableProcessDarkMode() noexcept {
-  HMODULE ux = LoadLibraryExW(L"uxtheme.dll", nullptr,
-                              LOAD_LIBRARY_SEARCH_SYSTEM32);
-  if (ux == nullptr) return;
-  auto setMode = reinterpret_cast<SetPreferredAppMode_t>(
-      GetProcAddress(ux, MAKEINTRESOURCEA(135)));
-  if (setMode != nullptr) setMode(PreferredAppModeAllowDark);
-  // Module handle is intentionally leaked: uxtheme stays loaded for the
-  // life of the process anyway via comctl32/SetWindowTheme, and unloading
-  // would race against any in-flight theme callbacks.
-}
 
 // Pairs OleInitialize with OleUninitialize so every early-return path on the
 // way through wWinMain releases the STA apartment correctly.
@@ -275,7 +242,7 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance,
       // even after the listview itself has SetWindowTheme("DarkMode_*")
       // applied — group titles ("폴더" / "파일" / "오늘") become barely
       // readable on the dark background.
-      enableProcessDarkMode();
+      fast_explorer::ui::enableProcessDarkMode();
 
       // Patch comctl32's delay-load thunk for uxtheme!OpenNcThemeData so
       // listview scrollbars render with the dark "Explorer::ScrollBar"
