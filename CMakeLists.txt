@@ -193,6 +193,8 @@ add_library(winui_lite STATIC
   lib/winui_lite/chrome/splitter-resize.h
   lib/winui_lite/chrome/theme-watcher.cpp
   lib/winui_lite/chrome/theme-watcher.h
+  lib/winui_lite/chrome/window-base.cpp
+  lib/winui_lite/chrome/window-base.h
 )
 
 target_include_directories(winui_lite PUBLIC lib)
