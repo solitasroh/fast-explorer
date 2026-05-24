@@ -12,6 +12,7 @@
 #include "winui_lite/chrome/pane-layout.h"
 #include "ui/search-popup.h"
 #include "winui_lite/chrome/splitter-ratios.h"
+#include "winui_lite/chrome/window-base.h"
 
 namespace fast_explorer::core {
 class ProcessMemoryService;
@@ -31,7 +32,7 @@ template <class TPane> class PaneManager;
 class PaneToolbarRow;
 class SelectionSync;
 
-class MainWindow {
+class MainWindow : public WindowBase {
  public:
   // `memory` is non-owning; the AppServices owner must outlive the window.
   MainWindow(fast_explorer::core::ProcessMemoryService& memory,
@@ -42,7 +43,7 @@ class MainWindow {
   MainWindow& operator=(const MainWindow&) = delete;
 
   bool create(HINSTANCE instance, int showCommand);
-  HWND handle() const noexcept { return hwnd_; }
+  // handle() is inherited from WindowBase.
 
   // Exposes the per-window LVN_GETDISPINFO latency histogram so
   // the shutdown path can dump it to the logger. Returns nullptr
@@ -98,8 +99,8 @@ class MainWindow {
   const fast_explorer::core::SessionState& capturedSessionState() const noexcept;
 
  private:
-  static LRESULT CALLBACK wndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam);
-  LRESULT handleMessage(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam);
+  LRESULT handleMessage(HWND hwnd, UINT msg, WPARAM wParam,
+                        LPARAM lParam) override;
 
   LRESULT onCreate(HWND hwnd);
   LRESULT onDpiChanged(HWND hwnd, WPARAM wParam, LPARAM lParam);
@@ -242,7 +243,8 @@ class MainWindow {
   fast_explorer::core::ProcessMemoryService& memory_;
   fast_explorer::core::PerfTracker& perf_;
   HINSTANCE instance_ = nullptr;
-  HWND hwnd_ = nullptr;
+  // hwnd_ now lives in WindowBase; reach it via handle() or the
+  // inherited protected member.
   // listViews_[0] is the original list-view created in onCreate; alias
   // listView_ keeps the single-pane code paths unchanged. listViews_
   // [1..3] are created on demand by enterLayout() / installPaneAt()

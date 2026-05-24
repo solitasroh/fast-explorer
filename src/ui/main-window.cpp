@@ -290,29 +290,6 @@ void writeCellText(NMLVDISPINFOW& disp, const std::wstring& text) {
   disp.item.pszText[copyChars] = L'\0';
 }
 
-bool registerClassOnce(HINSTANCE instance, const wchar_t* className, WNDPROC proc) {
-  WNDCLASSEXW existing{};
-  if (GetClassInfoExW(instance, className, &existing)) {
-    return true;
-  }
-  WNDCLASSEXW wc{};
-  wc.cbSize = sizeof(wc);
-  wc.style = CS_HREDRAW | CS_VREDRAW;
-  wc.lpfnWndProc = proc;
-  wc.hInstance = instance;
-  wc.hCursor = LoadCursor(nullptr, IDC_ARROW);
-  wc.hbrBackground = reinterpret_cast<HBRUSH>(COLOR_WINDOW + 1);
-  wc.lpszClassName = className;
-  // App icon: large for Alt+Tab / taskbar, small for window caption.
-  // MAKEINTRESOURCEW(IDI_APP) = IDI_APP in resources/resource-ids.h.
-  wc.hIcon = LoadIconW(instance, MAKEINTRESOURCEW(IDI_APP));
-  wc.hIconSm = static_cast<HICON>(LoadImageW(
-      instance, MAKEINTRESOURCEW(IDI_APP), IMAGE_ICON,
-      GetSystemMetrics(SM_CXSMICON), GetSystemMetrics(SM_CYSMICON),
-      LR_DEFAULTCOLOR));
-  return RegisterClassExW(&wc) != 0;
-}
-
 // Forward decl for the dark-mode-aware status-bar subclass + its
 // state struct. Definitions live in the later anonymous namespace.
 // The subclass + state must be referenceable from MainWindow::onCreate
@@ -1419,57 +1396,27 @@ void MainWindow::applyStatusParts(int clientWidth) {
 
 bool MainWindow::create(HINSTANCE instance, int showCommand) {
   instance_ = instance;
-  if (!registerClassOnce(instance, kClassName, &MainWindow::wndProc)) {
+  ClassSpec cs;
+  cs.className = kClassName;
+  // App icon: large for Alt+Tab / taskbar, small for window caption.
+  // MAKEINTRESOURCEW(IDI_APP) = IDI_APP in resources/resource-ids.h.
+  cs.icon = LoadIconW(instance, MAKEINTRESOURCEW(IDI_APP));
+  cs.iconSmall = static_cast<HICON>(LoadImageW(
+      instance, MAKEINTRESOURCEW(IDI_APP), IMAGE_ICON,
+      GetSystemMetrics(SM_CXSMICON), GetSystemMetrics(SM_CYSMICON),
+      LR_DEFAULTCOLOR));
+  WindowSpec ws;
+  ws.title = L"Fast Explorer";
+  ws.style = WS_OVERLAPPEDWINDOW;
+  ws.width = kDefaultWidth;
+  ws.height = kDefaultHeight;
+  HWND hwnd = createWindow(instance, cs, ws);
+  if (hwnd == nullptr) {
     return false;
   }
-
-  HWND hwnd = CreateWindowExW(
-      0, kClassName, L"Fast Explorer",
-      WS_OVERLAPPEDWINDOW,
-      CW_USEDEFAULT, CW_USEDEFAULT, kDefaultWidth, kDefaultHeight,
-      nullptr, nullptr, instance, this);
-  if (!hwnd) {
-    return false;
-  }
-
   ShowWindow(hwnd, showCommand);
   UpdateWindow(hwnd);
   return true;
-}
-
-LRESULT CALLBACK MainWindow::wndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
-  MainWindow* self = nullptr;
-  if (msg == WM_NCCREATE) {
-    auto* cs = reinterpret_cast<CREATESTRUCTW*>(lParam);
-    self = static_cast<MainWindow*>(cs->lpCreateParams);
-    SetWindowLongPtrW(hwnd, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(self));
-    if (self) {
-      self->hwnd_ = hwnd;
-    }
-  } else {
-    self = reinterpret_cast<MainWindow*>(GetWindowLongPtrW(hwnd, GWLP_USERDATA));
-  }
-
-  if (self) {
-    // Win32 documents that a C++ exception crossing wndProc back into
-    // the OS is undefined behavior, and the inner handlers do call
-    // C++ exception escaping wndProc is UB; cap it here so the OS
-    // still gets a well-defined LRESULT. SEH not caught (under /EHsc
-    // catch(...) does not see hardware faults).
-    try {
-      return self->handleMessage(hwnd, msg, wParam, lParam);
-    } catch (...) {
-      // WM_CREATE returning anything other than -1 tells the system
-      // the window was constructed successfully, so a throw here
-      // would otherwise leave a half-built MainWindow alive on the
-      // message loop. Force CreateWindowExW to fail instead.
-      if (msg == WM_CREATE) {
-        return -1;
-      }
-      return DefWindowProcW(hwnd, msg, wParam, lParam);
-    }
-  }
-  return DefWindowProcW(hwnd, msg, wParam, lParam);
 }
 
 LRESULT MainWindow::handleMessage(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
@@ -1651,10 +1598,10 @@ LRESULT MainWindow::handleMessage(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPa
       // Clear the registration so future low-memory events do not
       // PostMessage to a destroyed window. A notifier already
       // inside the prior callback keeps its captured HWND and the
-      // PostMessage is benign (dropped if the window is gone).
+      // PostMessage is benign (dropped if the window is gone). The
+      // WindowBase dispatcher clears GWLP_USERDATA + hwnd_ after we
+      // return.
       memory_.setLowMemoryCallback(nullptr);
-      SetWindowLongPtrW(hwnd, GWLP_USERDATA, 0);
-      hwnd_ = nullptr;
       return DefWindowProcW(hwnd, msg, wParam, lParam);
     default:
       return DefWindowProcW(hwnd, msg, wParam, lParam);
