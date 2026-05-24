@@ -9,6 +9,7 @@
 #include <vector>
 
 #include "winui_lite/chrome/com-raii.h"
+#include "winui_lite/chrome/theme-watcher.h"
 #include "ui/messages.h"
 
 namespace fast_explorer::ui {
@@ -27,35 +28,17 @@ int scaleForDpi(int value, UINT dpi) noexcept {
 
 thread_local AddressBarPopup* tMouseHookOwner = nullptr;
 
-// Local copy — main-window.cpp owns the canonical one but it's in its
-// anon namespace, not exported. Cheap registry probe; the popup only
-// (re)reads it on show / theme change.
-bool prefersDarkMode() noexcept {
-  HKEY key = nullptr;
-  if (RegOpenKeyExW(HKEY_CURRENT_USER,
-                    L"Software\\Microsoft\\Windows\\CurrentVersion\\"
-                    L"Themes\\Personalize",
-                    0, KEY_READ, &key) != ERROR_SUCCESS) {
-    return false;
-  }
-  DWORD value = 1;
-  DWORD size = sizeof(value);
-  LONG r = RegQueryValueExW(key, L"AppsUseLightTheme", nullptr, nullptr,
-                            reinterpret_cast<BYTE*>(&value), &size);
-  RegCloseKey(key);
-  return r == ERROR_SUCCESS && value == 0;
-}
-
 void applyTreePopupTheme(HWND popup, HWND tree) noexcept {
   if (tree == nullptr) return;
-  const bool dark = prefersDarkMode();
+  const bool dark = isAppInDarkMode();
   // DarkMode_Explorer also re-tints the chevron/expand glyphs so they
   // read against the dark row backdrop; plain Explorer keeps the
   // light-mode chevrons.
   SetWindowTheme(tree, dark ? L"DarkMode_Explorer" : L"Explorer", nullptr);
   if (dark) {
-    TreeView_SetBkColor(tree, RGB(32, 32, 32));
-    TreeView_SetTextColor(tree, RGB(241, 241, 241));
+    const RowTheme theme = currentRowTheme();
+    TreeView_SetBkColor(tree, theme.background);
+    TreeView_SetTextColor(tree, theme.text);
   } else {
     TreeView_SetBkColor(tree, static_cast<COLORREF>(-1));
     TreeView_SetTextColor(tree, static_cast<COLORREF>(-1));

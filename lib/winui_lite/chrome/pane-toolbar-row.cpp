@@ -5,6 +5,8 @@
 #include <algorithm>
 #include <iterator>
 
+#include "winui_lite/chrome/theme-watcher.h"
+
 namespace fast_explorer::ui {
 
 namespace {
@@ -70,43 +72,6 @@ HFONT createIconFont(UINT dpi) noexcept {
   return CreateFontIndirectW(&lf);
 }
 
-bool isAppInDarkMode() noexcept {
-  HKEY key = nullptr;
-  if (RegOpenKeyExW(HKEY_CURRENT_USER,
-                    L"Software\\Microsoft\\Windows\\CurrentVersion"
-                    L"\\Themes\\Personalize",
-                    0, KEY_READ, &key) != ERROR_SUCCESS) {
-    return false;
-  }
-  DWORD value = 1;
-  DWORD size = sizeof(value);
-  LONG r = RegQueryValueExW(key, L"AppsUseLightTheme", nullptr, nullptr,
-                            reinterpret_cast<BYTE*>(&value), &size);
-  RegCloseKey(key);
-  return r == ERROR_SUCCESS && value == 0;
-}
-
-struct RowTheme {
-  COLORREF background;
-  COLORREF text;
-  COLORREF disabledText;
-};
-
-RowTheme currentRowTheme() noexcept {
-  if (isAppInDarkMode()) {
-    return RowTheme{
-        /*background*/   RGB(32, 32, 32),
-        /*text*/         RGB(241, 241, 241),
-        /*disabledText*/ RGB(120, 120, 120),
-    };
-  }
-  return RowTheme{
-      /*background*/   GetSysColor(COLOR_BTNFACE),
-      /*text*/         GetSysColor(COLOR_BTNTEXT),
-      /*disabledText*/ GetSysColor(COLOR_GRAYTEXT),
-  };
-}
-
 // Subclass on the address-bar Edit that expands the non-client area
 // on top + bottom (and left + right) so the Edit's client centres a
 // single line of text with visual padding. Single-line Edits ignore
@@ -167,12 +132,10 @@ LRESULT CALLBACK addressEditNcPaddingSubclass(
       const int w = wr.right - wr.left;
       const int h = wr.bottom - wr.top;
       RECT outer = {0, 0, w, h};
-      const bool dark = isAppInDarkMode();
-      HBRUSH bg = CreateSolidBrush(
-          dark ? RGB(40, 40, 40) : GetSysColor(COLOR_WINDOW));
+      const RowTheme theme = currentRowTheme();
+      HBRUSH bg = CreateSolidBrush(theme.editBackground);
       FillRect(dc, &outer, bg);
-      HBRUSH borderBr = CreateSolidBrush(
-          dark ? RGB(80, 80, 80) : RGB(180, 180, 180));
+      HBRUSH borderBr = CreateSolidBrush(theme.editBorder);
       FrameRect(dc, &outer, borderBr);
       DeleteObject(borderBr);
       DeleteObject(bg);
@@ -194,27 +157,6 @@ void installAddressEditNcPadding(HWND edit) noexcept {
   auto* state = new AddressEditPadState();
   SetWindowSubclass(edit, &addressEditNcPaddingSubclass, kSubclassId,
                     reinterpret_cast<DWORD_PTR>(state));
-}
-
-// Undocumented but stable since Windows 10 1809: uxtheme.dll
-// ordinal 135 = SetPreferredAppMode. Telling Windows "AllowDark"
-// here lets the dark-themed classes (DarkMode_CFD for combobox,
-// DarkMode_Explorer for tree/list) actually take effect when we
-// call SetWindowTheme below.
-enum PreferredAppMode { PAM_Default = 0, PAM_AllowDark = 1,
-                       PAM_ForceDark = 2, PAM_ForceLight = 3 };
-using SetPreferredAppMode_t = int (WINAPI*)(PreferredAppMode);
-
-void enableProcessDarkMode() noexcept {
-  static bool tried = false;
-  if (tried) return;
-  tried = true;
-  HMODULE ux = LoadLibraryExW(L"uxtheme.dll", nullptr,
-                              LOAD_LIBRARY_SEARCH_SYSTEM32);
-  if (ux == nullptr) return;
-  auto setMode = reinterpret_cast<SetPreferredAppMode_t>(
-      GetProcAddress(ux, MAKEINTRESOURCEA(135)));
-  if (setMode != nullptr) setMode(PAM_AllowDark);
 }
 
 HFONT createRowFont(UINT dpi) noexcept {
@@ -713,9 +655,7 @@ LRESULT PaneToolbarRow::handleMessage(HWND hwnd, UINT msg, WPARAM wParam,
         FillRect(dis->hDC, &dis->rcItem, bg);
         DeleteObject(bg);
         if ((dis->itemState & (ODS_HOTLIGHT | ODS_SELECTED)) != 0) {
-          COLORREF pillColor = isAppInDarkMode() ? RGB(56, 56, 56)
-                                                  : RGB(225, 225, 225);
-          HBRUSH pill = CreateSolidBrush(pillColor);
+          HBRUSH pill = CreateSolidBrush(theme.hoverPill);
           FillRect(dis->hDC, &dis->rcItem, pill);
           DeleteObject(pill);
         }
@@ -745,7 +685,7 @@ LRESULT PaneToolbarRow::handleMessage(HWND hwnd, UINT msg, WPARAM wParam,
         const RowTheme theme = currentRowTheme();
         static COLORREF cachedBg = 0;
         static HBRUSH cachedBrush = nullptr;
-        const COLORREF wantBg = RGB(40, 40, 40);
+        const COLORREF wantBg = theme.editBackground;
         if (cachedBrush == nullptr || cachedBg != wantBg) {
           if (cachedBrush != nullptr) DeleteObject(cachedBrush);
           cachedBrush = CreateSolidBrush(wantBg);

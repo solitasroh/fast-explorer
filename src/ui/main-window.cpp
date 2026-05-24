@@ -26,6 +26,7 @@
 #include "ui/format-cache.h"
 #include "ui/address-bar-popup.h"
 #include "winui_lite/chrome/pane-toolbar-row.h"
+#include "winui_lite/chrome/theme-watcher.h"
 #include "ui/icon-cache.h"
 #include "ui/icon-cache-coordinator.h"
 #include "ui/label-edit-controller.h"
@@ -313,13 +314,10 @@ bool registerClassOnce(HINSTANCE instance, const wchar_t* className, WNDPROC pro
 }
 
 // Forward decl for the dark-mode-aware status-bar subclass + its
-// state struct. Definitions live in the later anonymous namespace
-// alongside systemPrefersDarkMode; the subclass + state must be
-// referenceable from MainWindow::onCreate which sits between the
-// two anonymous-namespace blocks. systemPrefersDarkMode itself is
-// also forward-declared so the state struct's refresh() can call
-// it without splitting namespaces.
-bool systemPrefersDarkMode() noexcept;
+// state struct. Definitions live in the later anonymous namespace.
+// The subclass + state must be referenceable from MainWindow::onCreate
+// which sits between the two anonymous-namespace blocks.
+// isAppInDarkMode comes from winui_lite/chrome/theme-watcher.h.
 struct StatusBarSubclassState {
   bool dark = false;
   HBRUSH bgBrush = nullptr;
@@ -327,7 +325,7 @@ struct StatusBarSubclassState {
   COLORREF textColor = 0;
   bool valid = false;
   void refresh() noexcept {
-    dark = systemPrefersDarkMode();
+    dark = isAppInDarkMode();
     bgColor = dark ? RGB(32, 32, 32) : GetSysColor(COLOR_BTNFACE);
     textColor = dark ? RGB(241, 241, 241) : GetSysColor(COLOR_BTNTEXT);
     if (bgBrush != nullptr) DeleteObject(bgBrush);
@@ -1150,7 +1148,7 @@ AllowDarkModeForWindow_t resolveAllowDarkModeForWindow() noexcept {
 
 void MainWindow::applyListViewTheme(HWND lv) noexcept {
   if (lv == nullptr) return;
-  const bool dark = systemPrefersDarkMode();
+  const bool dark = isAppInDarkMode();
   // "DarkMode_ItemsView" is the theme class Win11 Explorer uses on its
   // own listviews — unlike "DarkMode_Explorer" it themes the group
   // header band as well as the rows, so LVS_OWNERDATA group titles
@@ -1232,7 +1230,7 @@ void MainWindow::applyActivePaneAppearance() noexcept {
   // visually obvious in dual mode; single mode skips the dim since
   // there is no other pane to contrast against.
   const bool dual = (paneManager_->count() > 1);
-  const bool dark = systemPrefersDarkMode();
+  const bool dark = isAppInDarkMode();
   const COLORREF activeBg   = dark ? RGB(32, 32, 32)
                                     : GetSysColor(COLOR_WINDOW);
   const COLORREF inactiveBg = dark ? RGB(24, 24, 24)
@@ -1520,12 +1518,11 @@ LRESULT MainWindow::handleMessage(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPa
     }
     case WM_SETTINGCHANGE: {
       // Re-apply title-bar dark mode + Mica when the user toggles
-      // the system theme. Broadcast carries the setting name in
-      // lParam; only the "ImmersiveColorSet" notification matters
-      // for app-theme changes.
-      if (lParam != 0 &&
-          lstrcmpiW(reinterpret_cast<const wchar_t*>(lParam),
-                    L"ImmersiveColorSet") == 0) {
+      // the system theme. isThemeSettingChange filters the broadcast
+      // down to the "ImmersiveColorSet" notification — other settings
+      // (font scaling, accessibility) fire the same message and are
+      // irrelevant here.
+      if (isThemeSettingChange(wParam, lParam)) {
         applySystemTheme();
         // Re-apply listview + active-pane theming so the file
         // grid follows the system light↔dark flip without
@@ -1790,22 +1787,6 @@ LRESULT MainWindow::onCreate(HWND hwnd) {
 }
 
 namespace {
-bool systemPrefersDarkMode() noexcept {
-  HKEY key = nullptr;
-  if (RegOpenKeyExW(HKEY_CURRENT_USER,
-                    L"Software\\Microsoft\\Windows\\CurrentVersion"
-                    L"\\Themes\\Personalize",
-                    0, KEY_READ, &key) != ERROR_SUCCESS) {
-    return false;
-  }
-  DWORD value = 1;  // AppsUseLightTheme: 1 = light (default), 0 = dark
-  DWORD size = sizeof(value);
-  LONG r = RegQueryValueExW(key, L"AppsUseLightTheme", nullptr, nullptr,
-                            reinterpret_cast<BYTE*>(&value), &size);
-  RegCloseKey(key);
-  return r == ERROR_SUCCESS && value == 0;
-}
-
 // Status bar is a STATUSCLASSNAMEW Win32 control with no native
 // dark-theme support — even SetWindowTheme(L"DarkMode_...") is a
 // no-op for it. To tint it for dark mode we subclass and own the
@@ -1898,7 +1879,7 @@ LRESULT CALLBACK listViewHeaderColorSubclass(
     }
     return DefSubclassProc(hwnd, msg, wParam, lParam);
   }
-  if (msg == WM_NOTIFY && systemPrefersDarkMode() && state != nullptr) {
+  if (msg == WM_NOTIFY && isAppInDarkMode() && state != nullptr) {
     auto* hdr = reinterpret_cast<NMHDR*>(lParam);
     HWND header = ListView_GetHeader(hwnd);
     if (hdr != nullptr && hdr->hwndFrom == header &&
@@ -1959,7 +1940,7 @@ void MainWindow::applySystemTheme() {
   // Win11. On earlier Win10 builds the same effect was on attribute
   // 19; trying both lets the app dark-tone the title bar across
   // supported targets without a runtime version check.
-  const BOOL dark = systemPrefersDarkMode() ? TRUE : FALSE;
+  const BOOL dark = isAppInDarkMode() ? TRUE : FALSE;
   DwmSetWindowAttribute(hwnd_, 20, &dark, sizeof(dark));
   DwmSetWindowAttribute(hwnd_, 19, &dark, sizeof(dark));
   // DWMWA_SYSTEMBACKDROP_TYPE = 38, DWMSBT_MAINWINDOW = 2 (Mica).
@@ -3041,7 +3022,7 @@ LRESULT MainWindow::handleCustomDraw(NMHDR* hdr) {
       // GRAYTEXT system colour is near-black on dark backgrounds —
       // pick a brighter grey when the system theme is dark so the
       // dimmed-hidden-files cue stays legible.
-      cd->clrText = systemPrefersDarkMode() ? RGB(140, 140, 140)
+      cd->clrText = isAppInDarkMode() ? RGB(140, 140, 140)
                                               : GetSysColor(COLOR_GRAYTEXT);
       return CDRF_NEWFONT;
     }
