@@ -36,8 +36,6 @@ set(FE_APP_SOURCES
   src/app/app-services.h
   src/ui/address-bar-popup.cpp
   src/ui/address-bar-popup.h
-  src/ui/pane-toolbar-row.cpp
-  src/ui/pane-toolbar-row.h
   src/ui/main-window.cpp
   src/ui/main-window.h
   src/ui/messages.h
@@ -189,6 +187,8 @@ add_library(winui_lite STATIC
   lib/winui_lite/chrome/pane-manager.h
   lib/winui_lite/chrome/pane-splitter.cpp
   lib/winui_lite/chrome/pane-splitter.h
+  lib/winui_lite/chrome/pane-toolbar-row.cpp
+  lib/winui_lite/chrome/pane-toolbar-row.h
   lib/winui_lite/chrome/splitter-ratios.h
   lib/winui_lite/chrome/splitter-resize.h
 )

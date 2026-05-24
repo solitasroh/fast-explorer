@@ -25,7 +25,7 @@
 #include "winui_lite/chrome/dpi-scale.h"
 #include "ui/format-cache.h"
 #include "ui/address-bar-popup.h"
-#include "ui/pane-toolbar-row.h"
+#include "winui_lite/chrome/pane-toolbar-row.h"
 #include "ui/icon-cache.h"
 #include "ui/icon-cache-coordinator.h"
 #include "ui/label-edit-controller.h"
@@ -67,6 +67,50 @@ constexpr UINT kSelSummaryDebounceMs = 80;
 // O(N) match pass over the pane only runs once after typing pauses.
 constexpr UINT_PTR kTimerFilterDebounceBase = kTimerSelSummaryBase + kMaxPanes;
 constexpr UINT kFilterDebounceMs = 80;
+
+// FastExplorer-specific composition for the per-pane toolbar row.
+// PaneToolbarRow (in winui_lite/chrome) is glyph-/label-agnostic; the
+// host owns the table of buttons, their Fluent / MDL2 codepoints,
+// Korean accessible names, and "label (shortcut)" tooltip strings.
+// The pointers below have static lifetime so the spans handed to the
+// row stay valid for as long as any PaneToolbarRow exists.
+//   E72B Back, E72A Forward, E74A Up, E72C Refresh,
+//   E712 Hamburger / More, E70D ChevronDown
+constexpr wchar_t kGlyphBack[]       = {0xE72B, 0};
+constexpr wchar_t kGlyphForward[]    = {0xE72A, 0};
+constexpr wchar_t kGlyphUp[]         = {0xE74A, 0};
+constexpr wchar_t kGlyphRefresh[]    = {0xE72C, 0};
+constexpr wchar_t kGlyphHamburger[]  = {0xE712, 0};
+constexpr wchar_t kGlyphChevronDown[] = {0xE70D, 0};
+
+constexpr NavButtonSpec kPaneNavButtons[] = {
+    {kTbBack,    kGlyphBack,    L"뒤로",      L"뒤로 (Alt+←)"},
+    {kTbForward, kGlyphForward, L"앞으로",    L"앞으로 (Alt+→)"},
+    {kTbUp,      kGlyphUp,      L"위로",      L"위로 (Alt+↑)"},
+    {kTbRefresh, kGlyphRefresh, L"새로 고침", L"새로 고침 (F5)"},
+};
+
+constexpr AuxSlotSpec kPaneHamburgerSlot{
+    /*id*/      kTbHamburger,
+    /*glyph*/   kGlyphHamburger,
+    /*label*/   L"메뉴",
+    /*tooltip*/ L"메뉴 (Alt+M)",
+};
+
+constexpr AuxSlotSpec kPaneAddressDropdownSlot{
+    /*id*/      kTbAddressDropdown,
+    /*glyph*/   kGlyphChevronDown,
+    /*label*/   nullptr,
+    /*tooltip*/ nullptr,
+};
+
+PaneToolbarRowConfig makePaneToolbarRowConfig() noexcept {
+  PaneToolbarRowConfig cfg{};
+  cfg.navButtons = std::span<const NavButtonSpec>(kPaneNavButtons);
+  cfg.hamburger = kPaneHamburgerSlot;
+  cfg.addressDropdown = kPaneAddressDropdownSlot;
+  return cfg;
+}
 
 struct ColumnSpec {
   const wchar_t* title;
@@ -640,7 +684,8 @@ bool MainWindow::installPaneAt(std::size_t idx) {
 
   // Toolbar row + address bar + dropdown.
   paneToolbarRows_[idx] = std::make_unique<PaneToolbarRow>();
-  if (!paneToolbarRows_[idx]->create(hwnd_, instance_, idx)) {
+  if (!paneToolbarRows_[idx]->create(hwnd_, instance_, idx,
+                                      makePaneToolbarRowConfig())) {
     paneToolbarRows_[idx].reset();
   }
   HWND addressParent = paneToolbarRows_[idx]
@@ -1663,7 +1708,8 @@ LRESULT MainWindow::onCreate(HWND hwnd) {
   }
   // dropTargets_[0] is registered after paneManager_ exists; see below.
   paneToolbarRows_[0] = std::make_unique<PaneToolbarRow>();
-  if (!paneToolbarRows_[0]->create(hwnd, instance_, 0)) {
+  if (!paneToolbarRows_[0]->create(hwnd, instance_, 0,
+                                    makePaneToolbarRowConfig())) {
     paneToolbarRows_[0].reset();
   }
   HWND addressParent0 = paneToolbarRows_[0]
