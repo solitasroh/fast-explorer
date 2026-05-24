@@ -175,6 +175,7 @@ set(FE_RESOURCES
 # port/adapter layout being built up step by step.
 # ---------------------------------------------------------------------------
 add_library(winui_lite STATIC
+  lib/winui_lite/chrome/cmd-packing.h
   lib/winui_lite/chrome/com-raii.h
   lib/winui_lite/chrome/dark-scrollbar-hook.cpp
   lib/winui_lite/chrome/dark-scrollbar-hook.h
