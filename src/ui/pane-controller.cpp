@@ -150,17 +150,29 @@ bool PaneController::refresh() {
 
 namespace {
 
-bool shellOpenPath(const std::wstring& path, HWND host) noexcept {
+bool shellOpenPath(const std::wstring& path, const std::wstring& cwd,
+                   HWND host) noexcept {
   SHELLEXECUTEINFOW info{};
   info.cbSize = sizeof(info);
-  // SEE_MASK_NOCLOSEPROCESS is intentionally omitted — we do not
-  // track the launched process. FLAG_NO_UI lets the shell hide its
-  // error dialog and surface failure through the return value so
-  // callers can log instead.
-  info.fMask = SEE_MASK_FLAG_NO_UI;
+  // No SEE_MASK_FLAG_NO_UI: that flag suppresses not just the shell's
+  // own error dialog but also the UAC consent prompt that AppInfo
+  // raises when activating a manifest-elevated exe. Double-clicking
+  // an admin-required installer was silently no-op'ing as a result.
+  // SEE_MASK_NOASYNC keeps the call synchronous so AppInfo can wire
+  // the consent.exe handshake back to our process before lpFile goes
+  // out of scope when we return.
+  info.fMask = SEE_MASK_NOASYNC;
   info.hwnd = host;
-  info.lpVerb = L"open";
+  // lpVerb = nullptr lets the shell pick the registered default verb
+  // for the file class. For .exe that resolves to "open", same as
+  // before; for .msi / .lnk / .url it matches Win Explorer's double-
+  // click handling.
+  info.lpVerb = nullptr;
   info.lpFile = path.c_str();
+  // Parent folder as CWD — matches Win Explorer parity and is what
+  // many installers (NSIS, InstallShield) implicitly assume when
+  // reading bundled resources via relative paths.
+  info.lpDirectory = cwd.empty() ? nullptr : cwd.c_str();
   info.nShow = SW_SHOWNORMAL;
   return ShellExecuteExW(&info) != FALSE;
 }
@@ -188,7 +200,7 @@ bool PaneController::openItem(std::uint32_t row) {
   if (fast_explorer::core::isDirectory(store_.visibleAt(row))) {
     return openFolder(fullPath);
   }
-  return shellOpenPath(fullPath, hostWindow_);
+  return shellOpenPath(fullPath, currentPath_, hostWindow_);
 }
 
 bool PaneController::deleteItem(std::uint32_t row) {

@@ -58,6 +58,7 @@ inline constexpr WORD kAccelProperties             = 118;  // Alt+Enter
 inline constexpr WORD kAccelToolMenu               = 119;  // Alt+M
 inline constexpr WORD kAccelLayoutTri              = 120;  // Ctrl+3
 inline constexpr WORD kAccelLayoutQuad             = 121;  // Ctrl+4
+inline constexpr WORD kAccelSelectAll              = 122;  // Ctrl+A
 
 // Toolbar button IDs (per-pane nav toolbar — back / forward / up /
 // refresh). The packing rule mirrors the menu-item convention adopted

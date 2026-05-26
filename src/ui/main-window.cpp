@@ -420,6 +420,21 @@ bool routeEditClipboardIfFocused(UINT editMsg) noexcept {
   return true;
 }
 
+// Ctrl+A parity: single-line Win32 Edit does not implement select-all
+// natively (only RichEdit does). When focus is on an Edit (address bar,
+// inline rename, filter box), forward EM_SETSEL(0, -1) so the text is
+// fully selected. Returns false so the caller can fall back to
+// list-view select-all.
+bool routeEditSelectAllIfFocused() noexcept {
+  HWND focused = GetFocus();
+  if (focused == nullptr) return false;
+  wchar_t cls[8] = {0};
+  if (GetClassNameW(focused, cls, ARRAYSIZE(cls)) == 0) return false;
+  if (_wcsicmp(cls, L"Edit") != 0) return false;
+  SendMessageW(focused, EM_SETSEL, 0, static_cast<LPARAM>(-1));
+  return true;
+}
+
 }  // namespace
 
 MainWindow::MainWindow(fast_explorer::core::ProcessMemoryService& memory,
@@ -2266,6 +2281,30 @@ LRESULT MainWindow::onCommand(HWND hwnd, UINT msg, WPARAM wParam,
           setActivePane(next);
         }
         return 0;
+      case kAccelSelectAll: {
+        // Edit focus → select the Edit's text (single-line Edit has no
+        // native Ctrl+A). Otherwise, select every row in the active
+        // pane's list-view. SetItemState with -1 broadcasts to all
+        // items; under LVS_OWNERDATA this still fires LVN_ODSTATECHANGED
+        // so SelectionSync resyncs PaneController in one pass.
+        if (routeEditSelectAllIfFocused()) {
+          return 0;
+        }
+        HWND focused = GetFocus();
+        std::size_t paneIdx = 0;
+        HWND lv = nullptr;
+        if (focused != nullptr &&
+            paneIndexFromListView(focused, paneIdx)) {
+          lv = focused;
+        } else if (paneManager_) {
+          const std::size_t active = paneManager_->activeIndex();
+          if (active < listViews_.size()) lv = listViews_[active];
+        }
+        if (lv != nullptr) {
+          ListView_SetItemState(lv, -1, LVIS_SELECTED, LVIS_SELECTED);
+        }
+        return 0;
+      }
     }
     // Unknown accelerator id: swallow without calling DefWindowProc so
     // an unbound key does not produce a system beep.
