@@ -43,6 +43,10 @@ set(FE_APP_SOURCES
   src/ui/column-formatter.h
   src/ui/extension-icon-cache.cpp
   src/ui/extension-icon-cache.h
+  src/ui/adapters/shell-item-dispatcher.cpp
+  src/ui/adapters/shell-item-dispatcher.h
+  src/ui/adapters/shell-item-source.cpp
+  src/ui/adapters/shell-item-source.h
   src/ui/folder-name.cpp
   src/ui/folder-name.h
   src/ui/format-cache.cpp
@@ -322,6 +326,10 @@ add_executable(core-tests
   src/ui/column-formatter.h
   src/ui/extension-icon-cache.cpp
   src/ui/extension-icon-cache.h
+  src/ui/adapters/shell-item-dispatcher.cpp
+  src/ui/adapters/shell-item-dispatcher.h
+  src/ui/adapters/shell-item-source.cpp
+  src/ui/adapters/shell-item-source.h
   src/ui/folder-name.cpp
   src/ui/folder-name.h
   src/ui/format-cache.cpp

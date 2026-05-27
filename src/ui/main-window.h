@@ -30,6 +30,11 @@ class DispInfoHistogram;
 class LabelEditController;
 class ListViewGroupCallback;
 class PaneController;
+
+namespace adapters {
+class ShellItemSource;
+class ShellItemDispatcher;
+}
 template <class TPane> class PaneManager;
 class PaneToolbarRow;
 class SelectionSync;
@@ -282,6 +287,15 @@ class MainWindow : public WindowBase {
   std::array<std::unique_ptr<class IconCacheCoordinator>, 4> iconCoords_;
   std::array<std::unique_ptr<SelectionSync>, 4> selectionSyncs_;
   std::array<std::unique_ptr<LabelEditController>, 4> labelEdits_;
+  // Per-pane port adapters. Created when the matching PaneController
+  // comes up (slot 0 in onCreate; slots 1-3 at the tail of
+  // installPaneAt) and destroyed BEFORE the controller goes away
+  // (reset at the head of uninstallPaneAt, and on window teardown
+  // via member-destruction order — declared AFTER paneManager_).
+  // Each adapter borrows a non-owning pointer to its controller.
+  std::array<std::unique_ptr<adapters::ShellItemSource>, 4> itemSources_;
+  std::array<std::unique_ptr<adapters::ShellItemDispatcher>, 4>
+      itemDispatchers_;
   // Per-pane LVS_OWNERDATA group callback. Raw pointer because the
   // listview holds a ref via IListView::SetOwnerDataCallback — we
   // AddRef once at install time and Release once at uninstall. The

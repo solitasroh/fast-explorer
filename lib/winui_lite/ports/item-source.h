@@ -42,8 +42,11 @@ class ItemSource {
 
   // Switch the source to enumerate items at `location`. Replaces
   // any previous content; sources keep at most one active location.
-  // Sync or async is up to the adapter.
-  virtual void navigateTo(const std::wstring& location) = 0;
+  // Sync or async is up to the adapter — return true if the
+  // location was accepted (sync sources: enumeration succeeded;
+  // async sources: enumeration was kicked off). Return false on
+  // validation failure (e.g. shell adapter rejects an invalid path).
+  virtual bool navigateTo(const std::wstring& location) = 0;
 
   // The location currently being enumerated. Empty before any
   // navigateTo() call. Returned by reference so chrome can avoid

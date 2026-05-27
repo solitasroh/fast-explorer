@@ -24,7 +24,11 @@ namespace {
 // Three rows, ids = index + 1 so kInvalidItemId (0) really is invalid.
 class FakeSource : public ItemSource {
  public:
-  void navigateTo(const std::wstring& loc) override { loc_ = loc; }
+  bool navigateTo(const std::wstring& loc) override {
+    if (loc.empty()) return false;
+    loc_ = loc;
+    return true;
+  }
   const std::wstring& currentLocation() const override { return loc_; }
   std::size_t count() const override { return 3; }
   ItemId idAt(std::size_t index) const override {
@@ -66,8 +70,14 @@ class FakeActivator : public ItemActivator {
 FE_TEST_CASE(Ports_FakeSource_NavigateRoundTrip) {
   FakeSource s;
   FE_ASSERT_TRUE(s.currentLocation().empty());
-  s.navigateTo(L"C:\\dev");
+  FE_ASSERT_TRUE(s.navigateTo(L"C:\\dev"));
   FE_ASSERT_TRUE(s.currentLocation() == L"C:\\dev");
+}
+
+FE_TEST_CASE(Ports_FakeSource_NavigateEmptyRejected) {
+  FakeSource s;
+  FE_ASSERT_TRUE(!s.navigateTo(L""));
+  FE_ASSERT_TRUE(s.currentLocation().empty());
 }
 
 FE_TEST_CASE(Ports_FakeSource_CountAndIdMapping) {
@@ -119,7 +129,7 @@ FE_TEST_CASE(Ports_PolymorphicDispatch_ThroughBasePointers) {
   ItemDispatcher* dBase = &dispatcher;
   ItemActivator* aBase = &activator;
 
-  sBase->navigateTo(L"X:");
+  FE_ASSERT_TRUE(sBase->navigateTo(L"X:"));
   FE_ASSERT_EQ(sBase->count(), static_cast<std::size_t>(3));
   const ItemId id = sBase->idAt(1);
   FE_ASSERT_TRUE(dBase->textFor(id, ItemField::Name) == L"name-2");

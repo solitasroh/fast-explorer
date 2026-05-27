@@ -40,6 +40,8 @@
 #include "ui/clipboard-ops.h"
 #include "winui_lite/chrome/com-raii.h"
 #include "winui_lite/widgets/address-input.h"
+#include "ui/adapters/shell-item-dispatcher.h"
+#include "ui/adapters/shell-item-source.h"
 #include "ui/drop-source.h"
 #include "ui/drop-target.h"
 #include "ui/selection-sync.h"
@@ -644,6 +646,13 @@ bool MainWindow::installPaneAt(std::size_t idx) {
   // openFolder (if any) is driven by the caller; sync address bar so
   // the slot is not blank between create and the first openFolder.
   syncAddressBar(idx);
+  // Construct port adapters last so a half-built slot never leaves an
+  // adapter pointing at a torn-down PaneController. If anything above
+  // fails (return false), the adapters_[idx] slot stays empty.
+  PaneController& pc = paneManager_->at(idx);
+  itemSources_[idx] = std::make_unique<adapters::ShellItemSource>(pc);
+  itemDispatchers_[idx] =
+      std::make_unique<adapters::ShellItemDispatcher>(pc);
   return true;
 }
 
@@ -651,6 +660,12 @@ void MainWindow::uninstallPaneAt(std::size_t idx) {
   if (idx == 0) return;
   if (idx >= listViews_.size()) return;
   if (hwnd_ == nullptr) return;
+
+  // Drop adapters first — they borrow non-owning pointers into the
+  // PaneController that the rest of teardown (and the eventual
+  // paneManager_->closePane) is about to invalidate.
+  itemDispatchers_[idx].reset();
+  itemSources_[idx].reset();
 
   // Hide the popup before any pane HWNDs go away — its mouse hook
   // and pending pick payloads anchor on those windows.
@@ -1318,7 +1333,19 @@ void MainWindow::handleAddressCommit(std::size_t paneIdx) {
   // Inactive-pane commit must navigate the source pane, not the
   // active one, so flip activeness to the edited pane first.
   setActivePane(paneIdx);
-  if (paneManager_->at(paneIdx).openFolder(text)) {
+  // Route address-bar Enter through the ItemSource port. The shell
+  // adapter forwards to PaneController::openFolder so behaviour is
+  // identical to the direct call this replaced — the only change is
+  // that the entry point now talks to the port abstraction. Step 9+
+  // migrate the remaining navigation entry points (back / forward /
+  // up / double-click activation) one by one.
+  ports::ItemSource* source = (paneIdx < itemSources_.size())
+                                  ? itemSources_[paneIdx].get()
+                                  : nullptr;
+  const bool ok =
+      source ? source->navigateTo(text)
+             : paneManager_->at(paneIdx).openFolder(text);
+  if (ok) {
     clearListViewForNavigation(paneIdx);
     syncAddressBar(paneIdx);
   }
@@ -1604,6 +1631,9 @@ LRESULT MainWindow::onCreate(HWND hwnd) {
   paneManager_ = std::make_unique<PaneManager<PaneController>>();
   paneManager_->openInitial(hwnd);
   pane_ = &paneManager_->active();
+  itemSources_[0] = std::make_unique<adapters::ShellItemSource>(*pane_);
+  itemDispatchers_[0] =
+      std::make_unique<adapters::ShellItemDispatcher>(*pane_);
   {
     auto* dt =
         new (std::nothrow) PaneDropTarget(listView_, paneManager_.get(), 0);
