@@ -66,7 +66,7 @@ class PaneSplitter {
   // into a heap allocation owned by the HWND; freed at WM_NCDESTROY.
   static HWND create(HINSTANCE instance, HWND parent, SplitterContext ctx);
 
-  static constexpr const wchar_t* kClassName = L"FastExplorer.PaneSplitter";
+  static constexpr const wchar_t* kClassName = L"winui_lite.PaneSplitter";
 };
 
 }  // namespace fast_explorer::ui
