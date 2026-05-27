@@ -199,6 +199,9 @@ add_library(winui_lite STATIC
   lib/winui_lite/chrome/theme-watcher.h
   lib/winui_lite/chrome/window-base.cpp
   lib/winui_lite/chrome/window-base.h
+  lib/winui_lite/ports/item-activator.h
+  lib/winui_lite/ports/item-dispatcher.h
+  lib/winui_lite/ports/item-source.h
   lib/winui_lite/widgets/address-input.cpp
   lib/winui_lite/widgets/address-input.h
 )
@@ -307,6 +310,7 @@ add_executable(core-tests
   tests/settings-store-tests.cpp
   tests/splitter-ratios-tests.cpp
   tests/command-router-tests.cpp
+  tests/ports-contract-tests.cpp
   tests/splitter-resize-tests.cpp
   tests/pane-manager-tests.cpp
   tests/pane-layout-tests.cpp
