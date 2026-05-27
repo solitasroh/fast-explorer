@@ -1372,6 +1372,15 @@ void MainWindow::applyStatusParts(int clientWidth) {
 
 bool MainWindow::create(HINSTANCE instance, int showCommand) {
   instance_ = instance;
+  // Sample accelerator registration that proves the router runs in
+  // production. The handler reaches back into MainWindow state the
+  // same way the inline switch case did. Step 12 grows this list to
+  // cover the rest of the kAccel* group.
+  accelRouter_.registerCommand(kAccelToolMenu, [this] {
+    const std::size_t activeIdx =
+        paneManager_ ? paneManager_->activeIndex() : 0;
+    showToolMenuForPane(activeIdx);
+  });
   ClassSpec cs;
   cs.className = kClassName;
   // App icon: large for Alt+Tab / taskbar, small for window caption.
@@ -1979,6 +1988,10 @@ LRESULT MainWindow::onCommand(HWND hwnd, UINT msg, WPARAM wParam,
     }
   }
   if (HIWORD(wParam) == 1) {
+    // Try the router first. Currently registers a single accelerator
+    // (kAccelToolMenu) as proof of the wiring; step 12 will move the
+    // rest of the switch behind this dispatch one case at a time.
+    if (accelRouter_.dispatch(LOWORD(wParam))) return 0;
     const std::size_t activeIdx =
         paneManager_ ? paneManager_->activeIndex() : 0;
     switch (LOWORD(wParam)) {
@@ -2039,9 +2052,7 @@ LRESULT MainWindow::onCommand(HWND hwnd, UINT msg, WPARAM wParam,
           showFolderProperties(paneManager_->at(activeIdx).currentPath(), hwnd);
         }
         return 0;
-      case kAccelToolMenu:
-        showToolMenuForPane(activeIdx);
-        return 0;
+      // kAccelToolMenu now routed via accelRouter_ (step 5c proof).
       case kAccelLayoutSingle:
         enterLayout(fast_explorer::core::LayoutPreset::Single);
         return 0;

@@ -175,6 +175,8 @@ set(FE_RESOURCES
 add_library(winui_lite STATIC
   lib/winui_lite/chrome/cmd-packing.h
   lib/winui_lite/chrome/com-raii.h
+  lib/winui_lite/chrome/command-router.cpp
+  lib/winui_lite/chrome/command-router.h
   lib/winui_lite/chrome/dark-scrollbar-hook.cpp
   lib/winui_lite/chrome/dark-scrollbar-hook.h
   lib/winui_lite/chrome/dispinfo-histogram.cpp
@@ -302,6 +304,7 @@ add_executable(core-tests
   tests/label-edit-controller-tests.cpp
   tests/settings-store-tests.cpp
   tests/splitter-ratios-tests.cpp
+  tests/command-router-tests.cpp
   tests/splitter-resize-tests.cpp
   tests/pane-manager-tests.cpp
   tests/pane-layout-tests.cpp

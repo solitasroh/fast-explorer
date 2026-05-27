@@ -7,6 +7,7 @@
 #include <memory>
 #include <string>
 
+#include "winui_lite/chrome/command-router.h"
 #include "winui_lite/chrome/layout-preset.h"
 #include "ui/cut-state-tracker.h"
 #include "winui_lite/chrome/pane-layout.h"
@@ -253,6 +254,10 @@ class MainWindow : public WindowBase {
   HWND listView_ = nullptr;
   std::array<HWND, 4> listViews_{nullptr, nullptr, nullptr, nullptr};
   StatusBar statusBar_;
+  // Accelerator-only dispatch table today. Step 5 wires the mechanism
+  // up against the HIWORD(wParam) == 1 path of onCommand; step 12
+  // will migrate menu / toolbar handlers across as well.
+  CommandRouter accelRouter_;
   std::array<HWND, 4> addressBars_{nullptr, nullptr, nullptr, nullptr};
   std::array<HWND, 4> addressDropdownBtns_{nullptr, nullptr, nullptr, nullptr};
   // The toolbar row hosts the nav buttons + address bar + hamburger
