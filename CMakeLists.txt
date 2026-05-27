@@ -191,6 +191,8 @@ add_library(winui_lite STATIC
   lib/winui_lite/chrome/pane-toolbar-row.h
   lib/winui_lite/chrome/splitter-ratios.h
   lib/winui_lite/chrome/splitter-resize.h
+  lib/winui_lite/chrome/status-bar.cpp
+  lib/winui_lite/chrome/status-bar.h
   lib/winui_lite/chrome/theme-watcher.cpp
   lib/winui_lite/chrome/theme-watcher.h
   lib/winui_lite/chrome/window-base.cpp

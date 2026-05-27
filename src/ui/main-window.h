@@ -12,6 +12,7 @@
 #include "winui_lite/chrome/pane-layout.h"
 #include "ui/search-popup.h"
 #include "winui_lite/chrome/splitter-ratios.h"
+#include "winui_lite/chrome/status-bar.h"
 #include "winui_lite/chrome/window-base.h"
 
 namespace fast_explorer::core {
@@ -251,7 +252,7 @@ class MainWindow : public WindowBase {
   // and destroyed by uninstallPaneAt().
   HWND listView_ = nullptr;
   std::array<HWND, 4> listViews_{nullptr, nullptr, nullptr, nullptr};
-  HWND statusBar_ = nullptr;
+  StatusBar statusBar_;
   std::array<HWND, 4> addressBars_{nullptr, nullptr, nullptr, nullptr};
   std::array<HWND, 4> addressDropdownBtns_{nullptr, nullptr, nullptr, nullptr};
   // The toolbar row hosts the nav buttons + address bar + hamburger

@@ -129,12 +129,6 @@ constexpr ColumnSpec kColumns[] = {
     {L"Attributes", 80, LVCFMT_LEFT, fast_explorer::core::SortKey::None, false},
 };
 
-HWND createStatusBar(HWND parent, HINSTANCE instance) {
-  return CreateWindowExW(0, STATUSCLASSNAMEW, L"",
-                         WS_CHILD | WS_VISIBLE | SBARS_SIZEGRIP, 0, 0, 0, 0,
-                         parent, nullptr, instance, nullptr);
-}
-
 HWND createAddressBar(HWND parent, HINSTANCE instance) {
   // Plain Edit, not ComboBoxEx. v0.2.8 through v0.2.12 tried every
   // theme-strip + CTLCOLOR + WM_ERASEBKGND hack at the ComboBoxEx
@@ -289,29 +283,6 @@ void writeCellText(NMLVDISPINFOW& disp, const std::wstring& text) {
   }
   disp.item.pszText[copyChars] = L'\0';
 }
-
-// Forward decl for the dark-mode-aware status-bar subclass + its
-// state struct. Definitions live in the later anonymous namespace.
-// The subclass + state must be referenceable from MainWindow::onCreate
-// which sits between the two anonymous-namespace blocks.
-// isAppInDarkMode comes from winui_lite/chrome/theme-watcher.h.
-struct StatusBarSubclassState {
-  bool dark = false;
-  HBRUSH bgBrush = nullptr;
-  COLORREF bgColor = 0;
-  COLORREF textColor = 0;
-  bool valid = false;
-  void refresh() noexcept {
-    dark = isAppInDarkMode();
-    bgColor = dark ? RGB(32, 32, 32) : GetSysColor(COLOR_BTNFACE);
-    textColor = dark ? RGB(241, 241, 241) : GetSysColor(COLOR_BTNTEXT);
-    if (bgBrush != nullptr) DeleteObject(bgBrush);
-    bgBrush = CreateSolidBrush(bgColor);
-    valid = true;
-  }
-};
-LRESULT CALLBACK statusBarSubclassProc(HWND, UINT, WPARAM, LPARAM,
-                                        UINT_PTR, DWORD_PTR);
 
 // ListView subclass that catches WM_NOTIFY from the listview's own
 // header child and over-paints column titles in dark mode. The header
@@ -530,12 +501,7 @@ void MainWindow::relayout() {
   const int clientW = client.right - client.left;
   const int clientH = client.bottom - client.top;
 
-  int statusH = 0;
-  if (statusBar_) {
-    RECT statusRect{};
-    GetWindowRect(statusBar_, &statusRect);
-    statusH = statusRect.bottom - statusRect.top;
-  }
+  const int statusH = statusBar_.height();
   applyStatusParts(clientW);
 
   const auto& ratios =
@@ -1389,24 +1355,19 @@ void MainWindow::handleAddressCommit(std::size_t paneIdx) {
 }
 
 void MainWindow::setPaneStatusText(std::size_t paneIdx, const wchar_t* text) {
-  if (statusBar_ == nullptr || text == nullptr) return;
+  if (text == nullptr) return;
   if (paneIdx >= kMaxPanes) return;
   if (!paneManager_ || paneIdx != paneManager_->activeIndex()) {
     return;  // Only active pane drives the (single) status bar.
   }
-  SendMessageW(statusBar_, SB_SETTEXTW, 0,
-               reinterpret_cast<LPARAM>(text));
+  statusBar_.setText(0, text);
 }
 
 void MainWindow::applyStatusParts(int clientWidth) {
-  if (statusBar_ == nullptr) return;
   (void)clientWidth;
   // Always a single full-width part — the bar shows ACTIVE pane info
-  // only, regardless of paneCount. SB_SETPARTS is synchronous so the
-  // int* into the stack array is valid for the duration of the call.
-  int edges[1] = {kStatusBarPartExtendsToEdge};
-  SendMessageW(statusBar_, SB_SETPARTS, 1,
-               reinterpret_cast<LPARAM>(&edges[0]));
+  // only, regardless of paneCount.
+  statusBar_.applySinglePart();
 }
 
 bool MainWindow::create(HINSTANCE instance, int showCommand) {
@@ -1635,21 +1596,11 @@ LRESULT MainWindow::onCreate(HWND hwnd) {
   }
   ListView_SetItemCountEx(listView_, 0, 0);
   listViews_[0] = listView_;
-  statusBar_ = createStatusBar(hwnd, instance_);
-  if (statusBar_ != nullptr) {
-    // Subclass takes over WM_PAINT so the status bar tints to dark
-    // mode alongside the title bar + toolbar row. Win32 status bar
-    // has no native dark theme — SetWindowTheme is a no-op for it.
-    // refData carries a heap-allocated StatusBarSubclassState that
-    // caches the brush / theme decision so WM_PAINT doesn't hit
-    // the registry or allocate a brush per frame; the subclass
-    // owns the lifetime (deleted in WM_NCDESTROY).
-    auto* state = new (std::nothrow) StatusBarSubclassState{};
-    if (state != nullptr) {
-      SetWindowSubclass(statusBar_, &statusBarSubclassProc, 0,
-                        reinterpret_cast<DWORD_PTR>(state));
-    }
-  }
+  // StatusBar::create installs the dark-mode subclass internally so
+  // the bar at the bottom of the window tints to match the chrome
+  // at the top. The wrapper owns the subclass state (heap allocated,
+  // freed at WM_NCDESTROY) so this call site stays one line.
+  statusBar_.create(hwnd, instance_);
   // dropTargets_[0] is registered after paneManager_ exists; see below.
   paneToolbarRows_[0] = std::make_unique<PaneToolbarRow>();
   if (!paneToolbarRows_[0]->create(hwnd, instance_, 0,
@@ -1734,81 +1685,6 @@ LRESULT MainWindow::onCreate(HWND hwnd) {
 }
 
 namespace {
-// Status bar is a STATUSCLASSNAMEW Win32 control with no native
-// dark-theme support — even SetWindowTheme(L"DarkMode_...") is a
-// no-op for it. To tint it for dark mode we subclass and own the
-// paint, mirroring the colours PaneToolbarRow uses so the bar at
-// the bottom of the window matches the chrome at the top.
-//
-// State (cached brush + theme decision) lives in a heap struct
-// passed via DWORD_PTR refData so neither registry nor GDI brush
-// creation happens on the WM_PAINT hot path during e.g. marquee-
-// select. The StatusBarSubclassState struct itself is declared
-// in the earlier anonymous namespace block (needed by onCreate).
-LRESULT CALLBACK statusBarSubclassProc(
-    HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam,
-    UINT_PTR idSubclass, DWORD_PTR refData) {
-  auto* state = reinterpret_cast<StatusBarSubclassState*>(refData);
-  if (msg == WM_NCDESTROY) {
-    RemoveWindowSubclass(hwnd, &statusBarSubclassProc, idSubclass);
-    if (state != nullptr) {
-      if (state->bgBrush != nullptr) DeleteObject(state->bgBrush);
-      delete state;
-    }
-    return DefSubclassProc(hwnd, msg, wParam, lParam);
-  }
-  if (msg == WM_THEMECHANGED || msg == WM_SYSCOLORCHANGE) {
-    if (state != nullptr) state->refresh();
-    InvalidateRect(hwnd, nullptr, TRUE);
-    return DefSubclassProc(hwnd, msg, wParam, lParam);
-  }
-  if (msg == WM_ERASEBKGND) {
-    return 1;  // WM_PAINT fills the whole client below.
-  }
-  if (msg == WM_PAINT && state != nullptr) {
-    if (!state->valid) state->refresh();
-    PAINTSTRUCT ps{};
-    HDC hdc = BeginPaint(hwnd, &ps);
-    RECT client{};
-    GetClientRect(hwnd, &client);
-    FillRect(hdc, &client, state->bgBrush);
-    HFONT statusFont = reinterpret_cast<HFONT>(
-        SendMessageW(hwnd, WM_GETFONT, 0, 0));
-    HGDIOBJ oldFont = statusFont ? SelectObject(hdc, statusFont) : nullptr;
-    SetBkMode(hdc, TRANSPARENT);
-    SetTextColor(hdc, state->textColor);
-    const int parts =
-        static_cast<int>(SendMessageW(hwnd, SB_GETPARTS, 0, 0));
-    for (int i = 0; i < parts; ++i) {
-      RECT partRc{};
-      SendMessageW(hwnd, SB_GETRECT, i,
-                   reinterpret_cast<LPARAM>(&partRc));
-      // Dynamic-size text fetch: long paths (\\?\... up to 32767
-      // wchars) would silently truncate inside a fixed buffer.
-      // SB_GETTEXTLENGTHW returns the length without the null
-      // terminator; +2 covers it plus one byte of safety slack.
-      const LRESULT lenLr =
-          SendMessageW(hwnd, SB_GETTEXTLENGTHW, i, 0);
-      const int len = LOWORD(lenLr);
-      if (len > 0) {
-        std::wstring buf(static_cast<size_t>(len) + 2, L'\0');
-        SendMessageW(hwnd, SB_GETTEXTW, i,
-                     reinterpret_cast<LPARAM>(buf.data()));
-        buf.resize(static_cast<size_t>(len));
-        RECT textRc = partRc;
-        textRc.left += 6;  // matches the inset Win32 status bar uses
-        DrawTextW(hdc, buf.data(), len, &textRc,
-                  DT_SINGLELINE | DT_VCENTER | DT_NOPREFIX |
-                      DT_END_ELLIPSIS);
-      }
-    }
-    if (oldFont) SelectObject(hdc, oldFont);
-    EndPaint(hwnd, &ps);
-    return 0;
-  }
-  return DefSubclassProc(hwnd, msg, wParam, lParam);
-}
-
 // Header NM_CUSTOMDRAW from the listview's child Header doesn't bubble
 // past the listview itself — we have to subclass the listview to see
 // it. In dark mode we take the full draw (fill rect + draw text);
@@ -1918,9 +1794,7 @@ LRESULT MainWindow::onDpiChanged(HWND hwnd, WPARAM wParam, LPARAM lParam) {
 }
 
 LRESULT MainWindow::onSize(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
-  if (statusBar_) {
-    SendMessageW(statusBar_, WM_SIZE, 0, 0);
-  }
+  statusBar_.forwardSize();
   if (hwnd_ != nullptr) {
     relayout();
   }
