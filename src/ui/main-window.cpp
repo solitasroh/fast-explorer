@@ -39,6 +39,7 @@
 #include "../../resources/resource-ids.h"
 #include "ui/clipboard-ops.h"
 #include "winui_lite/chrome/com-raii.h"
+#include "winui_lite/widgets/address-input.h"
 #include "ui/drop-source.h"
 #include "ui/drop-target.h"
 #include "ui/selection-sync.h"
@@ -128,37 +129,6 @@ constexpr ColumnSpec kColumns[] = {
     {L"Modified", 160, LVCFMT_LEFT, fast_explorer::core::SortKey::Modified, true},
     {L"Attributes", 80, LVCFMT_LEFT, fast_explorer::core::SortKey::None, false},
 };
-
-HWND createAddressBar(HWND parent, HINSTANCE instance) {
-  // Plain Edit, not ComboBoxEx. v0.2.8 through v0.2.12 tried every
-  // theme-strip + CTLCOLOR + WM_ERASEBKGND hack at the ComboBoxEx
-  // and its inner ComboBox / Edit to dark-mode the textbox — each
-  // attempt left the focused-state textbox white because the
-  // ComboBox's themed renderer owns the focused-bg paint and
-  // ignores CTLCOLOR / theme strip there. Plain Edit's bg comes
-  // straight from WM_CTLCOLOREDIT sent to its parent (the row),
-  // which the row handles directly. The dropdown ˅ that used to
-  // live on ComboBoxEx is now a separate BS_OWNERDRAW button (see
-  // createAddressDropdownBtn) — Windows Explorer's own dark
-  // address bar is built the same way.
-  HWND edit = CreateWindowExW(
-      0, WC_EDITW, L"",
-      WS_CHILD | WS_VISIBLE | WS_TABSTOP |
-          ES_AUTOHSCROLL | ES_LEFT,
-      0, 0, 0, 0, parent, nullptr, instance, nullptr);
-  if (edit != nullptr) {
-    // Strip the theme so CTLCOLOREDIT actually drives the bg when
-    // focused; themed Edits paint their own light bg in the focused
-    // state and ignore the returned brush, same root cause as the
-    // ComboBoxEx v0.2.12 ship that ate the original dark mode hacks.
-    SetWindowTheme(edit, L"", L"");
-    // No EM_SETMARGINS or WS_BORDER here — the NC padding subclass
-    // (installed by PaneToolbarRow::setAddressBar) owns both the
-    // horizontal margin and the 1-px border so they stay in sync
-    // with the vertical-centring padding it computes.
-  }
-  return edit;
-}
 
 HWND createAddressDropdownBtn(HWND parent, HINSTANCE instance,
                                std::size_t paneIdx) {
@@ -632,7 +602,7 @@ bool MainWindow::installPaneAt(std::size_t idx) {
   HWND addressParent = paneToolbarRows_[idx]
                            ? paneToolbarRows_[idx]->handle()
                            : hwnd_;
-  addressBars_[idx] = createAddressBar(addressParent, instance_);
+  addressBars_[idx] = AddressInput::create(addressParent, instance_);
   addressDropdownBtns_[idx] =
       createAddressDropdownBtn(addressParent, instance_, idx);
   if (addressBars_[idx]) {
@@ -1619,7 +1589,7 @@ LRESULT MainWindow::onCreate(HWND hwnd) {
   HWND addressParent0 = paneToolbarRows_[0]
                             ? paneToolbarRows_[0]->handle()
                             : hwnd;
-  addressBars_[0] = createAddressBar(addressParent0, instance_);
+  addressBars_[0] = AddressInput::create(addressParent0, instance_);
   addressDropdownBtns_[0] = createAddressDropdownBtn(addressParent0, instance_, 0);
   if (addressBars_[0]) {
     if (paneToolbarRows_[0]) {

@@ -199,6 +199,8 @@ add_library(winui_lite STATIC
   lib/winui_lite/chrome/theme-watcher.h
   lib/winui_lite/chrome/window-base.cpp
   lib/winui_lite/chrome/window-base.h
+  lib/winui_lite/widgets/address-input.cpp
+  lib/winui_lite/widgets/address-input.h
 )
 
 target_include_directories(winui_lite PUBLIC lib)
