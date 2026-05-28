@@ -39,6 +39,7 @@
 #include "../../resources/resource-ids.h"
 #include "winui_lite/widgets/address-input.h"
 #include "ui/adapters/shell-clipboard.h"
+#include "ui/adapters/shell-context-menu-adapter.h"
 #include "ui/adapters/shell-drag-drop.h"
 #include "ui/adapters/shell-item-dispatcher.h"
 #include "ui/adapters/shell-item-source.h"
@@ -655,6 +656,8 @@ bool MainWindow::installPaneAt(std::size_t idx) {
       std::make_unique<adapters::ShellClipboard>(pc, lv);
   dragDrops_[idx] =
       std::make_unique<adapters::ShellDragDrop>(pc, lv);
+  contextMenus_[idx] =
+      std::make_unique<adapters::ShellContextMenuAdapter>(pc, hwnd_);
   return true;
 }
 
@@ -666,6 +669,7 @@ void MainWindow::uninstallPaneAt(std::size_t idx) {
   // Drop adapters first — they borrow non-owning pointers into the
   // PaneController that the rest of teardown (and the eventual
   // paneManager_->closePane) is about to invalidate.
+  contextMenus_[idx].reset();
   dragDrops_[idx].reset();
   clipboards_[idx].reset();
   itemDispatchers_[idx].reset();
@@ -1642,6 +1646,8 @@ LRESULT MainWindow::onCreate(HWND hwnd) {
       std::make_unique<adapters::ShellClipboard>(*pane_, listView_);
   dragDrops_[0] =
       std::make_unique<adapters::ShellDragDrop>(*pane_, listView_);
+  contextMenus_[0] =
+      std::make_unique<adapters::ShellContextMenuAdapter>(*pane_, hwnd);
   {
     auto* dt =
         new (std::nothrow) PaneDropTarget(listView_, paneManager_.get(), 0);
@@ -2747,7 +2753,7 @@ void MainWindow::handleListViewRightClick(NMHDR* hdr) {
 
   const auto& store = targetPane.store();
   const std::size_t shown = store.displayedCount();
-  std::vector<std::wstring> leaves;
+  std::vector<ports::ItemId> ids;
   if (clicked >= 0) {
     if (clickedRowSelected && selectedRows.size() > 1) {
       // Multi-selection right-click on one of the selected rows:
@@ -2756,14 +2762,14 @@ void MainWindow::handleListViewRightClick(NMHDR* hdr) {
       // Validate each entry's name pointer before appending so a
       // stale OWNERDATA selection bit (which can survive an
       // fs-watch-triggered refresh after a Delete) does not inject
-      // an empty leaf — parseChildren skips empties, but
-      // constructing an empty std::wstring here is wasted work.
-      leaves.reserve(selectedRows.size());
+      // an invalid id — the adapter's resolveLeaves drops them,
+      // but trimming early keeps the id vector tight.
+      ids.reserve(selectedRows.size());
       for (int row : selectedRows) {
         if (static_cast<std::size_t>(row) < shown) {
           const auto& e = store.visibleAt(static_cast<std::size_t>(row));
           if (e.namePtr != nullptr && e.nameLength > 0) {
-            leaves.emplace_back(e.namePtr, e.nameLength);
+            ids.push_back(static_cast<ports::ItemId>(row + 1));
           }
         }
       }
@@ -2782,15 +2788,19 @@ void MainWindow::handleListViewRightClick(NMHDR* hdr) {
       if (static_cast<std::size_t>(clicked) < shown) {
         const auto& e = store.visibleAt(static_cast<std::size_t>(clicked));
         if (e.namePtr != nullptr && e.nameLength > 0) {
-          leaves.emplace_back(e.namePtr, e.nameLength);
+          ids.push_back(static_cast<ports::ItemId>(clicked + 1));
         }
       }
     }
   }
-  // clicked < 0 (empty area) → leaves stays empty so the popup
+  // clicked < 0 (empty area) → ids stays empty so the adapter
   // resolves to the folder's background menu (Open / Paste /
-  // "New" / Properties).
-  ShellContextMenu::show(hwnd_, folderPath, leaves, screenPt);
+  // "New" / Properties). The augmented empty-area path (with the
+  // group-by submenu) returned earlier in this function and never
+  // reaches here.
+  if (contextMenus_[paneIdx]) {
+    contextMenus_[paneIdx]->show(ids, screenPt);
+  }
 }
 
 LRESULT MainWindow::handleCustomDraw(NMHDR* hdr) {

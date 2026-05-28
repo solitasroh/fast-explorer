@@ -49,6 +49,8 @@ set(FE_APP_SOURCES
   src/ui/adapters/shell-change-notifier.h
   src/ui/adapters/shell-clipboard.cpp
   src/ui/adapters/shell-clipboard.h
+  src/ui/adapters/shell-context-menu-adapter.cpp
+  src/ui/adapters/shell-context-menu-adapter.h
   src/ui/adapters/shell-drag-drop.cpp
   src/ui/adapters/shell-drag-drop.h
   src/ui/adapters/shell-item-dispatcher.cpp
@@ -213,6 +215,7 @@ add_library(winui_lite STATIC
   lib/winui_lite/chrome/window-base.h
   lib/winui_lite/ports/change-notifier.h
   lib/winui_lite/ports/clipboard-backend.h
+  lib/winui_lite/ports/context-menu.h
   lib/winui_lite/ports/drag-drop-backend.h
   lib/winui_lite/ports/item-activator.h
   lib/winui_lite/ports/item-dispatcher.h

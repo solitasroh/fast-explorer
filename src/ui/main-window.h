@@ -36,6 +36,7 @@ class ShellItemSource;
 class ShellItemDispatcher;
 class ShellClipboard;
 class ShellDragDrop;
+class ShellContextMenuAdapter;
 }
 template <class TPane> class PaneManager;
 class PaneToolbarRow;
@@ -300,6 +301,8 @@ class MainWindow : public WindowBase {
       itemDispatchers_;
   std::array<std::unique_ptr<adapters::ShellClipboard>, 4> clipboards_;
   std::array<std::unique_ptr<adapters::ShellDragDrop>, 4> dragDrops_;
+  std::array<std::unique_ptr<adapters::ShellContextMenuAdapter>, 4>
+      contextMenus_;
   // Per-pane LVS_OWNERDATA group callback. Raw pointer because the
   // listview holds a ref via IListView::SetOwnerDataCallback — we
   // AddRef once at install time and Release once at uninstall. The
