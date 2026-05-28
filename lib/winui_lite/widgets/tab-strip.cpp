@@ -2,7 +2,6 @@
 
 #include <windowsx.h>
 
-#include <algorithm>
 #include <string>
 
 namespace fast_explorer::ui {
