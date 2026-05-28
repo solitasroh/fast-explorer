@@ -110,6 +110,24 @@ void MainWindow::registerAccelHandlers() {
   });
 
   // -----------------------------------------------------------------
+  // Tab keyboard surface (Ctrl+T / Ctrl+W / Ctrl+Tab / Ctrl+Shift+Tab).
+  // Routes through the active pane's PaneTabHost; no-op when no host
+  // exists (pane not yet created).
+  // -----------------------------------------------------------------
+  accelRouter_.registerCommand(kAccelNewTab, [this] {
+    if (auto* h = paneTabHost(activePane_)) h->openNewTab();
+  });
+  accelRouter_.registerCommand(kAccelCloseTab, [this] {
+    if (auto* h = paneTabHost(activePane_)) h->closeTab(h->activeTabIdx());
+  });
+  accelRouter_.registerCommand(kAccelTabCycleNext, [this] {
+    if (auto* h = paneTabHost(activePane_)) h->cycleNext();
+  });
+  accelRouter_.registerCommand(kAccelTabCyclePrev, [this] {
+    if (auto* h = paneTabHost(activePane_)) h->cyclePrev();
+  });
+
+  // -----------------------------------------------------------------
   // Group-by submenu — raw (unpacked) ids in the 0x8000 range, fired
   // from the empty-area context menu's '분류 방법' submenu. Active
   // pane is the target since the submenu is shown over the active

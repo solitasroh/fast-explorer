@@ -4,6 +4,7 @@
 #include <dwmapi.h>
 #include <shellapi.h>
 #include <uxtheme.h>
+#include <windowsx.h>
 #include <winsparkle.h>
 
 // dwmapi.lib linkage handled via CMakeLists.txt entry.
@@ -276,6 +277,16 @@ struct HeaderDarkState {
 LRESULT CALLBACK listViewHeaderColorSubclass(HWND, UINT, WPARAM, LPARAM,
                                               UINT_PTR, DWORD_PTR);
 
+// Subclass data for middle-click "open in new tab" on a listview.
+// Carries the owning MainWindow pointer and the pane index so the
+// proc can call onListViewMButtonUp without any global look-up.
+struct ListViewMButtonState {
+  MainWindow* owner = nullptr;
+  std::size_t paneIdx = 0;
+};
+LRESULT CALLBACK listViewMButtonSubclass(HWND, UINT, WPARAM, LPARAM,
+                                         UINT_PTR, DWORD_PTR);
+
 // Ctrl+C/X/V are registered as global accelerators (file-clipboard ops)
 // so TranslateAcceleratorW would otherwise eat them before an Edit
 // control (address bar, in-place rename) sees them. When focus is on
@@ -369,6 +380,23 @@ bool MainWindow::installPaneCoordinators(std::size_t idx, HWND listView) {
       } else {
         cb->Release();  // toss the no-IListView case (shouldn't happen on Win7+)
       }
+    }
+  }
+  // Install the middle-click "open in new tab" subclass. One install per
+  // pane; idempotent because SetWindowSubclass with a new refData pointer
+  // on an already-subclassed (hwnd, proc, id) pair frees the old data via
+  // the proc's WM_NCDESTROY path only if ownership is tracked there — here
+  // we keep the pointer stable for the window's lifetime, so just guard
+  // with GetWindowSubclass.
+  constexpr UINT_PTR kMButtonSubclassId = 0xFE20B0u;
+  DWORD_PTR existing = 0;
+  if (!GetWindowSubclass(listView, &listViewMButtonSubclass,
+                         kMButtonSubclassId, &existing)) {
+    auto* mbs = new (std::nothrow) ListViewMButtonState{this, idx};
+    if (mbs != nullptr) {
+      SetWindowSubclass(listView, &listViewMButtonSubclass,
+                        kMButtonSubclassId,
+                        reinterpret_cast<DWORD_PTR>(mbs));
     }
   }
   return true;
@@ -1725,6 +1753,25 @@ LRESULT CALLBACK listViewHeaderColorSubclass(
   return DefSubclassProc(hwnd, msg, wParam, lParam);
 }
 
+// Middle-click "open in new tab" subclass proc.  Handles WM_MBUTTONUP;
+// all other messages fall through to DefSubclassProc.
+LRESULT CALLBACK listViewMButtonSubclass(
+    HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam,
+    UINT_PTR idSubclass, DWORD_PTR refData) {
+  if (msg == WM_NCDESTROY) {
+    RemoveWindowSubclass(hwnd, &listViewMButtonSubclass, idSubclass);
+    delete reinterpret_cast<ListViewMButtonState*>(refData);
+    return DefSubclassProc(hwnd, msg, wParam, lParam);
+  }
+  if (msg == WM_MBUTTONUP) {
+    auto* s = reinterpret_cast<ListViewMButtonState*>(refData);
+    if (s != nullptr && s->owner != nullptr) {
+      return s->owner->onListViewMButtonUp(s->paneIdx, lParam);
+    }
+  }
+  return DefSubclassProc(hwnd, msg, wParam, lParam);
+}
+
 }  // namespace
 
 void MainWindow::applySystemTheme() {
@@ -2913,12 +2960,58 @@ std::optional<std::size_t> MainWindow::takePendingActivation(
   return out;
 }
 
-// ---- Phase 5 Task 25 stub (filled by Phase 6 Task 29) -------------------
+// ---- Phase 6 Task 28: listview middle-click → open in new tab -----------
 
-void MainWindow::showTabContextMenu(std::size_t /*paneIdx*/,
-                                    std::size_t /*tabIdx*/,
-                                    POINT /*screen*/) {
-  // No-op stub. Phase 6 Task 29 provides the real implementation.
+LRESULT MainWindow::onListViewMButtonUp(std::size_t paneIdx, LPARAM lParam) {
+  LVHITTESTINFO ht{};
+  ht.pt.x = GET_X_LPARAM(lParam);
+  ht.pt.y = GET_Y_LPARAM(lParam);
+  ListView_HitTest(listViews_[paneIdx], &ht);
+  if (ht.iItem < 0) return 0;
+
+  auto* h = paneTabHost(paneIdx);
+  if (!h) return 0;
+  PaneController& pane = h->activeTab();
+  const auto& store = pane.store();
+  if (static_cast<std::size_t>(ht.iItem) >= store.publishedCount()) return 0;
+  const std::uint32_t raw = store.visibleOrder()[ht.iItem];
+  const auto& entry = store.entryAt(raw);
+  if (!fast_explorer::core::isDirectory(entry)) return 0;
+
+  const std::wstring leaf{fast_explorer::core::nameView(entry)};
+  std::wstring abs = pane.currentPath();
+  if (!abs.empty() && abs.back() != L'\\') abs.push_back(L'\\');
+  abs += leaf;
+  h->openInNewTab(abs);
+  return 0;
+}
+
+// ---- Phase 6 Task 29: tab strip right-click context menu ----------------
+
+void MainWindow::showTabContextMenu(std::size_t paneIdx,
+                                    std::size_t tabIdx,
+                                    POINT screen) {
+  auto* h = paneTabHost(paneIdx);
+  if (!h) return;
+  const std::size_t n = h->tabCount();
+
+  HMENU menu = CreatePopupMenu();
+  if (!menu) return;
+  AppendMenuW(menu, MF_STRING, 0xC001, L"Close tab\tCtrl+W");
+  const UINT others = (n > 1) ? MF_STRING : (MF_STRING | MF_GRAYED);
+  AppendMenuW(menu, others, 0xC002, L"Close other tabs");
+  const UINT toRight = (tabIdx + 1 < n) ? MF_STRING : (MF_STRING | MF_GRAYED);
+  AppendMenuW(menu, toRight, 0xC003, L"Close tabs to the right");
+
+  const int cmd = TrackPopupMenuEx(menu, TPM_RETURNCMD | TPM_RIGHTBUTTON,
+                                   screen.x, screen.y, hwnd_, nullptr);
+  DestroyMenu(menu);
+  switch (cmd) {
+    case 0xC001: h->closeTab(tabIdx); break;
+    case 0xC002: h->closeOtherTabs(tabIdx); break;
+    case 0xC003: h->closeTabsToRight(tabIdx); break;
+    default: break;
+  }
 }
 
 }  // namespace fast_explorer::ui

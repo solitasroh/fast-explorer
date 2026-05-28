@@ -92,6 +92,11 @@ class MainWindow : public WindowBase {
     return (i < 4) ? paneTabHosts_[i].get() : nullptr;
   }
 
+  // Middle-click on the listview: hit-test the item and open its path
+  // in a new tab if the item is a directory.  Called from the
+  // listViewMButtonSubclass free function in main-window.cpp.
+  LRESULT onListViewMButtonUp(std::size_t paneIdx, LPARAM lParam);
+
   // Switches to the given preset, opening or closing slots as needed.
   // Implementation lands in Task 27. Currently a no-op stub so the
   // build links while Task 25/26 wire infrastructure.
