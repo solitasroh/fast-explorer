@@ -425,6 +425,38 @@ target_link_libraries(core-tests PRIVATE
 )
 
 # ---------------------------------------------------------------------------
+# winui_lite_tests: chrome-only test suite. Links ONLY against winui_lite,
+# so the chrome / ports surface stays buildable + testable in isolation
+# from FastExplorer's shell / core sources. Run via the dedicated CTest
+# preset 'winui-lite-tests'.
+# ---------------------------------------------------------------------------
+add_executable(winui_lite_tests
+  tests/test-harness.h
+  tests/test-main.cpp
+  tests/command-router-tests.cpp
+  tests/dispinfo-histogram-tests.cpp
+  tests/dpi-scale-tests.cpp
+  tests/layout-preset-tests.cpp
+  tests/pane-layout-tests.cpp
+  tests/ports-contract-tests.cpp
+  tests/splitter-ratios-tests.cpp
+  tests/splitter-resize-tests.cpp
+)
+
+target_include_directories(winui_lite_tests PRIVATE tests)
+
+target_compile_features(winui_lite_tests PRIVATE cxx_std_20)
+
+target_link_libraries(winui_lite_tests PRIVATE
+  winui_lite
+  user32
+  gdi32
+  uxtheme
+)
+
+add_test(NAME winui_lite_tests COMMAND winui_lite_tests)
+
+# ---------------------------------------------------------------------------
 # winui_lite_demo: minimal shell-free executable that proves the chrome +
 # ports surface compiles and runs without any FastExplorer / shell code.
 # Renders ten in-memory items into an LVS_OWNERDATA list-view driven by
