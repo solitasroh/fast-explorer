@@ -112,6 +112,13 @@ class MainWindow : public WindowBase {
   LRESULT handleMessage(HWND hwnd, UINT msg, WPARAM wParam,
                         LPARAM lParam) override;
 
+  // Wires the accelerator command router with handlers for the
+  // single-action accelerator group (kAccel*). Called once from
+  // create() before the message loop starts. Each handler captures
+  // `this` and reaches back into private state the same way the
+  // inline switch case did — see step 12 of the winui_lite plan.
+  void registerAccelHandlers();
+
   LRESULT onCreate(HWND hwnd);
   LRESULT onDpiChanged(HWND hwnd, WPARAM wParam, LPARAM lParam);
   // A8: query current system dark-mode setting + apply

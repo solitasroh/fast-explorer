@@ -27,7 +27,6 @@
 #include "ui/address-bar-popup.h"
 #include "winui_lite/chrome/pane-toolbar-row.h"
 #include "winui_lite/chrome/theme-watcher.h"
-#include "ui/icon-cache.h"
 #include "ui/icon-cache-coordinator.h"
 #include "ui/label-edit-controller.h"
 #include "ui/listview-group-callback.h"
@@ -1377,15 +1376,7 @@ void MainWindow::applyStatusParts(int clientWidth) {
 
 bool MainWindow::create(HINSTANCE instance, int showCommand) {
   instance_ = instance;
-  // Sample accelerator registration that proves the router runs in
-  // production. The handler reaches back into MainWindow state the
-  // same way the inline switch case did. Step 12 grows this list to
-  // cover the rest of the kAccel* group.
-  accelRouter_.registerCommand(kAccelToolMenu, [this] {
-    const std::size_t activeIdx =
-        paneManager_ ? paneManager_->activeIndex() : 0;
-    showToolMenuForPane(activeIdx);
-  });
+  registerAccelHandlers();
   ClassSpec cs;
   cs.className = kClassName;
   // App icon: large for Alt+Tab / taskbar, small for window caption.
@@ -1407,6 +1398,84 @@ bool MainWindow::create(HINSTANCE instance, int showCommand) {
   ShowWindow(hwnd, showCommand);
   UpdateWindow(hwnd);
   return true;
+}
+
+void MainWindow::registerAccelHandlers() {
+  // Wired against accelRouter_ at create() time. Handlers fire from
+  // onCommand's HIWORD(wParam) == 1 branch when LOWORD matches a
+  // registered id; the bare-switch tail below this routes the rest.
+  using fast_explorer::core::LayoutPreset;
+
+  auto activeIndex = [this]() noexcept -> std::size_t {
+    return paneManager_ ? paneManager_->activeIndex() : 0;
+  };
+
+  accelRouter_.registerCommand(kAccelFocusAddress, [this, activeIndex] {
+    const auto idx = activeIndex();
+    if (idx < addressBars_.size() && addressBars_[idx]) {
+      HWND bar = addressBars_[idx];
+      SetFocus(bar);
+      SendMessageW(bar, EM_SETSEL, 0, -1);
+    }
+  });
+
+  accelRouter_.registerCommand(kAccelDelete, [this] {
+    deleteFocusedItem();
+  });
+
+  accelRouter_.registerCommand(kAccelRename, [this] {
+    if (auto* le = activeLabelEdit()) le->beginRenameFocused();
+  });
+
+  accelRouter_.registerCommand(kAccelCreateFolder, [this] {
+    if (auto* le = activeLabelEdit()) le->beginCreateSubfolder();
+  });
+
+  accelRouter_.registerCommand(kAccelCopyPath, [this, activeIndex] {
+    const auto idx = activeIndex();
+    if (paneManager_ && idx < paneManager_->count()) {
+      copyPathToClipboard(paneManager_->at(idx).currentPath(), hwnd_);
+    }
+  });
+
+  accelRouter_.registerCommand(kAccelProperties, [this, activeIndex] {
+    const auto idx = activeIndex();
+    if (paneManager_ && idx < paneManager_->count()) {
+      showFolderProperties(paneManager_->at(idx).currentPath(), hwnd_);
+    }
+  });
+
+  accelRouter_.registerCommand(kAccelToolMenu, [this, activeIndex] {
+    showToolMenuForPane(activeIndex());
+  });
+
+  accelRouter_.registerCommand(kAccelLayoutSingle, [this] {
+    enterLayout(LayoutPreset::Single);
+  });
+
+  accelRouter_.registerCommand(kAccelLayoutTri, [this] {
+    using fast_explorer::core::nextPresetInCycle;
+    enterLayout(nextPresetInCycle(preset_, 3));
+  });
+
+  accelRouter_.registerCommand(kAccelLayoutQuad, [this] {
+    using fast_explorer::core::nextPresetInCycle;
+    enterLayout(nextPresetInCycle(preset_, 4));
+  });
+
+  accelRouter_.registerCommand(kAccelFilter, [this] {
+    if (searchPopup_ && paneManager_) {
+      searchPopup_->show(paneManager_->activeIndex());
+    }
+  });
+
+  accelRouter_.registerCommand(kAccelPaneSwitch, [this] {
+    if (paneManager_ && paneManager_->count() > 1) {
+      const std::size_t next =
+          (paneManager_->activeIndex() + 1) % paneManager_->count();
+      setActivePane(next);
+    }
+  });
 }
 
 LRESULT MainWindow::handleMessage(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
@@ -2002,20 +2071,18 @@ LRESULT MainWindow::onCommand(HWND hwnd, UINT msg, WPARAM wParam,
     }
   }
   if (HIWORD(wParam) == 1) {
-    // Try the router first. Currently registers a single accelerator
-    // (kAccelToolMenu) as proof of the wiring; step 12 will move the
-    // rest of the switch behind this dispatch one case at a time.
+    // Try the router first. After step 12 it carries the bulk of the
+    // single-action accelerators (registerAccelHandlers). The fall-
+    // through switch below is what's left: cases that need post-
+    // navigation refresh (clearListView + syncAddressBar +
+    // updateNavButtonStates), cases with non-trivial pre-dispatch
+    // (routeEditClipboardIfFocused / routeEditSelectAllIfFocused),
+    // and the dual / orientation toggle that branches on preset_.
     if (accelRouter_.dispatch(LOWORD(wParam))) return 0;
     const std::size_t activeIdx =
         paneManager_ ? paneManager_->activeIndex() : 0;
     switch (LOWORD(wParam)) {
-      case kAccelFocusAddress:
-        if (activeIdx < addressBars_.size() && addressBars_[activeIdx]) {
-          HWND bar = addressBars_[activeIdx];
-          SetFocus(bar);
-          SendMessageW(bar, EM_SETSEL, 0, -1);
-        }
-        return 0;
+      // kAccelFocusAddress migrated to accelRouter_ (step 12).
       case kAccelNavBack:
         if (pane_ && pane_->back()) {
           clearListViewForNavigation(activeIdx);
@@ -2047,29 +2114,8 @@ LRESULT MainWindow::onCommand(HWND hwnd, UINT msg, WPARAM wParam,
         // re-opens the same folder. Cheap to recompute.
         updateNavButtonStates(activeIdx);
         return 0;
-      case kAccelDelete:
-        deleteFocusedItem();
-        return 0;
-      case kAccelRename:
-        if (auto* le = activeLabelEdit()) le->beginRenameFocused();
-        return 0;
-      case kAccelCreateFolder:
-        if (auto* le = activeLabelEdit()) le->beginCreateSubfolder();
-        return 0;
-      case kAccelCopyPath:
-        if (paneManager_ && activeIdx < paneManager_->count()) {
-          copyPathToClipboard(paneManager_->at(activeIdx).currentPath(), hwnd);
-        }
-        return 0;
-      case kAccelProperties:
-        if (paneManager_ && activeIdx < paneManager_->count()) {
-          showFolderProperties(paneManager_->at(activeIdx).currentPath(), hwnd);
-        }
-        return 0;
-      // kAccelToolMenu now routed via accelRouter_ (step 5c proof).
-      case kAccelLayoutSingle:
-        enterLayout(fast_explorer::core::LayoutPreset::Single);
-        return 0;
+      // kAccelDelete / Rename / CreateFolder / CopyPath / Properties
+      // / ToolMenu / LayoutSingle all migrated to accelRouter_ (step 12).
       case kAccelLayoutDual: {
         using fast_explorer::core::LayoutPreset;
         if (preset_ == LayoutPreset::Dual_V ||
@@ -2082,21 +2128,7 @@ LRESULT MainWindow::onCommand(HWND hwnd, UINT msg, WPARAM wParam,
         }
         return 0;
       }
-      case kAccelLayoutTri: {
-        using fast_explorer::core::nextPresetInCycle;
-        enterLayout(nextPresetInCycle(preset_, 3));
-        return 0;
-      }
-      case kAccelLayoutQuad: {
-        using fast_explorer::core::nextPresetInCycle;
-        enterLayout(nextPresetInCycle(preset_, 4));
-        return 0;
-      }
-      case kAccelFilter:
-        if (searchPopup_ && paneManager_) {
-          searchPopup_->show(paneManager_->activeIndex());
-        }
-        return 0;
+      // kAccelLayoutTri / Quad / Filter migrated to accelRouter_ (step 12).
       case kAccelLayoutVerticalToggle:
       case kAccelLayoutHorizontalToggle: {
         using fast_explorer::core::LayoutPreset;
@@ -2147,13 +2179,7 @@ LRESULT MainWindow::onCommand(HWND hwnd, UINT msg, WPARAM wParam,
           handleClipboardPaste();
         }
         return 0;
-      case kAccelPaneSwitch:
-        if (paneManager_ && (paneManager_->count() > 1)) {
-          const std::size_t next =
-              (paneManager_->activeIndex() + 1) % paneManager_->count();
-          setActivePane(next);
-        }
-        return 0;
+      // kAccelPaneSwitch migrated to accelRouter_ (step 12).
       case kAccelSelectAll: {
         // Edit focus → select the Edit's text (single-line Edit has no
         // native Ctrl+A). Otherwise, select every row in the active
