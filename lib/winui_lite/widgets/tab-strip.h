@@ -56,10 +56,13 @@ class TabStrip {
   int  hitTabAt(int x);
   int  hitCloseAt(int x);
   void refreshPalette() noexcept;
+  void ensureFont(UINT dpi);
 
   HWND hwnd_;
   std::size_t paneIdx_;
   TabPalette palette_{};
+  HFONT font_ = nullptr;   // tab title font (Segoe UI Variable, DPI-scaled)
+  UINT  fontDpi_ = 0;      // DPI the current font_ was created for
   std::vector<TabModel> models_;
   std::size_t active_ = 0;
   int scrollOffset_ = 0;

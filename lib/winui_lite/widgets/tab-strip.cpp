@@ -12,6 +12,19 @@ namespace {
 
 constexpr const wchar_t* kClassName = L"FE_TabStrip";
 
+// Tab labels use the same Win11 chrome face as the toolbar row
+// (pane-toolbar-row.cpp), sized to the native Explorer tab label
+// (~9pt = 12px @96dpi). Falls back to Segoe UI on Win10.
+HFONT createTabFont(UINT dpi) noexcept {
+  LOGFONTW lf{};
+  lf.lfHeight = -MulDiv(12, static_cast<int>(dpi), 96);
+  lf.lfWeight = FW_NORMAL;
+  lf.lfCharSet = DEFAULT_CHARSET;
+  lf.lfQuality = CLEARTYPE_QUALITY;
+  lstrcpynW(lf.lfFaceName, L"Segoe UI Variable Display", LF_FACESIZE);
+  return CreateFontIndirectW(&lf);
+}
+
 void ensureClassRegistered() {
   static bool done = false;
   if (done) return;
@@ -44,6 +57,14 @@ TabStrip::TabStrip(HWND parent, std::size_t paneIdx)
 
 TabStrip::~TabStrip() {
   if (hwnd_) DestroyWindow(hwnd_);
+  if (font_) DeleteObject(font_);
+}
+
+void TabStrip::ensureFont(UINT dpi) {
+  if (font_ && fontDpi_ == dpi) return;
+  if (font_) DeleteObject(font_);
+  font_ = createTabFont(dpi);
+  fontDpi_ = dpi;
 }
 
 int TabStrip::preferredHeight() const {
@@ -102,6 +123,9 @@ void TabStrip::refreshPalette() noexcept {
 }
 
 void TabStrip::paint(HDC dc, const RECT& client) {
+  ensureFont(hwnd_ ? GetDpiForWindow(hwnd_) : 96);
+  HGDIOBJ oldFont = font_ ? SelectObject(dc, font_) : nullptr;
+
   // Fill strip background with inactive tab colour
   HBRUSH bgBrush = CreateSolidBrush(palette_.inactiveBg);
   FillRect(dc, &client, bgBrush);
@@ -176,6 +200,8 @@ void TabStrip::paint(HDC dc, const RECT& client) {
   SetBkMode(dc, TRANSPARENT);
   DrawTextW(dc, L"+", 1, &plus,
             DT_SINGLELINE | DT_CENTER | DT_VCENTER | DT_NOPREFIX);
+
+  if (oldFont) SelectObject(dc, oldFont);
 }
 
 LRESULT TabStrip::handle(UINT msg, WPARAM wp, LPARAM lp) {
