@@ -425,6 +425,33 @@ target_link_libraries(core-tests PRIVATE
 )
 
 # ---------------------------------------------------------------------------
+# winui_lite_demo: minimal shell-free executable that proves the chrome +
+# ports surface compiles and runs without any FastExplorer / shell code.
+# Renders ten in-memory items into an LVS_OWNERDATA list-view driven by
+# the ItemDispatcher port, plus a chrome StatusBar at the bottom.
+# ---------------------------------------------------------------------------
+add_executable(winui_lite_demo WIN32
+  examples/minimal-window/main.cpp
+  examples/minimal-window/in-memory-item-source.cpp
+  examples/minimal-window/in-memory-item-source.h
+  examples/minimal-window/noop-adapters.h
+)
+
+target_include_directories(winui_lite_demo PRIVATE
+  examples/minimal-window
+)
+
+target_compile_features(winui_lite_demo PRIVATE cxx_std_20)
+
+target_link_libraries(winui_lite_demo PRIVATE
+  winui_lite
+  comctl32
+  user32
+  gdi32
+  uxtheme
+)
+
+# ---------------------------------------------------------------------------
 # FastExplorerBench: console-mode CLI for synthetic dataset generation and
 # enumeration timing measurements. Subcommands are stubs at this scaffold step.
 # ---------------------------------------------------------------------------
