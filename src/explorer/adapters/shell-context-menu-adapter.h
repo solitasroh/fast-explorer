@@ -13,6 +13,8 @@
 
 #include <windows.h>
 
+#include <functional>
+#include <string>
 #include <vector>
 
 #include "winui_lite/ports/context-menu.h"
@@ -34,6 +36,11 @@ class ShellContextMenuAdapter final : public ports::ContextMenu {
 
   void show(const std::vector<ports::ItemId>& ids,
             POINT screenPt) override;
+
+  // Set by MainWindow after construction. Called when the user picks
+  // "Open in new tab" on a single-folder right-click. Receives the
+  // absolute path of the target folder.
+  std::function<void(const std::wstring&)> onOpenInNewTab;
 
  private:
   PaneController* const* cell_;  // borrowed; written by host on tab switch

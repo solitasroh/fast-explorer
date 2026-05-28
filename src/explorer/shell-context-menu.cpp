@@ -201,18 +201,36 @@ void invokeVerbPerItem(IShellFolder* folder, HWND ownerHwnd,
   }
 }
 
-void runMenuAndInvoke(IContextMenu* menu, IShellFolder* folder,
+// Returns the app-owned cmd id if the user picked the prepend entry
+// (the menu has fully unwindowed at that point), or 0 otherwise.
+UINT runMenuAndInvoke(IContextMenu* menu, IShellFolder* folder,
                       HWND ownerHwnd, POINT screenPt,
                       const std::vector<std::wstring>& selectedLeaves,
                       const std::wstring& folderPathW,
-                      const ShellContextMenu::ExtraSubmenu* extra) {
+                      const ShellContextMenu::ExtraSubmenu* extra,
+                      const ShellContextMenu::PrependItem* prepend) {
   MenuOwner popup(CreatePopupMenu());
-  if (!popup) return;
-  if (FAILED(menu->QueryContextMenu(popup.get(), 0, kCmdIdMin, kCmdIdMax,
+  if (!popup) return 0;
+
+  // Prepend a single app-owned entry (and separator) at the TOP of the
+  // menu, before shell verbs. Its id must be above kCmdIdMax so the
+  // dispatch below can distinguish it without ambiguity.
+  if (prepend != nullptr && prepend->id != 0 && !prepend->label.empty()) {
+    AppendMenuW(popup.get(), MF_STRING, prepend->id, prepend->label.c_str());
+    AppendMenuW(popup.get(), MF_SEPARATOR, 0, nullptr);
+  }
+
+  // Shell verbs are inserted at nIndexMenu = current item count so
+  // they appear BELOW our prepended entry.
+  const UINT shellInsertPos =
+      static_cast<UINT>(GetMenuItemCount(popup.get()));
+  if (FAILED(menu->QueryContextMenu(popup.get(), shellInsertPos,
+                                    kCmdIdMin, kCmdIdMax,
                                     CMF_NORMAL | CMF_CANRENAME |
                                         CMF_EXPLORE))) {
-    return;
+    return 0;
   }
+
   // Append the caller's extra submenu after the shell items so the
   // user's right-click on empty space still surfaces "새로 만들기 /
   // 붙여넣기 / 속성" with our 분류 방법 stacked at the bottom. IDs in
@@ -244,6 +262,7 @@ void runMenuAndInvoke(IContextMenu* menu, IShellFolder* folder,
   if (FAILED(menu->QueryInterface(IID_PPV_ARGS(&forward.cm3)))) {
     menu->QueryInterface(IID_PPV_ARGS(&forward.cm2));
   }
+  UINT result = 0;
   {
     SubclassGuard guard(ownerHwnd, ownerSubclassProc, kSubclassId,
                         reinterpret_cast<DWORD_PTR>(&forward));
@@ -252,13 +271,17 @@ void runMenuAndInvoke(IContextMenu* menu, IShellFolder* folder,
         TPM_RETURNCMD | TPM_RIGHTBUTTON | TPM_LEFTALIGN | TPM_TOPALIGN,
         screenPt.x, screenPt.y, ownerHwnd, nullptr);
     if (cmd != 0) {
-      // Picks above the shell verb range belong to the caller's extra
-      // submenu — post a WM_COMMAND to the owner so its existing
-      // dispatcher routes the id. PostMessage (not Send) so
-      // TrackPopupMenuEx fully unwinds and DestroyMenu can run before
-      // the dispatcher fires — avoids reentering menu code while the
-      // popup is still being torn down.
-      if (cmd > kCmdIdMax) {
+      // App-owned prepend entry: return the id to the caller so it can
+      // act synchronously (the menu has fully unwindowed at this point).
+      if (prepend != nullptr && cmd == prepend->id) {
+        result = cmd;
+      } else if (cmd > kCmdIdMax) {
+        // Picks above the shell verb range belong to the caller's extra
+        // submenu — post a WM_COMMAND to the owner so its existing
+        // dispatcher routes the id. PostMessage (not Send) so
+        // TrackPopupMenuEx fully unwinds and DestroyMenu can run before
+        // the dispatcher fires — avoids reentering menu code while the
+        // popup is still being torn down.
         PostMessageW(ownerHwnd, WM_COMMAND,
                      MAKEWPARAM(cmd, 0), 0);
       } else {
@@ -289,34 +312,36 @@ void runMenuAndInvoke(IContextMenu* menu, IShellFolder* folder,
   }
   if (forward.cm3) forward.cm3->Release();
   if (forward.cm2) forward.cm2->Release();
+  return result;
 }
 
 }  // namespace
 
-void ShellContextMenu::show(HWND ownerHwnd, const std::wstring& folderPath,
+UINT ShellContextMenu::show(HWND ownerHwnd, const std::wstring& folderPath,
                             const std::vector<std::wstring>& selectedLeaves,
                             POINT screenPt,
-                            const ExtraSubmenu* extra) {
-  if (ownerHwnd == nullptr || folderPath.empty()) return;
+                            const ExtraSubmenu* extra,
+                            const PrependItem* prepend) {
+  if (ownerHwnd == nullptr || folderPath.empty()) return 0;
 
   PidlOwner folderPidl = parseAbsolute(folderPath);
-  if (!folderPidl) return;
+  if (!folderPidl) return 0;
 
   ComPtr<IShellFolder> folder = bindFolder(folderPidl.get());
-  if (!folder) return;
+  if (!folder) return 0;
 
   ComPtr<IContextMenu> menu;
   if (selectedLeaves.empty()) {
     menu = queryBackgroundMenu(folder.get(), ownerHwnd);
   } else {
     auto children = parseChildren(folder.get(), selectedLeaves);
-    if (children.empty()) return;
+    if (children.empty()) return 0;
     menu = queryContextMenuFromChildren(folder.get(), ownerHwnd, children);
   }
-  if (!menu) return;
+  if (!menu) return 0;
 
-  runMenuAndInvoke(menu.get(), folder.get(), ownerHwnd, screenPt,
-                   selectedLeaves, folderPath, extra);
+  return runMenuAndInvoke(menu.get(), folder.get(), ownerHwnd, screenPt,
+                          selectedLeaves, folderPath, extra, prepend);
 }
 
 }  // namespace fast_explorer::ui

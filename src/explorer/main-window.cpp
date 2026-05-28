@@ -623,6 +623,10 @@ bool MainWindow::installPaneAt(std::size_t idx) {
   contextMenus_[idx] =
       std::make_unique<adapters::ShellContextMenuAdapter>(activeForPane_[idx],
                                                          hwnd_);
+  contextMenus_[idx]->onOpenInNewTab =
+      [this, idx](const std::wstring& abs) {
+        if (auto* h = paneTabHost(idx)) h->openInNewTab(abs);
+      };
   return true;
 }
 
@@ -1622,6 +1626,10 @@ LRESULT MainWindow::onCreate(HWND hwnd) {
   contextMenus_[0] =
       std::make_unique<adapters::ShellContextMenuAdapter>(activeForPane_[0],
                                                          hwnd);
+  contextMenus_[0]->onOpenInNewTab =
+      [this](const std::wstring& abs) {
+        if (auto* h = paneTabHost(0)) h->openInNewTab(abs);
+      };
   {
     auto* dt =
         new (std::nothrow) PaneDropTarget(listView_, &activeForPane_[0], 0,

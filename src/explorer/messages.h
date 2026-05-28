@@ -98,6 +98,10 @@ inline constexpr WORD kMenuGroupByNone     = 0x8000;
 inline constexpr WORD kMenuGroupByName     = 0x8001;
 inline constexpr WORD kMenuGroupByModified = 0x8002;
 inline constexpr WORD kMenuGroupByType     = 0x8003;
+// App-owned verb id for "Open in new tab" on folder right-click.
+// Placed well above kCmdIdMax (0x7FFF) so it never collides with shell
+// verb ids, and above kMenuGroupBy* so the range is distinct.
+inline constexpr UINT kVerbOpenInNewTab    = 0xCA00;
 
 static_assert(kWmFeBase >= WM_APP,
               "WM_FE_* must live in the WM_APP user range");

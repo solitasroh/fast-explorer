@@ -34,21 +34,37 @@ class ShellContextMenu {
     // Radio-group display: ids in [radioFirst, radioLast] are rendered
     // as a radio group with `radioChecked` checked. Set all three to 0
     // to skip radio rendering. Items outside the radio range render
-    // as normal menu strings.
+    // as normal menu string.
     WORD radioFirst   = 0;
     WORD radioLast    = 0;
     WORD radioChecked = 0;
+  };
+
+  // Optional single entry prepended to the TOP of the shell context
+  // menu (above shell verbs), followed by a separator. The id MUST be
+  // above the shell verb range (> 0x7FFF). When the user picks this
+  // entry, show() returns the id without invoking any shell verb — the
+  // caller detects the non-zero return value and acts on it directly
+  // (no PostMessage; the menu has already unwindowed by the time show()
+  // returns).
+  struct PrependItem {
+    UINT  id    = 0;        // 0 means "not set" (no prepend)
+    std::wstring label;     // e.g. L"새 탭에서 열기"
   };
 
   // `folderPath` is the absolute path of the pane's current folder.
   // `selectedLeaves` is empty for an empty-area click (background
   // menu); otherwise it lists leaf names of every target item.
   // `screenPt` is the screen-coordinate anchor for TrackPopupMenuEx.
-  // `extra` may be nullptr to skip the augmentation (old behaviour).
-  static void show(HWND ownerHwnd, const std::wstring& folderPath,
+  // `extra` may be nullptr to skip the bottom-submenu augmentation.
+  // `prepend` may be nullptr to skip the top-entry augmentation.
+  // Returns the app-owned cmd id if the user picked the prepend entry,
+  // or 0 if a shell verb was invoked (or nothing was picked).
+  static UINT show(HWND ownerHwnd, const std::wstring& folderPath,
                    const std::vector<std::wstring>& selectedLeaves,
                    POINT screenPt,
-                   const ExtraSubmenu* extra = nullptr);
+                   const ExtraSubmenu* extra = nullptr,
+                   const PrependItem* prepend = nullptr);
 };
 
 }  // namespace fast_explorer::ui

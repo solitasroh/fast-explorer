@@ -4,6 +4,7 @@
 
 #include "core/file-entry.h"
 #include "core/file-model-store.h"
+#include "explorer/messages.h"
 #include "explorer/pane-controller.h"
 #include "explorer/shell-context-menu.h"
 
@@ -29,6 +30,27 @@ std::vector<std::wstring> resolveLeaves(
   return out;
 }
 
+// Returns the absolute path of the single selected item if it is a
+// directory, or an empty string otherwise (multi-selection, file, or
+// nothing selected).
+std::wstring singleFolderPath(
+    const PaneController& pane,
+    const std::vector<ports::ItemId>& ids) {
+  if (ids.size() != 1) return {};
+  const ports::ItemId id = ids[0];
+  if (id == ports::kInvalidItemId) return {};
+  const auto& store = pane.store();
+  const std::size_t row = static_cast<std::size_t>(id - 1);
+  if (row >= store.publishedCount()) return {};
+  const auto& entry = store.visibleAt(row);
+  if (!fast_explorer::core::isDirectory(entry)) return {};
+  if (entry.namePtr == nullptr || entry.nameLength == 0) return {};
+  const std::wstring leaf(entry.namePtr, entry.nameLength);
+  const std::wstring& folder = pane.currentPath();
+  if (folder.empty()) return {};
+  return folder + L"\\" + leaf;
+}
+
 }  // namespace
 
 ShellContextMenuAdapter::ShellContextMenuAdapter(
@@ -42,11 +64,28 @@ void ShellContextMenuAdapter::show(
   const std::wstring& folderPath = c->currentPath();
   if (folderPath.empty()) return;
   const auto leaves = resolveLeaves(*c, ids);
+
+  // Detect single-folder selection: prepend "새 탭에서 열기" at the top
+  // of the context menu.
+  const std::wstring targetFolder = singleFolderPath(*c, ids);
+  ShellContextMenu::PrependItem prepend;
+  if (!targetFolder.empty() && onOpenInNewTab) {
+    prepend.id    = kVerbOpenInNewTab;
+    prepend.label = L"새 탭에서 열기";
+  }
+
   // leaves.empty() with non-empty ids means every id was invalid —
   // still safe to forward as a background-area click; the host
   // semantics expect empty leaves to mean "show folder menu".
-  fast_explorer::ui::ShellContextMenu::show(ownerHwnd_, folderPath, leaves,
-                                            screenPt);
+  const UINT picked =
+      fast_explorer::ui::ShellContextMenu::show(
+          ownerHwnd_, folderPath, leaves, screenPt,
+          /*extra=*/nullptr,
+          prepend.id != 0 ? &prepend : nullptr);
+
+  if (picked == kVerbOpenInNewTab && onOpenInNewTab) {
+    onOpenInNewTab(targetFolder);
+  }
 }
 
 }  // namespace fast_explorer::ui::adapters
