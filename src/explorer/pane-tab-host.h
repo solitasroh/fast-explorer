@@ -34,6 +34,13 @@ class PaneTabHost {
   void cycleNext();
   void cyclePrev();
 
+  // Re-derives every tab's title from its controller's currentPath()
+  // and repaints the strip. In-tab navigation (folder open, back /
+  // forward / up, address-bar commit) updates currentPath_ but does
+  // not touch the strip, so the host calls this from its navigation
+  // chrome refresh to keep the active tab's label in sync.
+  void refreshTabTitles();
+
   void restoreFromSession(const core::PaneSessionV6& panel);
   core::PaneSessionV6 captureSession() const;
 

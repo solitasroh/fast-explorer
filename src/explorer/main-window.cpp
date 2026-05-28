@@ -928,6 +928,11 @@ void MainWindow::syncAddressBar(std::size_t paneIdx) {
   if (addressBarPopup_ && activePane_ == paneIdx) {
     addressBarPopup_->reflectCurrentPath(path);
   }
+  // currentPath_ just changed — the tab strip derives its label from
+  // it, so re-title the active tab here. This is the single chokepoint
+  // every in-tab navigation funnels through (open / back / forward /
+  // up / address-bar commit / folder double-click).
+  if (auto* h = paneTabHost(paneIdx)) h->refreshTabTitles();
 }
 
 void MainWindow::clearListViewForNavigation(std::size_t paneIdx) noexcept {

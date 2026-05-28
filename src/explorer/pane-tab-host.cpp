@@ -62,6 +62,8 @@ int PaneTabHost::stripPreferredHeight() const {
   return strip_ ? strip_->preferredHeight() : 28;
 }
 
+void PaneTabHost::refreshTabTitles() { rebuildStrip(); }
+
 void PaneTabHost::rebuildStrip() {
   if (!strip_) return;
   std::vector<TabModel> models;
