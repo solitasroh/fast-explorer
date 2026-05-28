@@ -26,8 +26,8 @@
 #include <windows.h>
 #include <commctrl.h>
 
-#include <algorithm>
 #include <memory>
+#include <utility>
 #include <vector>
 
 #include "winui_lite/chrome/command-router.h"
