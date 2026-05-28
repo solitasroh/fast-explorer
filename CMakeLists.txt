@@ -228,6 +228,8 @@ add_library(winui_lite STATIC
   lib/winui_lite/widgets/address-input.h
   lib/winui_lite/widgets/tab-strip-geometry.cpp
   lib/winui_lite/widgets/tab-strip-geometry.h
+  lib/winui_lite/widgets/tab-strip.cpp
+  lib/winui_lite/widgets/tab-strip.h
 )
 
 target_include_directories(winui_lite PUBLIC lib)
