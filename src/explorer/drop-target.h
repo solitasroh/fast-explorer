@@ -10,6 +10,7 @@
 
 namespace fast_explorer::ui {
 
+class MainWindow;
 class PaneController;
 
 // IDropTarget for a single pane's list-view. Delegates to the shell-
@@ -20,8 +21,9 @@ class PaneDropTarget final : public IDropTarget {
  public:
   // `activeCell` is the MainWindow::activeForPane_[paneIdx] pointer;
   // the target reads through it so tab switches are transparent.
+  // `mainWindow` is borrowed; must outlive this drop target.
   PaneDropTarget(HWND lv, PaneController* const* activeCell,
-                 std::size_t paneIdx) noexcept;
+                 std::size_t paneIdx, MainWindow* mainWindow) noexcept;
 
   STDMETHODIMP QueryInterface(REFIID riid, void** ppv) override;
   STDMETHODIMP_(ULONG) AddRef() override;
@@ -45,6 +47,7 @@ class PaneDropTarget final : public IDropTarget {
   HWND lv_;
   PaneController* const* activeCell_;  // borrowed; written by host on tab switch
   std::size_t paneIdx_;
+  MainWindow* mainWindow_;  // borrowed; for OLE drag deferral
   ComPtr<IDataObject> currentData_;
   ComPtr<IDropTarget> currentTarget_;
   std::wstring currentTargetPath_;

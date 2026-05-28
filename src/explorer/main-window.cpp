@@ -518,7 +518,8 @@ bool MainWindow::installPaneAt(std::size_t idx) {
   listViews_[idx] = lv;
 
   // Drop target.
-  auto* dt = new (std::nothrow) PaneDropTarget(lv, &activeForPane_[idx], idx);
+  auto* dt = new (std::nothrow) PaneDropTarget(lv, &activeForPane_[idx], idx,
+                                               this);
   if (dt) {
     if (SUCCEEDED(RegisterDragDrop(lv, dt))) {
       dropTargets_[idx] = dt;
@@ -1595,7 +1596,8 @@ LRESULT MainWindow::onCreate(HWND hwnd) {
                                                          hwnd);
   {
     auto* dt =
-        new (std::nothrow) PaneDropTarget(listView_, &activeForPane_[0], 0);
+        new (std::nothrow) PaneDropTarget(listView_, &activeForPane_[0], 0,
+                                          this);
     if (dt) {
       if (SUCCEEDED(RegisterDragDrop(listView_, dt))) {
         dropTargets_[0] = dt;
@@ -2886,6 +2888,29 @@ void MainWindow::refreshPaneChrome(std::size_t paneIdx) {
   }
   updateNavButtonStates(paneIdx);
   refreshSelectionSummary(paneIdx);
+}
+
+// ---- Phase 5 Task 26: OLE drag deferral ---------------------------------
+
+bool MainWindow::tryActivateTab(std::size_t paneIdx, std::size_t tabIdx) {
+  if (paneIdx >= 4) return true;
+  if (oleDragInProgress_[paneIdx]) {
+    pendingActivation_[paneIdx] = tabIdx;
+    return false;
+  }
+  return true;
+}
+
+void MainWindow::setOleDragInProgress(std::size_t paneIdx, bool v) {
+  if (paneIdx < 4) oleDragInProgress_[paneIdx] = v;
+}
+
+std::optional<std::size_t> MainWindow::takePendingActivation(
+    std::size_t paneIdx) {
+  if (paneIdx >= 4) return std::nullopt;
+  auto out = pendingActivation_[paneIdx];
+  pendingActivation_[paneIdx].reset();
+  return out;
 }
 
 // ---- Phase 5 Task 25 stub (filled by Phase 6 Task 29) -------------------

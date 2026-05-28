@@ -86,6 +86,7 @@ void PaneTabHost::rebuildStrip() {
 
 void PaneTabHost::activateTab(std::size_t idx) {
   if (idx >= tabs_.size()) return;
+  if (host_ && !host_->tryActivateTab(paneIdx_, idx)) return;
   activeTab_ = idx;
   activeCell_ = tabs_[idx].get();
   if (host_) {

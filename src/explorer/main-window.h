@@ -5,6 +5,7 @@
 
 #include <array>
 #include <memory>
+#include <optional>
 #include <string>
 
 #include "winui_lite/chrome/command-router.h"
@@ -73,6 +74,23 @@ class MainWindow : public WindowBase {
 
   // Tab right-click context menu stub. Phase 6 Task 29 fills the body.
   void showTabContextMenu(std::size_t paneIdx, std::size_t tabIdx, POINT screen);
+
+  // OLE drag deferral (Task 26).
+  // Called by PaneTabHost::activateTab. Returns true if the activation
+  // should proceed immediately; returns false (and queues the index) when
+  // an OLE drag is in progress on the pane.
+  bool tryActivateTab(std::size_t paneIdx, std::size_t tabIdx);
+  // Called by PaneDropTarget at DragEnter / Drop / DragLeave.
+  void setOleDragInProgress(std::size_t paneIdx, bool v);
+  // Drains and returns any queued activation index for the pane (nullopt
+  // if no activation was deferred).
+  std::optional<std::size_t> takePendingActivation(std::size_t paneIdx);
+
+  // Accessor used by PaneDropTarget to replay a deferred tab activation
+  // without touching paneTabHosts_ directly.
+  PaneTabHost* paneTabHost(std::size_t i) noexcept {
+    return (i < 4) ? paneTabHosts_[i].get() : nullptr;
+  }
 
   // Switches to the given preset, opening or closing slots as needed.
   // Implementation lands in Task 27. Currently a no-op stub so the
@@ -293,6 +311,11 @@ class MainWindow : public WindowBase {
   CutStateTracker cutState_;
   std::unique_ptr<AddressBarPopup> addressBarPopup_;
   std::array<bool, 4> firstBatchSeen_{false, false, false, false};
+  // OLE drag deferral: true while DragEnter..Drop/DragLeave is in flight.
+  std::array<bool, 4> oleDragInProgress_{};
+  // If a tab-activation is requested while oleDragInProgress_[i] is set,
+  // the index is stored here and replayed at the end of the drag.
+  std::array<std::optional<std::size_t>, 4> pendingActivation_{};
   // Per-pane tab host: owns all tabs (PaneControllers) for each slot.
   // Created in installPaneAt / onCreate, destroyed in uninstallPaneAt.
   std::array<std::unique_ptr<PaneTabHost>, 4> paneTabHosts_;

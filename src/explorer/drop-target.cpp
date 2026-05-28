@@ -6,6 +6,7 @@
 
 #include "core/file-entry.h"
 #include "core/file-model-store.h"
+#include "explorer/main-window.h"
 #include "explorer/pane-controller.h"
 #include "explorer/shell-bind.h"
 
@@ -24,8 +25,10 @@ std::wstring joinPath(const std::wstring& base, std::wstring_view leaf) {
 
 PaneDropTarget::PaneDropTarget(HWND lv,
                                 PaneController* const* activeCell,
-                                std::size_t paneIdx) noexcept
-    : lv_(lv), activeCell_(activeCell), paneIdx_(paneIdx) {}
+                                std::size_t paneIdx,
+                                MainWindow* mainWindow) noexcept
+    : lv_(lv), activeCell_(activeCell), paneIdx_(paneIdx),
+      mainWindow_(mainWindow) {}
 
 STDMETHODIMP PaneDropTarget::QueryInterface(REFIID riid, void** ppv) {
   if (ppv == nullptr) return E_POINTER;
@@ -96,6 +99,7 @@ bool PaneDropTarget::rebindTarget(POINT screenPt) {
 STDMETHODIMP PaneDropTarget::DragEnter(IDataObject* data, DWORD keyState,
                                        POINTL pt, DWORD* effect) {
   if (effect == nullptr) return E_POINTER;
+  if (mainWindow_) mainWindow_->setOleDragInProgress(paneIdx_, true);
   currentData_.copyFrom(data);
   POINT screenPt{pt.x, pt.y};
   rebindTarget(screenPt);
@@ -124,6 +128,14 @@ STDMETHODIMP PaneDropTarget::DragOver(DWORD keyState, POINTL pt,
 STDMETHODIMP PaneDropTarget::DragLeave() {
   clearCurrentTarget();
   currentData_.reset();
+  if (mainWindow_) {
+    mainWindow_->setOleDragInProgress(paneIdx_, false);
+    if (auto pending = mainWindow_->takePendingActivation(paneIdx_)) {
+      if (auto* host = mainWindow_->paneTabHost(paneIdx_)) {
+        host->activateTab(*pending);
+      }
+    }
+  }
   return S_OK;
 }
 
@@ -138,6 +150,14 @@ STDMETHODIMP PaneDropTarget::Drop(IDataObject* data, DWORD keyState,
   }
   clearCurrentTarget();
   currentData_.reset();
+  if (mainWindow_) {
+    mainWindow_->setOleDragInProgress(paneIdx_, false);
+    if (auto pending = mainWindow_->takePendingActivation(paneIdx_)) {
+      if (auto* host = mainWindow_->paneTabHost(paneIdx_)) {
+        host->activateTab(*pending);
+      }
+    }
+  }
   return hr;
 }
 
