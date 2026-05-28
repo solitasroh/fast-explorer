@@ -11,6 +11,17 @@
 
 namespace fast_explorer::ui {
 
+// Per-instance palette that is rebuilt whenever the OS theme changes.
+// Colours are chosen to match pane-toolbar-row / status-bar styling.
+struct TabPalette {
+  COLORREF inactiveBg;    // inactive tab background
+  COLORREF activeBg;      // active   tab background
+  COLORREF border;        // tab border lines
+  COLORREF text;          // tab title text
+  COLORREF hoverCloseX;   // hovered close-X background (Explorer red)
+  COLORREF dropIndicator; // drag drop-indicator line (matches border)
+};
+
 class TabStrip {
  public:
   TabStrip(HWND parent, std::size_t paneIdx);
@@ -44,9 +55,11 @@ class TabStrip {
   void rebuildRects();
   int  hitTabAt(int x);
   int  hitCloseAt(int x);
+  void refreshPalette() noexcept;
 
   HWND hwnd_;
   std::size_t paneIdx_;
+  TabPalette palette_{};
   std::vector<TabModel> models_;
   std::size_t active_ = 0;
   int scrollOffset_ = 0;

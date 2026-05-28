@@ -4,6 +4,8 @@
 
 #include <string>
 
+#include "winui_lite/chrome/theme-watcher.h"
+
 namespace fast_explorer::ui {
 
 namespace {
@@ -27,6 +29,7 @@ void ensureClassRegistered() {
 
 TabStrip::TabStrip(HWND parent, std::size_t paneIdx)
     : hwnd_(nullptr), paneIdx_(paneIdx) {
+  refreshPalette();
   ensureClassRegistered();
   hwnd_ = CreateWindowExW(
       0, kClassName, L"", WS_CHILD | WS_VISIBLE | WS_CLIPCHILDREN,
@@ -80,23 +83,43 @@ int TabStrip::hitCloseAt(int x) {
   return g.hitTestCloseX(rects_, x);
 }
 
+void TabStrip::refreshPalette() noexcept {
+  const bool dark = isAppInDarkMode();
+  if (dark) {
+    palette_.inactiveBg    = RGB(0x2A, 0x2A, 0x2A);
+    palette_.activeBg      = RGB(0x1A, 0x1A, 0x1A);
+    palette_.border        = RGB(0x4A, 0x4A, 0x4A);
+    palette_.text          = RGB(0xE0, 0xE0, 0xE0);
+  } else {
+    palette_.inactiveBg    = RGB(0xF0, 0xF0, 0xF0);
+    palette_.activeBg      = RGB(0xFF, 0xFF, 0xFF);
+    palette_.border        = RGB(0xA0, 0xA0, 0xA0);
+    palette_.text          = RGB(0x00, 0x00, 0x00);
+  }
+  // Explorer red — same in both modes
+  palette_.hoverCloseX   = RGB(0xE8, 0x11, 0x23);
+  palette_.dropIndicator = palette_.border;
+}
+
 void TabStrip::paint(HDC dc, const RECT& client) {
-  // Fill background
-  FillRect(dc, &client,
-           reinterpret_cast<HBRUSH>(static_cast<LONG_PTR>(COLOR_WINDOW + 1)));
+  // Fill strip background with inactive tab colour
+  HBRUSH bgBrush = CreateSolidBrush(palette_.inactiveBg);
+  FillRect(dc, &client, bgBrush);
+  DeleteObject(bgBrush);
 
   for (std::size_t i = 0; i < rects_.size(); ++i) {
     const auto& r = rects_[i];
     RECT tab{r.left, client.top, r.right, client.bottom};
     const bool isActive = (i == active_);
-    HBRUSH bg = reinterpret_cast<HBRUSH>(
-        static_cast<LONG_PTR>(isActive ? COLOR_WINDOW + 1 : COLOR_BTNFACE + 1));
-    FillRect(dc, &tab, bg);
+
+    // Tab background
+    HBRUSH tabBg = CreateSolidBrush(
+        isActive ? palette_.activeBg : palette_.inactiveBg);
+    FillRect(dc, &tab, tabBg);
+    DeleteObject(tabBg);
 
     // Border
-    HPEN pen = CreatePen(PS_SOLID, 1,
-        isActive ? GetSysColor(COLOR_HIGHLIGHT)
-                 : GetSysColor(COLOR_BTNSHADOW));
+    HPEN pen = CreatePen(PS_SOLID, 1, palette_.border);
     HGDIOBJ oldPen = SelectObject(dc, pen);
     MoveToEx(dc, tab.left, tab.bottom - 1, nullptr);
     LineTo(dc, tab.left, tab.top);
@@ -107,7 +130,7 @@ void TabStrip::paint(HDC dc, const RECT& client) {
 
     // Title
     SetBkMode(dc, TRANSPARENT);
-    SetTextColor(dc, GetSysColor(COLOR_WINDOWTEXT));
+    SetTextColor(dc, palette_.text);
     RECT textRect{tab.left + 8, tab.top, r.closeXLeft - 4, tab.bottom};
     DrawTextW(dc, models_[i].title.c_str(),
               static_cast<int>(models_[i].title.size()),
@@ -121,10 +144,11 @@ void TabStrip::paint(HDC dc, const RECT& client) {
                  r.closeXRight, tab.bottom - 6};
       const bool xHover = (hoveredCloseX_ == static_cast<int>(i));
       if (xHover) {
-        HBRUSH hb = reinterpret_cast<HBRUSH>(
-            static_cast<LONG_PTR>(COLOR_HIGHLIGHT + 1));
+        HBRUSH hb = CreateSolidBrush(palette_.hoverCloseX);
         FillRect(dc, &xRect, hb);
+        DeleteObject(hb);
       }
+      SetTextColor(dc, palette_.text);
       DrawTextW(dc, L"✕", 1, &xRect,
                 DT_SINGLELINE | DT_CENTER | DT_VCENTER | DT_NOPREFIX);
     }
@@ -132,7 +156,7 @@ void TabStrip::paint(HDC dc, const RECT& client) {
 
   // Drop indicator line (during drag)
   if (dropIndicatorX_ >= 0) {
-    HPEN pen = CreatePen(PS_SOLID, 2, GetSysColor(COLOR_HIGHLIGHT));
+    HPEN pen = CreatePen(PS_SOLID, 2, palette_.dropIndicator);
     HGDIOBJ oldPen = SelectObject(dc, pen);
     MoveToEx(dc, dropIndicatorX_, client.top, nullptr);
     LineTo(dc, dropIndicatorX_, client.bottom);
@@ -145,8 +169,11 @@ void TabStrip::paint(HDC dc, const RECT& client) {
   const auto& mtr = g.metrics();
   RECT plus{client.right - mtr.plusButtonWidth, client.top,
             client.right, client.bottom};
-  FillRect(dc, &plus,
-           reinterpret_cast<HBRUSH>(static_cast<LONG_PTR>(COLOR_BTNFACE + 1)));
+  HBRUSH plusBg = CreateSolidBrush(palette_.inactiveBg);
+  FillRect(dc, &plus, plusBg);
+  DeleteObject(plusBg);
+  SetTextColor(dc, palette_.text);
+  SetBkMode(dc, TRANSPARENT);
   DrawTextW(dc, L"+", 1, &plus,
             DT_SINGLELINE | DT_CENTER | DT_VCENTER | DT_NOPREFIX);
 }
@@ -170,6 +197,12 @@ LRESULT TabStrip::handle(UINT msg, WPARAM wp, LPARAM lp) {
 
     case WM_ERASEBKGND:
       return 1;
+
+    case WM_THEMECHANGED:
+    case WM_SYSCOLORCHANGE:
+      refreshPalette();
+      InvalidateRect(hwnd_, nullptr, TRUE);
+      return 0;
 
     case WM_LBUTTONDOWN: {
       const int x = GET_X_LPARAM(lp);
