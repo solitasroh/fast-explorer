@@ -43,6 +43,10 @@ set(FE_APP_SOURCES
   src/ui/column-formatter.h
   src/ui/extension-icon-cache.cpp
   src/ui/extension-icon-cache.h
+  src/ui/adapters/local-settings-store.cpp
+  src/ui/adapters/local-settings-store.h
+  src/ui/adapters/shell-change-notifier.cpp
+  src/ui/adapters/shell-change-notifier.h
   src/ui/adapters/shell-clipboard.cpp
   src/ui/adapters/shell-clipboard.h
   src/ui/adapters/shell-drag-drop.cpp
@@ -207,11 +211,13 @@ add_library(winui_lite STATIC
   lib/winui_lite/chrome/theme-watcher.h
   lib/winui_lite/chrome/window-base.cpp
   lib/winui_lite/chrome/window-base.h
+  lib/winui_lite/ports/change-notifier.h
   lib/winui_lite/ports/clipboard-backend.h
   lib/winui_lite/ports/drag-drop-backend.h
   lib/winui_lite/ports/item-activator.h
   lib/winui_lite/ports/item-dispatcher.h
   lib/winui_lite/ports/item-source.h
+  lib/winui_lite/ports/settings-store.h
   lib/winui_lite/widgets/address-input.cpp
   lib/winui_lite/widgets/address-input.h
 )

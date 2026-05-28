@@ -15,6 +15,7 @@
 #include "core/process-memory.h"
 #include "core/ring-logger.h"
 #include "core/settings-store.h"
+#include "ui/adapters/local-settings-store.h"
 #include "winui_lite/chrome/dark-scrollbar-hook.h"
 #include "winui_lite/chrome/dispinfo-histogram.h"
 #include "winui_lite/chrome/theme-watcher.h"
@@ -258,12 +259,16 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance,
       // background update-check thread before COM teardown.
       WinSparkleScope sparkle;
 
+      // Wire the SettingsStore port. The LocalSettingsStore adapter
+      // binds to `initialState` so load() rehydrates that buffer in
+      // place; save() (called below at shutdown) reads from
+      // window.capturedSessionState() through the same adapter.
       const std::wstring settingsPath =
           fast_explorer::core::defaultSettingsPath();
       fast_explorer::core::SessionState initialState;
-      const bool settingsLoaded =
-          !settingsPath.empty() &&
-          fast_explorer::core::loadSessionState(settingsPath, initialState);
+      fast_explorer::ui::adapters::LocalSettingsStore settingsAdapter(
+          settingsPath, initialState);
+      const bool settingsLoaded = settingsAdapter.load();
       if (settingsLoaded) {
         logger.info(L"settings loaded from %ls", settingsPath.c_str());
       }
@@ -361,8 +366,16 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance,
           DestroyAcceleratorTable(hAccel);
         }
         if (!settingsPath.empty()) {
-          if (!fast_explorer::core::saveSessionState(
-                  settingsPath, window.capturedSessionState())) {
+          // Re-bind the adapter to the captured state for save.
+          // capturedSessionState() returns const& to discourage host-
+          // side mutation, but save() only reads through the
+          // reference so the const_cast here is sound (and explicit
+          // about the read-only intent).
+          fast_explorer::ui::adapters::LocalSettingsStore saveAdapter(
+              settingsPath,
+              const_cast<fast_explorer::core::SessionState&>(
+                  window.capturedSessionState()));
+          if (!saveAdapter.save()) {
             logger.warn(L"settings save failed: %ls", settingsPath.c_str());
           }
         }
