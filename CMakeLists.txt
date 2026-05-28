@@ -38,6 +38,9 @@ set(FE_APP_SOURCES
   src/ui/address-bar-popup.h
   src/ui/main-window.cpp
   src/ui/main-window.h
+  src/ui/main-window-commands.cpp
+  src/ui/shell-actions.cpp
+  src/ui/shell-actions.h
   src/ui/messages.h
   src/ui/column-formatter.cpp
   src/ui/column-formatter.h
