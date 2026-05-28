@@ -578,3 +578,85 @@ FE_TEST_CASE(SettingsStore_v4_to_v5_DualH_Migrates) {
   FE_ASSERT_EQ(out.preset, LayoutPreset::Dual_H);
   DeleteFileW(path.c_str());
 }
+
+FE_TEST_CASE(SettingsStore_V5File_MigratesToV6Tabs) {
+  TempDir tmp(L"settings-v5-migrate");
+  const std::wstring path = makeSettingsPath(tmp);
+  // Raw v5 file: pane_paths[2] with paneCount=2.
+  // Include layout_mode:"dual" and orientation:"vertical" so the v4->v5
+  // migration block (which fires for schema_version < 6) sets paneCount=2
+  // and Dual_V preset rather than falling back to Single/paneCount=1.
+  const char* v5Body =
+    "{\"schema_version\":5,"
+    "\"pane_count\":2,\"active_pane\":0,"
+    "\"layout_mode\":\"dual\",\"orientation\":\"vertical\","
+    "\"pane_paths\":[\"C:\\\\one\",\"D:\\\\two\"],"
+    "\"preset\":\"dual_v\"}";
+  // Seed a save to create the parent directory hierarchy, then overwrite
+  // with the exact raw v5 JSON we want to test migration from.
+  { SessionState seed; FE_ASSERT_TRUE(saveSessionState(path, seed)); }
+  writeRawUtf8(path, v5Body);
+
+  SessionState s;
+  FE_ASSERT_TRUE(loadSessionState(path, s));
+  FE_ASSERT_EQ(s.paneCount, static_cast<std::size_t>(2));
+  FE_ASSERT_EQ(s.panes[0].tabs.size(), static_cast<std::size_t>(1));
+  FE_ASSERT_WSTREQ(s.panes[0].tabs[0].path, L"C:\\one");
+  FE_ASSERT_EQ(s.panes[0].activeTab, static_cast<std::size_t>(0));
+  FE_ASSERT_EQ(s.panes[1].tabs.size(), static_cast<std::size_t>(1));
+  FE_ASSERT_WSTREQ(s.panes[1].tabs[0].path, L"D:\\two");
+}
+
+FE_TEST_CASE(SettingsStore_V6_RoundTripPreservesTabs) {
+  TempDir tmp(L"settings-v6-rt");
+  const std::wstring path = makeSettingsPath(tmp);
+  SessionState s;
+  s.paneCount = 2;
+  s.activePane = 1;
+  s.preset = LayoutPreset::Dual_V;
+  s.panes[0].tabs.push_back({L"C:\\Users\\me\\Docs"});
+  s.panes[0].tabs.push_back({L"D:\\proj"});
+  s.panes[0].activeTab = 1;
+  s.panes[1].tabs.push_back({L"C:\\Users\\me"});
+  s.panes[1].activeTab = 0;
+  FE_ASSERT_TRUE(saveSessionState(path, s));
+
+  SessionState loaded;
+  FE_ASSERT_TRUE(loadSessionState(path, loaded));
+  FE_ASSERT_EQ(loaded.panes[0].tabs.size(), static_cast<std::size_t>(2));
+  FE_ASSERT_WSTREQ(loaded.panes[0].tabs[0].path, L"C:\\Users\\me\\Docs");
+  FE_ASSERT_WSTREQ(loaded.panes[0].tabs[1].path, L"D:\\proj");
+  FE_ASSERT_EQ(loaded.panes[0].activeTab, static_cast<std::size_t>(1));
+  FE_ASSERT_EQ(loaded.panes[1].tabs.size(), static_cast<std::size_t>(1));
+}
+
+FE_TEST_CASE(SettingsStore_V6_EmptyTabsArrayBecomesHomePlaceholder) {
+  TempDir tmp(L"settings-v6-empty-tabs");
+  const std::wstring path = makeSettingsPath(tmp);
+  { SessionState seed; FE_ASSERT_TRUE(saveSessionState(path, seed)); }
+  const char* body =
+    "{\"schema_version\":6,\"pane_count\":1,\"active_pane\":0,"
+    "\"panes\":[{\"tabs\":[],\"active_tab\":0}],"
+    "\"preset\":\"single\"}";
+  writeRawUtf8(path, body);
+
+  SessionState s;
+  FE_ASSERT_TRUE(loadSessionState(path, s));
+  FE_ASSERT_EQ(s.panes[0].tabs.size(), static_cast<std::size_t>(1));
+  FE_ASSERT_TRUE(s.panes[0].tabs[0].path.empty());  // Home placeholder
+}
+
+FE_TEST_CASE(SettingsStore_V6_ClampActiveTabBeyondRange) {
+  TempDir tmp(L"settings-v6-clamp");
+  const std::wstring path = makeSettingsPath(tmp);
+  { SessionState seed; FE_ASSERT_TRUE(saveSessionState(path, seed)); }
+  const char* body =
+    "{\"schema_version\":6,\"pane_count\":1,\"active_pane\":0,"
+    "\"panes\":[{\"tabs\":[{\"path\":\"C:\\\\a\"}],\"active_tab\":99}],"
+    "\"preset\":\"single\"}";
+  writeRawUtf8(path, body);
+
+  SessionState s;
+  FE_ASSERT_TRUE(loadSessionState(path, s));
+  FE_ASSERT_EQ(s.panes[0].activeTab, static_cast<std::size_t>(0));
+}
