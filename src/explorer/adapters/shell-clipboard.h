@@ -26,10 +26,12 @@ namespace adapters {
 
 class ShellClipboard final : public ports::ClipboardBackend {
  public:
-  // `pane` is borrowed and must outlive the adapter. `ownerHwnd` is
+  // `activeCell` is a reference to the host's cell pointer; the adapter
+  // takes its address and dereferences on each call. `ownerHwnd` is
   // forwarded to ClipboardOps::paste as the parent for any progress
   // / conflict UI the shell raises during the paste.
-  explicit ShellClipboard(const PaneController& pane, HWND ownerHwnd) noexcept;
+  explicit ShellClipboard(PaneController* const& activeCell,
+                          HWND ownerHwnd) noexcept;
   ~ShellClipboard() override = default;
 
   ShellClipboard(const ShellClipboard&) = delete;
@@ -40,7 +42,7 @@ class ShellClipboard final : public ports::ClipboardBackend {
       const std::wstring& targetLocation) override;
 
  private:
-  const PaneController* pane_;
+  PaneController* const* cell_;  // borrowed; written by host on tab switch
   HWND ownerHwnd_;
 };
 

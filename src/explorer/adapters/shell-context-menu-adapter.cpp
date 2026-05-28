@@ -1,5 +1,7 @@
 #include "explorer/adapters/shell-context-menu-adapter.h"
 
+#include <memory>
+
 #include "core/file-entry.h"
 #include "core/file-model-store.h"
 #include "explorer/pane-controller.h"
@@ -30,14 +32,16 @@ std::vector<std::wstring> resolveLeaves(
 }  // namespace
 
 ShellContextMenuAdapter::ShellContextMenuAdapter(
-    const PaneController& pane, HWND ownerHwnd) noexcept
-    : pane_(&pane), ownerHwnd_(ownerHwnd) {}
+    PaneController* const& activeCell, HWND ownerHwnd) noexcept
+    : cell_(std::addressof(activeCell)), ownerHwnd_(ownerHwnd) {}
 
 void ShellContextMenuAdapter::show(
     const std::vector<ports::ItemId>& ids, POINT screenPt) {
-  const std::wstring& folderPath = pane_->currentPath();
+  PaneController* c = *cell_;
+  if (!c) return;
+  const std::wstring& folderPath = c->currentPath();
   if (folderPath.empty()) return;
-  const auto leaves = resolveLeaves(*pane_, ids);
+  const auto leaves = resolveLeaves(*c, ids);
   // leaves.empty() with non-empty ids means every id was invalid —
   // still safe to forward as a background-area click; the host
   // semantics expect empty leaves to mean "show folder menu".

@@ -560,16 +560,18 @@ bool MainWindow::installPaneAt(std::size_t idx) {
   // Construct port adapters last so a half-built slot never leaves an
   // adapter pointing at a torn-down PaneController. If anything above
   // fails (return false), the adapters_[idx] slot stays empty.
-  PaneController& pc = paneManager_->at(idx);
-  itemSources_[idx] = std::make_unique<adapters::ShellItemSource>(pc);
+  activeForPane_[idx] = &paneManager_->at(idx);  // bridge: same owner
+  itemSources_[idx] = std::make_unique<adapters::ShellItemSource>(
+      activeForPane_[idx]);
   itemDispatchers_[idx] =
-      std::make_unique<adapters::ShellItemDispatcher>(pc);
+      std::make_unique<adapters::ShellItemDispatcher>(activeForPane_[idx]);
   clipboards_[idx] =
-      std::make_unique<adapters::ShellClipboard>(pc, lv);
+      std::make_unique<adapters::ShellClipboard>(activeForPane_[idx], lv);
   dragDrops_[idx] =
-      std::make_unique<adapters::ShellDragDrop>(pc, lv);
+      std::make_unique<adapters::ShellDragDrop>(activeForPane_[idx], lv);
   contextMenus_[idx] =
-      std::make_unique<adapters::ShellContextMenuAdapter>(pc, hwnd_);
+      std::make_unique<adapters::ShellContextMenuAdapter>(activeForPane_[idx],
+                                                         hwnd_);
   return true;
 }
 
@@ -580,12 +582,15 @@ void MainWindow::uninstallPaneAt(std::size_t idx) {
 
   // Drop adapters first — they borrow non-owning pointers into the
   // PaneController that the rest of teardown (and the eventual
-  // paneManager_->closePane) is about to invalidate.
+  // paneManager_->closePane) is about to invalidate. Reset the cell
+  // AFTER all adapters are gone so no adapter destructor can
+  // dereference a stale cell.
   contextMenus_[idx].reset();
   dragDrops_[idx].reset();
   clipboards_[idx].reset();
   itemDispatchers_[idx].reset();
   itemSources_[idx].reset();
+  activeForPane_[idx] = nullptr;
 
   // Hide the popup before any pane HWNDs go away — its mouse hook
   // and pending pick payloads anchor on those windows.
@@ -1566,15 +1571,18 @@ LRESULT MainWindow::onCreate(HWND hwnd) {
   paneManager_ = std::make_unique<PaneManager<PaneController>>();
   paneManager_->openInitial(hwnd);
   pane_ = &paneManager_->active();
-  itemSources_[0] = std::make_unique<adapters::ShellItemSource>(*pane_);
+  activeForPane_[0] = &paneManager_->at(0);  // bridge: same owner
+  itemSources_[0] = std::make_unique<adapters::ShellItemSource>(
+      activeForPane_[0]);
   itemDispatchers_[0] =
-      std::make_unique<adapters::ShellItemDispatcher>(*pane_);
+      std::make_unique<adapters::ShellItemDispatcher>(activeForPane_[0]);
   clipboards_[0] =
-      std::make_unique<adapters::ShellClipboard>(*pane_, listView_);
+      std::make_unique<adapters::ShellClipboard>(activeForPane_[0], listView_);
   dragDrops_[0] =
-      std::make_unique<adapters::ShellDragDrop>(*pane_, listView_);
+      std::make_unique<adapters::ShellDragDrop>(activeForPane_[0], listView_);
   contextMenus_[0] =
-      std::make_unique<adapters::ShellContextMenuAdapter>(*pane_, hwnd);
+      std::make_unique<adapters::ShellContextMenuAdapter>(activeForPane_[0],
+                                                         hwnd);
   {
     auto* dt =
         new (std::nothrow) PaneDropTarget(listView_, paneManager_.get(), 0);

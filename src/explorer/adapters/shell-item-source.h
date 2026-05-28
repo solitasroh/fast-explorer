@@ -30,7 +30,7 @@ namespace adapters {
 
 class ShellItemSource final : public ports::ItemSource {
  public:
-  explicit ShellItemSource(PaneController& pane) noexcept;
+  explicit ShellItemSource(PaneController* const& activeCell) noexcept;
   ~ShellItemSource() override = default;
 
   ShellItemSource(const ShellItemSource&) = delete;
@@ -42,7 +42,7 @@ class ShellItemSource final : public ports::ItemSource {
   ports::ItemId idAt(std::size_t index) const override;
 
  private:
-  PaneController* pane_;  // borrowed; non-owning
+  PaneController* const* cell_;  // borrowed; written by host on tab switch
 };
 
 }  // namespace adapters

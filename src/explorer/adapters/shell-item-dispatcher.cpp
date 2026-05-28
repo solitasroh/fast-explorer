@@ -1,5 +1,7 @@
 #include "explorer/adapters/shell-item-dispatcher.h"
 
+#include <memory>
+
 #include "core/file-entry.h"
 #include "core/file-model-store.h"
 #include "explorer/column-formatter.h"
@@ -7,14 +9,16 @@
 
 namespace fast_explorer::ui::adapters {
 
-ShellItemDispatcher::ShellItemDispatcher(const PaneController& pane) noexcept
-    : pane_(&pane) {}
+ShellItemDispatcher::ShellItemDispatcher(PaneController* const& activeCell) noexcept
+    : cell_(std::addressof(activeCell)) {}
 
 std::wstring ShellItemDispatcher::textFor(ports::ItemId id,
                                           ports::ItemField field) const {
+  PaneController* c = *cell_;
+  if (!c) return {};
   if (id == ports::kInvalidItemId) return {};
   const std::size_t visibleIndex = static_cast<std::size_t>(id - 1);
-  const auto& store = pane_->store();
+  const auto& store = c->store();
   // publishedCount() is the UI-safe bound while a worker may be
   // appending; visibleAt past that index would read mid-write data.
   if (visibleIndex >= store.publishedCount()) return {};

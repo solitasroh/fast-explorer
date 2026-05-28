@@ -25,7 +25,7 @@ namespace adapters {
 
 class ShellContextMenuAdapter final : public ports::ContextMenu {
  public:
-  ShellContextMenuAdapter(const PaneController& pane,
+  ShellContextMenuAdapter(PaneController* const& activeCell,
                           HWND ownerHwnd) noexcept;
   ~ShellContextMenuAdapter() override = default;
 
@@ -36,7 +36,7 @@ class ShellContextMenuAdapter final : public ports::ContextMenu {
             POINT screenPt) override;
 
  private:
-  const PaneController* pane_;
+  PaneController* const* cell_;  // borrowed; written by host on tab switch
   HWND ownerHwnd_;
 };
 

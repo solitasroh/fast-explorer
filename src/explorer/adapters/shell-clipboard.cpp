@@ -1,5 +1,7 @@
 #include "explorer/adapters/shell-clipboard.h"
 
+#include <memory>
+
 #include "core/file-entry.h"
 #include "core/file-model-store.h"
 #include "explorer/clipboard-ops.h"
@@ -33,19 +35,22 @@ std::vector<std::wstring> resolveLeaves(
 
 }  // namespace
 
-ShellClipboard::ShellClipboard(const PaneController& pane,
+ShellClipboard::ShellClipboard(PaneController* const& activeCell,
                                 HWND ownerHwnd) noexcept
-    : pane_(&pane), ownerHwnd_(ownerHwnd) {}
+    : cell_(std::addressof(activeCell)), ownerHwnd_(ownerHwnd) {}
 
 bool ShellClipboard::copyItems(const std::vector<ports::ItemId>& ids,
                                 bool cut) {
-  const auto leaves = resolveLeaves(*pane_, ids);
+  PaneController* c = *cell_;
+  if (!c) return false;
+  const auto leaves = resolveLeaves(*c, ids);
   if (leaves.empty()) return false;
-  return ClipboardOps::copy(pane_->currentPath(), leaves, cut);
+  return ClipboardOps::copy(c->currentPath(), leaves, cut);
 }
 
 ports::PasteOutcome ShellClipboard::pasteInto(
     const std::wstring& targetLocation) {
+  if (!*cell_) return ports::PasteOutcome::Rejected;
   if (targetLocation.empty()) return ports::PasteOutcome::Rejected;
   const auto result = ClipboardOps::paste(targetLocation, ownerHwnd_);
   switch (result) {

@@ -23,7 +23,7 @@ namespace adapters {
 
 class ShellItemDispatcher final : public ports::ItemDispatcher {
  public:
-  explicit ShellItemDispatcher(const PaneController& pane) noexcept;
+  explicit ShellItemDispatcher(PaneController* const& activeCell) noexcept;
   ~ShellItemDispatcher() override = default;
 
   ShellItemDispatcher(const ShellItemDispatcher&) = delete;
@@ -34,7 +34,7 @@ class ShellItemDispatcher final : public ports::ItemDispatcher {
   int iconIndexFor(ports::ItemId id) const override;
 
  private:
-  const PaneController* pane_;  // borrowed; non-owning
+  PaneController* const* cell_;  // borrowed; written by host on tab switch
 };
 
 }  // namespace adapters

@@ -285,6 +285,13 @@ class MainWindow : public WindowBase {
   std::unique_ptr<AddressBarPopup> addressBarPopup_;
   std::array<bool, 4> firstBatchSeen_{false, false, false, false};
   std::unique_ptr<PaneManager<PaneController>> paneManager_;
+  // Cell array for the per-pane adapter indirection. Each element is
+  // the "current" PaneController* for pane i. Adapters store a pointer
+  // to this element so a future tab-switch only needs to write one
+  // pointer per pane (O(1)) rather than reconstruct all adapters.
+  // Phase 3 bridge: still mirrors paneManager_->at(i) directly.
+  std::array<PaneController*, 4> activeForPane_{nullptr, nullptr, nullptr,
+                                                nullptr};
   // Cached pointer to the manager's currently active pane. Refreshed
   // by onCreate (and by the active-pane switch handler in a later M9
   // atom). Never owns; the PaneController itself is owned by

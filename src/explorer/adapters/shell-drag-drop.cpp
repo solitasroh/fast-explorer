@@ -1,5 +1,6 @@
 #include "explorer/adapters/shell-drag-drop.h"
 
+#include <memory>
 #include <shobjidl.h>
 
 #include "core/file-entry.h"
@@ -33,15 +34,17 @@ std::vector<std::wstring> resolveLeaves(
 
 }  // namespace
 
-ShellDragDrop::ShellDragDrop(const PaneController& pane,
+ShellDragDrop::ShellDragDrop(PaneController* const& activeCell,
                               HWND listView) noexcept
-    : pane_(&pane), listView_(listView) {}
+    : cell_(std::addressof(activeCell)), listView_(listView) {}
 
 bool ShellDragDrop::beginDrag(const std::vector<ports::ItemId>& ids) {
+  PaneController* c = *cell_;
+  if (!c) return false;
   if (listView_ == nullptr) return false;
-  const std::wstring& folderPath = pane_->currentPath();
+  const std::wstring& folderPath = c->currentPath();
   if (folderPath.empty()) return false;
-  const auto leaves = resolveLeaves(*pane_, ids);
+  const auto leaves = resolveLeaves(*c, ids);
   if (leaves.empty()) return false;
 
   ComPtr<IShellFolder> folder = bindFolderByPath(folderPath);

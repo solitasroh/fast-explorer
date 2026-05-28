@@ -299,6 +299,7 @@ target_link_options(FastExplorer PRIVATE "/MANIFEST:NO")
 # ---------------------------------------------------------------------------
 add_executable(core-tests
   tests/test-main.cpp
+  tests/adapter-cell-tests.cpp
   tests/path-utils-tests.cpp
   tests/file-entry-tests.cpp
   tests/name-arena-tests.cpp
@@ -369,6 +370,10 @@ add_executable(core-tests
   src/explorer/search-popup.h
   src/explorer/pane-controller.cpp
   src/explorer/pane-controller.h
+  src/explorer/adapters/shell-item-dispatcher.cpp
+  src/explorer/adapters/shell-item-dispatcher.h
+  src/explorer/adapters/shell-item-source.cpp
+  src/explorer/adapters/shell-item-source.h
   src/explorer/pane-sort-coordinator.cpp
   src/explorer/pane-sort-coordinator.h
   src/explorer/result-channel.h

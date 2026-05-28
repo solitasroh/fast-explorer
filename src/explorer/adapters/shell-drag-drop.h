@@ -26,10 +26,11 @@ namespace adapters {
 
 class ShellDragDrop final : public ports::DragDropBackend {
  public:
-  // `pane` is borrowed and must outlive the adapter. `listView` is
+  // `activeCell` is a reference to the host's cell pointer; the adapter
+  // takes its address and dereferences on each call. `listView` is
   // the HWND DoDragDrop is anchored on (used by GetUIObjectOf as
   // hwndOwner so the shell can position progress UI correctly).
-  ShellDragDrop(const PaneController& pane, HWND listView) noexcept;
+  ShellDragDrop(PaneController* const& activeCell, HWND listView) noexcept;
   ~ShellDragDrop() override = default;
 
   ShellDragDrop(const ShellDragDrop&) = delete;
@@ -38,7 +39,7 @@ class ShellDragDrop final : public ports::DragDropBackend {
   bool beginDrag(const std::vector<ports::ItemId>& ids) override;
 
  private:
-  const PaneController* pane_;
+  PaneController* const* cell_;  // borrowed; written by host on tab switch
   HWND listView_;
 };
 
