@@ -2,7 +2,7 @@
 
 #include "core/file-entry.h"
 #include "test-harness.h"
-#include "ui/format-cache.h"
+#include "explorer/format-cache.h"
 
 using fast_explorer::core::FileEntry;
 using fast_explorer::core::file_entry_flags::kIsDirectory;

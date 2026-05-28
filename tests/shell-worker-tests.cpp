@@ -6,7 +6,7 @@
 #include <string>
 
 #include "bench-fs-helper.h"
-#include "ui/shell-worker.h"
+#include "explorer/shell-worker.h"
 
 using fast_explorer::tests::TempDir;
 using fast_explorer::ui::OperationResult;

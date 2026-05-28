@@ -4,7 +4,7 @@
 #include <string>
 #include <vector>
 
-#include "ui/stall-probe.h"
+#include "explorer/stall-probe.h"
 
 using fast_explorer::ui::classifyStall;
 using fast_explorer::ui::dumpStallHistogram;

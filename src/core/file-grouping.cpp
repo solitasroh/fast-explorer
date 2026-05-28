@@ -8,7 +8,7 @@
 #include "core/file-entry.h"
 #include "core/file-model-store.h"
 #include "core/file-sort.h"
-#include "ui/format-cache.h"
+#include "explorer/format-cache.h"
 
 namespace fast_explorer::core {
 

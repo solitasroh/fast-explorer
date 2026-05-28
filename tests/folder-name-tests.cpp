@@ -4,7 +4,7 @@
 #include <vector>
 
 #include "test-harness.h"
-#include "ui/folder-name.h"
+#include "explorer/folder-name.h"
 
 using fast_explorer::ui::uniqueFolderLeaf;
 

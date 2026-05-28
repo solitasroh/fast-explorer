@@ -4,7 +4,7 @@
 #include <commctrl.h>
 
 #include "core/file-entry.h"
-#include "ui/icon-cache.h"
+#include "explorer/icon-cache.h"
 
 using fast_explorer::core::FileEntry;
 using fast_explorer::ui::createPlaceholderImageList;

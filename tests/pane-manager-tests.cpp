@@ -1,7 +1,7 @@
 #include <windows.h>
 
 #include "test-harness.h"
-#include "ui/pane-controller.h"
+#include "explorer/pane-controller.h"
 #include "winui_lite/chrome/pane-manager.h"
 
 using fast_explorer::ui::chooseSecondPaneInitialPath;

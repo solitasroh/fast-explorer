@@ -1,6 +1,6 @@
 #include "test-harness.h"
 
-#include "ui/extension-icon-cache.h"
+#include "explorer/extension-icon-cache.h"
 
 using fast_explorer::ui::ExtensionIconCache;
 

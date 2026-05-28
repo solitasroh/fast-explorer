@@ -1,5 +1,5 @@
 #include "test-harness.h"
-#include "ui/messages.h"
+#include "explorer/messages.h"
 
 using fast_explorer::ui::generationFromWParam;
 using fast_explorer::ui::kWmFeAddressCommit;

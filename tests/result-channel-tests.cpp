@@ -5,8 +5,8 @@
 #include <cstddef>
 #include <memory>
 
-#include "ui/messages.h"
-#include "ui/result-channel.h"
+#include "explorer/messages.h"
+#include "explorer/result-channel.h"
 
 using fast_explorer::ui::kWmFeOperationResult;
 using fast_explorer::ui::ResultChannel;

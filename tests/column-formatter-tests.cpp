@@ -2,7 +2,7 @@
 
 #include "core/file-entry.h"
 #include "test-harness.h"
-#include "ui/column-formatter.h"
+#include "explorer/column-formatter.h"
 
 using fast_explorer::core::FileEntry;
 using fast_explorer::core::file_entry_flags::kIsCloudPlaceholder;

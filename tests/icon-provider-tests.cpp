@@ -3,7 +3,7 @@
 #include <cstddef>
 #include <string>
 
-#include "ui/icon-provider.h"
+#include "explorer/icon-provider.h"
 
 using fast_explorer::ui::IconProvider;
 

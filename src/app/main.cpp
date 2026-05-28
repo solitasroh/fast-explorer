@@ -15,13 +15,13 @@
 #include "core/process-memory.h"
 #include "core/ring-logger.h"
 #include "core/settings-store.h"
-#include "ui/adapters/local-settings-store.h"
+#include "explorer/adapters/local-settings-store.h"
 #include "winui_lite/chrome/dark-scrollbar-hook.h"
 #include "winui_lite/chrome/dispinfo-histogram.h"
 #include "winui_lite/chrome/theme-watcher.h"
-#include "ui/main-window.h"
-#include "ui/messages.h"
-#include "ui/stall-probe.h"
+#include "explorer/main-window.h"
+#include "explorer/messages.h"
+#include "explorer/stall-probe.h"
 
 namespace {
 

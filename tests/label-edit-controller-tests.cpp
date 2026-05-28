@@ -7,8 +7,8 @@
 #include "bench-fs-helper.h"
 #include "core/path-utils.h"
 #include "test-harness.h"
-#include "ui/label-edit-controller.h"
-#include "ui/pane-controller.h"
+#include "explorer/label-edit-controller.h"
+#include "explorer/pane-controller.h"
 
 using fast_explorer::tests::diskPathExists;
 using fast_explorer::tests::TempDir;

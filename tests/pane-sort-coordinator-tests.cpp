@@ -12,7 +12,7 @@
 #include "core/file-model-store.h"
 #include "core/file-sort.h"
 #include "core/name-arena.h"
-#include "ui/pane-sort-coordinator.h"
+#include "explorer/pane-sort-coordinator.h"
 
 using fast_explorer::core::FileEntry;
 using fast_explorer::core::FileModelStore;

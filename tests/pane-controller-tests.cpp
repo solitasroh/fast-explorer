@@ -6,7 +6,7 @@
 #include "core/file-sort.h"
 #include "core/path-utils.h"
 #include "test-harness.h"
-#include "ui/pane-controller.h"
+#include "explorer/pane-controller.h"
 
 using fast_explorer::bench::generateDataset;
 using fast_explorer::bench::GenerateError;

@@ -6,8 +6,8 @@
 #include "bench-fs-helper.h"
 #include "bench/dataset-generator.h"
 #include "test-harness.h"
-#include "ui/pane-controller.h"
-#include "ui/selection-sync.h"
+#include "explorer/pane-controller.h"
+#include "explorer/selection-sync.h"
 
 using fast_explorer::bench::generateDataset;
 using fast_explorer::bench::GenerateError;

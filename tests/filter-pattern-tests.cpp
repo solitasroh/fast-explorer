@@ -1,5 +1,5 @@
 #include "test-harness.h"
-#include "ui/filter-pattern.h"
+#include "explorer/filter-pattern.h"
 
 using fast_explorer::ui::applyFilter;
 using fast_explorer::ui::detectFilterMode;

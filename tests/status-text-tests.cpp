@@ -1,5 +1,5 @@
 #include "test-harness.h"
-#include "ui/status-text.h"
+#include "explorer/status-text.h"
 
 using fast_explorer::core::EnumerationError;
 using fast_explorer::ui::errorStatusText;
