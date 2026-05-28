@@ -43,6 +43,10 @@ set(FE_APP_SOURCES
   src/ui/column-formatter.h
   src/ui/extension-icon-cache.cpp
   src/ui/extension-icon-cache.h
+  src/ui/adapters/shell-clipboard.cpp
+  src/ui/adapters/shell-clipboard.h
+  src/ui/adapters/shell-drag-drop.cpp
+  src/ui/adapters/shell-drag-drop.h
   src/ui/adapters/shell-item-dispatcher.cpp
   src/ui/adapters/shell-item-dispatcher.h
   src/ui/adapters/shell-item-source.cpp
@@ -203,6 +207,8 @@ add_library(winui_lite STATIC
   lib/winui_lite/chrome/theme-watcher.h
   lib/winui_lite/chrome/window-base.cpp
   lib/winui_lite/chrome/window-base.h
+  lib/winui_lite/ports/clipboard-backend.h
+  lib/winui_lite/ports/drag-drop-backend.h
   lib/winui_lite/ports/item-activator.h
   lib/winui_lite/ports/item-dispatcher.h
   lib/winui_lite/ports/item-source.h
@@ -326,10 +332,6 @@ add_executable(core-tests
   src/ui/column-formatter.h
   src/ui/extension-icon-cache.cpp
   src/ui/extension-icon-cache.h
-  src/ui/adapters/shell-item-dispatcher.cpp
-  src/ui/adapters/shell-item-dispatcher.h
-  src/ui/adapters/shell-item-source.cpp
-  src/ui/adapters/shell-item-source.h
   src/ui/folder-name.cpp
   src/ui/folder-name.h
   src/ui/format-cache.cpp

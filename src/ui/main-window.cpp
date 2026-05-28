@@ -37,15 +37,13 @@
 #include "winui_lite/chrome/pane-manager.h"
 #include "winui_lite/chrome/pane-splitter.h"
 #include "../../resources/resource-ids.h"
-#include "ui/clipboard-ops.h"
-#include "winui_lite/chrome/com-raii.h"
 #include "winui_lite/widgets/address-input.h"
+#include "ui/adapters/shell-clipboard.h"
+#include "ui/adapters/shell-drag-drop.h"
 #include "ui/adapters/shell-item-dispatcher.h"
 #include "ui/adapters/shell-item-source.h"
-#include "ui/drop-source.h"
 #include "ui/drop-target.h"
 #include "ui/selection-sync.h"
-#include "ui/shell-bind.h"
 #include "ui/shell-context-menu.h"
 #include "ui/status-text.h"
 
@@ -653,6 +651,10 @@ bool MainWindow::installPaneAt(std::size_t idx) {
   itemSources_[idx] = std::make_unique<adapters::ShellItemSource>(pc);
   itemDispatchers_[idx] =
       std::make_unique<adapters::ShellItemDispatcher>(pc);
+  clipboards_[idx] =
+      std::make_unique<adapters::ShellClipboard>(pc, lv);
+  dragDrops_[idx] =
+      std::make_unique<adapters::ShellDragDrop>(pc, lv);
   return true;
 }
 
@@ -664,6 +666,8 @@ void MainWindow::uninstallPaneAt(std::size_t idx) {
   // Drop adapters first — they borrow non-owning pointers into the
   // PaneController that the rest of teardown (and the eventual
   // paneManager_->closePane) is about to invalidate.
+  dragDrops_[idx].reset();
+  clipboards_[idx].reset();
   itemDispatchers_[idx].reset();
   itemSources_[idx].reset();
 
@@ -1634,6 +1638,10 @@ LRESULT MainWindow::onCreate(HWND hwnd) {
   itemSources_[0] = std::make_unique<adapters::ShellItemSource>(*pane_);
   itemDispatchers_[0] =
       std::make_unique<adapters::ShellItemDispatcher>(*pane_);
+  clipboards_[0] =
+      std::make_unique<adapters::ShellClipboard>(*pane_, listView_);
+  dragDrops_[0] =
+      std::make_unique<adapters::ShellDragDrop>(*pane_, listView_);
   {
     auto* dt =
         new (std::nothrow) PaneDropTarget(listView_, paneManager_.get(), 0);
@@ -2420,38 +2428,32 @@ LRESULT MainWindow::onFsChange(HWND hwnd, WPARAM wParam) {
   return 0;
 }
 
-namespace {
-
-std::vector<std::wstring> collectSelectedLeaves(HWND lv,
-                                                const PaneController& pane) {
-  std::vector<std::wstring> out;
-  if (lv == nullptr) return out;
-  const auto& store = pane.store();
-  int row = -1;
-  while ((row = ListView_GetNextItem(lv, row, LVNI_SELECTED)) >= 0) {
-    const auto idx = static_cast<std::size_t>(row);
-    if (idx >= store.publishedCount()) continue;
-    const auto& entry = store.visibleAt(idx);
-    // Skip entries with no name (defensive: a stale OWNERDATA
-    // selection bit after an fs-watch refresh could otherwise feed
-    // an empty leaf into ClipboardOps::copy, which would silently
-    // shrink the clipboard payload).
-    if (entry.namePtr == nullptr || entry.nameLength == 0) continue;
-    out.emplace_back(entry.namePtr, entry.nameLength);
-  }
-  return out;
-}
-
-}  // namespace
-
 void MainWindow::handleClipboardCopy(bool cut) {
   if (!paneManager_) return;
   const std::size_t idx = paneManager_->activeIndex();
   if (idx >= listViews_.size() || listViews_[idx] == nullptr) return;
+  if (!clipboards_[idx]) return;
   PaneController& pane = paneManager_->at(idx);
-  auto leaves = collectSelectedLeaves(listViews_[idx], pane);
-  if (leaves.empty()) return;
-  if (!ClipboardOps::copy(pane.currentPath(), leaves, cut)) return;
+  // Single listview scan produces both the id vector for the port
+  // and the leaf vector for the host-side cut-state visuals. The
+  // adapter will do its own id->leaf lookup against the store; that
+  // is one extra hash-free index lookup per id, negligible at
+  // typical selection sizes.
+  std::vector<ports::ItemId> ids;
+  std::vector<std::wstring> leaves;
+  HWND lv = listViews_[idx];
+  const auto& store = pane.store();
+  int row = -1;
+  while ((row = ListView_GetNextItem(lv, row, LVNI_SELECTED)) >= 0) {
+    const auto r = static_cast<std::size_t>(row);
+    if (r >= store.publishedCount()) continue;
+    const auto& entry = store.visibleAt(r);
+    if (entry.namePtr == nullptr || entry.nameLength == 0) continue;
+    ids.push_back(static_cast<ports::ItemId>(r + 1));
+    if (cut) leaves.emplace_back(entry.namePtr, entry.nameLength);
+  }
+  if (ids.empty()) return;
+  if (!clipboards_[idx]->copyItems(ids, cut)) return;
   clearCutState();
   if (cut) {
     cutState_.mark(pane.currentPath(), std::move(leaves));
@@ -2465,10 +2467,11 @@ void MainWindow::handleClipboardPaste() {
   if (!paneManager_) return;
   const std::size_t idx = paneManager_->activeIndex();
   if (idx >= listViews_.size() || listViews_[idx] == nullptr) return;
+  if (!clipboards_[idx]) return;
   PaneController& pane = paneManager_->at(idx);
   if (pane.currentPath().empty()) return;
-  if (ClipboardOps::paste(pane.currentPath(), listViews_[idx]) ==
-      PasteResult::Success) {
+  if (clipboards_[idx]->pasteInto(pane.currentPath()) ==
+      ports::PasteOutcome::Success) {
     // Move consumed the cut data object; drop the ghost.
     clearCutState();
   }
@@ -2511,47 +2514,23 @@ void MainWindow::handleBeginDrag(NMHDR* hdr) {
       paneIdx >= paneManager_->count()) {
     return;
   }
-  PaneController& pane = paneManager_->at(paneIdx);
-  const std::wstring& folderPath = pane.currentPath();
-  if (folderPath.empty()) return;
+  if (!dragDrops_[paneIdx]) return;
+  // Collect ids from listview selection and hand them to the port.
+  // The DragDropBackend adapter owns the shell-bind + GetUIObjectOf
+  // + DoDragDrop sequence so this entry point stays Win32-agnostic.
+  std::vector<ports::ItemId> ids;
   HWND lv = hdr->hwndFrom;
-  auto leaves = collectSelectedLeaves(lv, pane);
-  if (leaves.empty()) return;
-
-  ComPtr<IShellFolder> folder = bindFolderByPath(folderPath);
-  if (!folder) return;
-  std::vector<PidlOwner> childPidls;
-  childPidls.reserve(leaves.size());
-  std::vector<LPCITEMIDLIST> rawPidls;
-  rawPidls.reserve(leaves.size());
-  for (const auto& leaf : leaves) {
-    LPITEMIDLIST child = nullptr;
-    ULONG eaten = 0;
-    SFGAOF attrs = 0;
-    if (FAILED(folder->ParseDisplayName(nullptr, nullptr,
-                                         const_cast<LPWSTR>(leaf.c_str()),
-                                         &eaten, &child, &attrs)) ||
-        child == nullptr) {
-      return;
-    }
-    childPidls.emplace_back(child);
-    rawPidls.push_back(childPidls.back().get());
+  const auto& store = paneManager_->at(paneIdx).store();
+  int row = -1;
+  while ((row = ListView_GetNextItem(lv, row, LVNI_SELECTED)) >= 0) {
+    const auto r = static_cast<std::size_t>(row);
+    if (r >= store.publishedCount()) continue;
+    const auto& entry = store.visibleAt(r);
+    if (entry.namePtr == nullptr || entry.nameLength == 0) continue;
+    ids.push_back(static_cast<ports::ItemId>(r + 1));
   }
-
-  ComPtr<IDataObject> dataObj;
-  if (FAILED(folder->GetUIObjectOf(lv, static_cast<UINT>(rawPidls.size()),
-                                    rawPidls.data(), IID_IDataObject, nullptr,
-                                    reinterpret_cast<void**>(dataObj.put()))) ||
-      !dataObj) {
-    return;
-  }
-
-  ComPtr<IDropSource> dropSource;
-  dropSource.attach(new (std::nothrow) FileDropSource());
-  if (!dropSource) return;
-  DWORD effect = 0;
-  DoDragDrop(dataObj.get(), dropSource.get(),
-             DROPEFFECT_COPY | DROPEFFECT_MOVE | DROPEFFECT_LINK, &effect);
+  if (ids.empty()) return;
+  dragDrops_[paneIdx]->beginDrag(ids);
 }
 
 void MainWindow::finalizeSortApply(std::size_t paneIdx) {
