@@ -226,6 +226,8 @@ add_library(winui_lite STATIC
   lib/winui_lite/ports/settings-store.h
   lib/winui_lite/widgets/address-input.cpp
   lib/winui_lite/widgets/address-input.h
+  lib/winui_lite/widgets/tab-strip-geometry.cpp
+  lib/winui_lite/widgets/tab-strip-geometry.h
 )
 
 target_include_directories(winui_lite PUBLIC lib)
@@ -444,6 +446,7 @@ add_executable(winui_lite_tests
   tests/ports-contract-tests.cpp
   tests/splitter-ratios-tests.cpp
   tests/splitter-resize-tests.cpp
+  tests/tab-strip-geometry-tests.cpp
 )
 
 target_include_directories(winui_lite_tests PRIVATE tests)
