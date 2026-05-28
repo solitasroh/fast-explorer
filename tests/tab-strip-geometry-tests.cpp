@@ -3,7 +3,6 @@
 
 using fast_explorer::ui::StripMetrics;
 using fast_explorer::ui::TabStripGeometry;
-using fast_explorer::ui::TabRect;
 
 namespace {
 StripMetrics m96() { return StripMetrics{}; }   // 96 DPI defaults
