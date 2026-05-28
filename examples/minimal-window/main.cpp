@@ -8,6 +8,8 @@
 //   * WindowBase (chrome) handles class registration + WndProc dispatch
 //   * StatusBar (chrome) renders the bottom strip with dark-mode tinting
 //   * CommandRouter (chrome) routes F2 -> 'rename pretend' message box
+//   * TabStrip (widget) demonstrates tab activation, close, new, reorder
+//     using three in-memory TabModels — no shell linkage whatsoever.
 //   * InMemoryItemSource (port impl in this file's directory) feeds
 //     ten fake items into a host-created LVS_OWNERDATA list-view
 //   * LVN_GETDISPINFO pulls cells from the same object via
@@ -24,10 +26,15 @@
 #include <windows.h>
 #include <commctrl.h>
 
+#include <algorithm>
+#include <memory>
+#include <vector>
+
 #include "winui_lite/chrome/command-router.h"
 #include "winui_lite/chrome/status-bar.h"
 #include "winui_lite/chrome/theme-watcher.h"
 #include "winui_lite/chrome/window-base.h"
+#include "winui_lite/widgets/tab-strip.h"
 
 #include "in-memory-item-source.h"
 #include "noop-adapters.h"
@@ -54,6 +61,8 @@ class DemoWindow final : public fast_explorer::ui::WindowBase {
   fast_explorer::ui::StatusBar statusBar_;
   fast_explorer::ui::CommandRouter router_;
   winui_lite_demo::InMemoryItemSource source_;
+  std::unique_ptr<fast_explorer::ui::TabStrip> tabStrip_;
+  std::vector<fast_explorer::ui::TabModel> tabModels_;
 };
 
 bool DemoWindow::create(HINSTANCE instance) {
@@ -164,6 +173,46 @@ LRESULT DemoWindow::onCreate(HWND hwnd) {
                             L" fake items";
   statusBar_.setText(0, statusText.c_str());
 
+  // TabStrip demo — three in-memory tabs, no shell linkage.
+  tabModels_.push_back({L"Home", true});
+  tabModels_.push_back({L"Downloads", true});
+  tabModels_.push_back({L"Demo", true});
+
+  tabStrip_ = std::make_unique<fast_explorer::ui::TabStrip>(hwnd, 0);
+
+  tabStrip_->onActivate = [this](std::size_t i) {
+    tabStrip_->setActive(i);
+  };
+
+  tabStrip_->onClose = [this](std::size_t i) {
+    if (tabModels_.size() <= 1) {
+      // Keep at least one tab.
+      MessageBeep(MB_ICONASTERISK);
+      return;
+    }
+    tabModels_.erase(tabModels_.begin() + static_cast<std::ptrdiff_t>(i));
+    tabStrip_->setTabs(tabModels_);
+    MessageBeep(MB_ICONASTERISK);
+  };
+
+  tabStrip_->onNew = [this]() {
+    tabModels_.push_back({L"New tab", true});
+    tabStrip_->setTabs(tabModels_);
+    tabStrip_->setActive(tabModels_.size() - 1);
+  };
+
+  tabStrip_->onReorder = [this](std::size_t from, std::size_t to) {
+    auto item = std::move(tabModels_[from]);
+    tabModels_.erase(tabModels_.begin() + static_cast<std::ptrdiff_t>(from));
+    tabModels_.insert(tabModels_.begin() + static_cast<std::ptrdiff_t>(to),
+                      std::move(item));
+    tabStrip_->setTabs(tabModels_);
+    tabStrip_->setActive(to);
+  };
+
+  tabStrip_->setTabs(tabModels_);
+  tabStrip_->setActive(0);
+
   layoutChildren(hwnd);
   return 0;
 }
@@ -171,11 +220,22 @@ LRESULT DemoWindow::onCreate(HWND hwnd) {
 void DemoWindow::layoutChildren(HWND hwnd) {
   RECT client{};
   GetClientRect(hwnd, &client);
+  const int clientW = client.right - client.left;
+  const int clientH = client.bottom - client.top;
   const int statusH = statusBar_.height();
+
+  const int stripH = tabStrip_ ? tabStrip_->preferredHeight() : 0;
+
+  if (tabStrip_ != nullptr) {
+    SetWindowPos(tabStrip_->handle(), nullptr,
+                 0, 0, clientW, stripH,
+                 SWP_NOZORDER | SWP_NOACTIVATE);
+  }
+
   if (listView_ != nullptr) {
-    SetWindowPos(listView_, nullptr, 0, 0,
-                 client.right - client.left,
-                 (client.bottom - client.top) - statusH,
+    SetWindowPos(listView_, nullptr,
+                 0, stripH,
+                 clientW, clientH - stripH - statusH,
                  SWP_NOZORDER | SWP_NOACTIVATE);
   }
 }
