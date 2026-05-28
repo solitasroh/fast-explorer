@@ -2856,4 +2856,14 @@ void MainWindow::handleColumnClick(NMHDR* hdr) {
   }
 }
 
+// ---- Phase 4 stubs (filled in by Phase 5 Task 24) ----------------------
+
+void MainWindow::bindListViewToActiveTab(std::size_t /*paneIdx*/) {
+  // Stub: Phase 5 Task 24 provides the real implementation.
+}
+
+void MainWindow::refreshPaneChrome(std::size_t /*paneIdx*/) {
+  // Stub: Phase 5 Task 24 provides the real implementation.
+}
+
 }  // namespace fast_explorer::ui

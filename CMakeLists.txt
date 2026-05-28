@@ -83,6 +83,9 @@ set(FE_APP_SOURCES
   src/explorer/search-popup.h
   src/explorer/pane-controller.cpp
   src/explorer/pane-controller.h
+  src/explorer/pane-tab-host.cpp
+  src/explorer/pane-tab-host.h
+  src/explorer/pane-tab-host-state.h
   src/explorer/pane-sort-coordinator.cpp
   src/explorer/pane-sort-coordinator.h
   src/explorer/result-channel.h
@@ -326,6 +329,7 @@ add_executable(core-tests
   tests/icon-cache-tests.cpp
   tests/icon-provider-tests.cpp
   tests/pane-sort-coordinator-tests.cpp
+  tests/pane-tab-host-state-tests.cpp
   tests/shell-worker-tests.cpp
   tests/result-channel-tests.cpp
   tests/perf-tracker-tests.cpp

@@ -66,6 +66,11 @@ class MainWindow : public WindowBase {
   // is not yet created or the path is invalid.
   bool openFolder(const std::wstring& path);
 
+  // Called by PaneTabHost when the active tab changes. Phase 4 stubs;
+  // real implementations land in Phase 5 Task 24.
+  void bindListViewToActiveTab(std::size_t paneIdx);
+  void refreshPaneChrome(std::size_t paneIdx);
+
   // Switches to the given preset, opening or closing slots as needed.
   // Implementation lands in Task 27. Currently a no-op stub so the
   // build links while Task 25/26 wire infrastructure.
@@ -256,6 +261,7 @@ class MainWindow : public WindowBase {
   // Reads the current SearchPopup text and applies it as a filter
   // to the given pane. Called from the debounced filter timer.
   void applyFilterFromPopup(std::size_t paneIdx);
+
 
   fast_explorer::core::ProcessMemoryService& memory_;
   fast_explorer::core::PerfTracker& perf_;
