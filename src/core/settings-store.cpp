@@ -48,7 +48,7 @@ constexpr std::string_view kLayoutDual    {"dual"};
 constexpr std::string_view kOrientVertical  {"vertical"};
 constexpr std::string_view kOrientHorizontal{"horizontal"};
 
-// Schema v5 keys
+// Schema v5 keys (kKeyPanePaths kept for v5->v6 migration reader)
 constexpr std::string_view kKeySchemaVersion {"schema_version"};
 constexpr std::string_view kKeyPanePaths     {"pane_paths"};
 constexpr std::string_view kKeyPaneCount     {"pane_count"};
@@ -56,7 +56,13 @@ constexpr std::string_view kKeyActivePane    {"active_pane"};
 constexpr std::string_view kKeyPreset        {"preset"};
 constexpr std::string_view kKeyRatios        {"ratios"};
 
-constexpr int kSchemaVersionCurrent = 5;
+// Schema v6 keys
+constexpr std::string_view kKeyPanes         {"panes"};
+constexpr std::string_view kKeyTabs          {"tabs"};
+constexpr std::string_view kKeyActiveTab     {"active_tab"};
+constexpr std::string_view kKeyPath          {"path"};
+
+constexpr int kSchemaVersionCurrent = 6;
 
 constexpr std::string_view presetLabel(LayoutPreset p) noexcept {
   switch (p) {
@@ -177,14 +183,26 @@ void appendKeyRawString(std::string& out, std::string_view key,
   out.push_back('"');
 }
 
-void appendKeyPanePaths(std::string& out,
-                        const std::array<std::wstring, kMaxPanes>& paths,
-                        bool first) {
-  appendKeyHeader(out, kKeyPanePaths, first);
+void appendKeyPanes(std::string& out,
+                    const std::array<PaneSessionV6, kMaxPanes>& panes,
+                    bool first) {
+  appendKeyHeader(out, kKeyPanes, first);
   out.push_back('[');
-  for (std::size_t i = 0; i < paths.size(); ++i) {
+  for (std::size_t i = 0; i < kMaxPanes; ++i) {
     if (i > 0) out.append(", ");
-    appendJsonEscapedString(out, paths[i]);
+    out.append("{\"tabs\": [");
+    const auto& p = panes[i];
+    for (std::size_t t = 0; t < p.tabs.size(); ++t) {
+      if (t > 0) out.append(", ");
+      out.append("{\"path\": ");
+      appendJsonEscapedString(out, p.tabs[t].path);
+      out.push_back('}');
+    }
+    out.append("], \"active_tab\": ");
+    char numBuf[24];
+    std::snprintf(numBuf, sizeof(numBuf), "%zu", p.activeTab);
+    out.append(numBuf);
+    out.push_back('}');
   }
   out.push_back(']');
 }
@@ -340,6 +358,7 @@ class JsonReader {
     return true;
   }
   bool parsePanePathsArrayInto(SessionState& state) {
+    // v5 compat: populate legacyPanePaths[] for the migrator.
     skipWs();
     if (!consume('[')) return false;
     skipWs();
@@ -349,10 +368,92 @@ class JsonReader {
       skipWs();
       std::string raw;
       if (!parseStringInto(raw)) return false;
-      if (idx < state.panePaths.size()) {
-        state.panePaths[idx] = widenUtf8(raw);
+      if (idx < state.legacyPanePaths.size()) {
+        state.legacyPanePaths[idx] = widenUtf8(raw);
       }
       idx++;
+      skipWs();
+      if (consume(',')) continue;
+      if (consume(']')) return true;
+      return false;
+    }
+  }
+  bool parsePanesArrayInto(SessionState& state) {
+    // v6: array of {tabs:[{path:"..."},...], active_tab:N}
+    skipWs();
+    if (!consume('[')) return false;
+    skipWs();
+    std::size_t paneIdx = 0;
+    if (peek() == ']') { pos_++; return true; }
+    while (true) {
+      skipWs();
+      if (!consume('{')) return false;
+      skipWs();
+      PaneSessionV6 p;
+      if (peek() != '}') {
+        while (true) {
+          skipWs();
+          std::string key;
+          if (!parseStringInto(key)) return false;
+          skipWs();
+          if (!consume(':')) return false;
+          skipWs();
+          if (key == kKeyTabs) {
+            // tabs array
+            if (!consume('[')) return false;
+            skipWs();
+            if (peek() == ']') { pos_++; }
+            else {
+              while (true) {
+                skipWs();
+                if (!consume('{')) return false;
+                skipWs();
+                TabRecordV6 t;
+                if (peek() != '}') {
+                  while (true) {
+                    skipWs();
+                    std::string k2;
+                    if (!parseStringInto(k2)) return false;
+                    skipWs();
+                    if (!consume(':')) return false;
+                    skipWs();
+                    if (k2 == kKeyPath) {
+                      std::string raw;
+                      if (!parseStringInto(raw)) return false;
+                      t.path = widenUtf8(raw);
+                    } else {
+                      if (!skipValue()) return false;
+                    }
+                    skipWs();
+                    if (consume(',')) continue;
+                    break;
+                  }
+                }
+                skipWs();
+                if (!consume('}')) return false;
+                p.tabs.push_back(std::move(t));
+                skipWs();
+                if (consume(',')) continue;
+                if (consume(']')) break;
+                return false;
+              }
+            }
+          } else if (key == kKeyActiveTab) {
+            int v = 0;
+            if (!parseIntInto(v)) return false;
+            p.activeTab = static_cast<std::size_t>(v < 0 ? 0 : v);
+          } else {
+            if (!skipValue()) return false;
+          }
+          skipWs();
+          if (consume(',')) continue;
+          break;
+        }
+      }
+      skipWs();
+      if (!consume('}')) return false;
+      if (paneIdx < kMaxPanes) state.panes[paneIdx] = std::move(p);
+      paneIdx++;
       skipWs();
       if (consume(',')) continue;
       if (consume(']')) return true;
@@ -441,6 +542,7 @@ class JsonReader {
       int v = 0;
       if (!parseIntInto(v)) return false;
       schemaVersion_ = v;
+      state.schemaVersionLoaded = v;
       return true;
     }
     if (key == kKeyPaneCount) {
@@ -466,6 +568,9 @@ class JsonReader {
     }
     if (key == kKeyPanePaths) {
       return parsePanePathsArrayInto(state);
+    }
+    if (key == kKeyPanes) {
+      return parsePanesArrayInto(state);
     }
     if (key == kKeyRatios) {
       return parseRatiosObjectInto(state);
@@ -585,11 +690,13 @@ bool loadSessionState(const std::wstring& path, SessionState& state) {
     }
   }
   if (reader.schemaVersion() < kSchemaVersionCurrent) {
-    if (state.panePaths[0].empty() && !state.lastPath.empty()) {
-      state.panePaths[0] = state.lastPath;
+    // v4 -> v5 path/preset migration (populates legacyPanePaths if not
+    // already set by pane_paths key).
+    if (state.legacyPanePaths[0].empty() && !state.lastPath.empty()) {
+      state.legacyPanePaths[0] = state.lastPath;
     }
-    if (state.panePaths[1].empty() && !state.secondPath.empty()) {
-      state.panePaths[1] = state.secondPath;
+    if (state.legacyPanePaths[1].empty() && !state.secondPath.empty()) {
+      state.legacyPanePaths[1] = state.secondPath;
     }
     if (state.layoutMode == LayoutMode::Dual) {
       state.preset = (state.orientation == LayoutOrientation::Horizontal)
@@ -601,6 +708,31 @@ bool loadSessionState(const std::wstring& path, SessionState& state) {
     }
     state.activePane = 0;
   }
+
+  // Migrate v5 -> v6: promote legacyPanePaths[] into panes[i].tabs[0].
+  if (state.schemaVersionLoaded < 6) {
+    for (std::size_t i = 0; i < state.paneCount && i < kMaxPanes; ++i) {
+      if (!state.legacyPanePaths[i].empty() && state.panes[i].tabs.empty()) {
+        TabRecordV6 t{ state.legacyPanePaths[i] };
+        state.panes[i].tabs.push_back(std::move(t));
+        state.panes[i].activeTab = 0;
+      }
+    }
+  }
+
+  // Repair v6 invariants (lenient forward-compat: clamp/fill on any path).
+  for (std::size_t i = 0; i < kMaxPanes; ++i) {
+    auto& p = state.panes[i];
+    if (p.tabs.empty()) {
+      // Empty tabs -> single Home placeholder (empty path resolved at
+      // restore time to %USERPROFILE%).
+      p.tabs.push_back(TabRecordV6{});
+      p.activeTab = 0;
+    } else if (p.activeTab >= p.tabs.size()) {
+      p.activeTab = p.tabs.size() - 1;
+    }
+  }
+
   return true;
 }
 
@@ -614,7 +746,7 @@ bool saveSessionState(const std::wstring& path, const SessionState& state) {
   appendKeyInt       (out, kKeyWindowY,       state.windowY,         false);
   appendKeyInt       (out, kKeyWindowW,       state.windowWidth,     false);
   appendKeyInt       (out, kKeyWindowH,       state.windowHeight,    false);
-  appendKeyPanePaths (out, state.panePaths,                          false);
+  appendKeyPanes     (out, state.panes,                              false);
   appendKeyInt       (out, kKeyPaneCount,     static_cast<int>(state.paneCount),  false);
   appendKeyInt       (out, kKeyActivePane,    static_cast<int>(state.activePane), false);
   appendKeyRawString (out, kKeyPreset,        presetLabel(state.preset),          false);

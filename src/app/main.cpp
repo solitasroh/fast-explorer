@@ -338,10 +338,12 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance,
           } else {
             logger.info(L"--open: enumerating %ls", openPath.c_str());
           }
-        } else if (!initialState.panePaths[0].empty()) {
-          if (!window.openFolder(initialState.panePaths[0])) {
+        } else if (!initialState.panes[0].tabs.empty() &&
+                   !initialState.panes[0].tabs[0].path.empty()) {
+          const auto& p0 = initialState.panes[0].tabs[0].path;
+          if (!window.openFolder(p0)) {
             logger.warn(L"session restore: pane[0] path invalid (%ls)",
-                        initialState.panePaths[0].c_str());
+                        p0.c_str());
           }
         }
         // Layout restore runs after lastPath is open so the second

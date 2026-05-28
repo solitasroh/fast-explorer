@@ -802,7 +802,11 @@ void MainWindow::restoreLayoutFromSession(
       paneManager_->closePane();
       break;
     }
-    const std::wstring& path = state.panePaths[i];
+    // Use the active tab's path for this pane (v6 schema).
+    const std::wstring path =
+        (!state.panes[i].tabs.empty())
+            ? state.panes[i].tabs[state.panes[i].activeTab].path
+            : std::wstring{};
     const std::wstring& openIn =
         !path.empty() ? path : paneManager_->active().currentPath();
     if (!openIn.empty() && paneManager_->at(i).openFolder(openIn)) {
@@ -1444,12 +1448,20 @@ LRESULT MainWindow::handleMessage(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPa
         capturedState_->windowWidth = r.right - r.left;
         capturedState_->windowHeight = r.bottom - r.top;
       }
-      capturedState_->panePaths.fill(std::wstring{});
+      // Reset all pane session data before repopulating.
+      for (auto& p : capturedState_->panes) {
+        p.tabs.clear();
+        p.activeTab = 0;
+      }
       if (paneManager_) {
         for (std::size_t i = 0;
              i < paneManager_->count() &&
              i < fast_explorer::core::kMaxPanes; ++i) {
-          capturedState_->panePaths[i] = paneManager_->at(i).currentPath();
+          // v6: persist current path as a single tab (no multi-tab yet).
+          fast_explorer::core::TabRecordV6 t;
+          t.path = paneManager_->at(i).currentPath();
+          capturedState_->panes[i].tabs.push_back(std::move(t));
+          capturedState_->panes[i].activeTab = 0;
         }
         capturedState_->paneCount = paneManager_->count();
         capturedState_->activePane = paneManager_->activeIndex();
@@ -1460,10 +1472,13 @@ LRESULT MainWindow::handleMessage(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPa
       capturedState_->preset = preset_;
       capturedState_->ratiosPerPreset = ratiosPerPreset_;
 
-      // Legacy v4 fields kept populated for any callers that still
-      // read them (the v5 writer ignores them in emit).
-      capturedState_->lastPath   = capturedState_->panePaths[0];
-      capturedState_->secondPath = capturedState_->panePaths[1];
+      // Legacy v4 fields kept populated for any callers that still read them.
+      capturedState_->lastPath =
+          (!capturedState_->panes[0].tabs.empty())
+              ? capturedState_->panes[0].tabs[0].path : std::wstring{};
+      capturedState_->secondPath =
+          (!capturedState_->panes[1].tabs.empty())
+              ? capturedState_->panes[1].tabs[0].path : std::wstring{};
       capturedState_->layoutMode = capturedState_->paneCount > 1
                                        ? fast_explorer::core::LayoutMode::Dual
                                        : fast_explorer::core::LayoutMode::Single;

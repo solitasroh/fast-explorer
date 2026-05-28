@@ -4,6 +4,7 @@
 #include <climits>
 #include <cstdint>
 #include <string>
+#include <vector>
 
 #include "winui_lite/chrome/layout-orientation.h"
 #include "winui_lite/chrome/layout-preset.h"
@@ -20,6 +21,15 @@ enum class LayoutMode : std::uint8_t { Single = 0, Dual = 1 };
 
 constexpr std::size_t kMaxPanes = 4;
 
+struct TabRecordV6 {
+  std::wstring path;
+};
+
+struct PaneSessionV6 {
+  std::vector<TabRecordV6> tabs;
+  std::size_t activeTab = 0;
+};
+
 struct SessionState {
   std::wstring lastPath;
   std::wstring secondPath;
@@ -34,8 +44,8 @@ struct SessionState {
   LayoutMode layoutMode = LayoutMode::Single;
   LayoutOrientation orientation = LayoutOrientation::Vertical;
 
-  // v5 fields
-  std::array<std::wstring, kMaxPanes> panePaths{};
+  // v6 fields (replaces v5 panePaths[])
+  std::array<PaneSessionV6, kMaxPanes> panes{};
   std::size_t paneCount = 1;
   std::size_t activePane = 0;
   fast_explorer::core::LayoutPreset preset =
@@ -45,6 +55,12 @@ struct SessionState {
 
   bool showHidden = false;
   bool showExtensions = true;
+
+  // Internal-only: populated by the reader for v5 backward-compat,
+  // consumed by the migrator at the tail of loadSessionState. Not
+  // written by the writer.
+  std::array<std::wstring, kMaxPanes> legacyPanePaths{};
+  int schemaVersionLoaded = 0;
 };
 
 // Resolves the canonical settings file path:
