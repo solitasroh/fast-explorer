@@ -233,7 +233,11 @@ LRESULT TabStrip::handle(UINT msg, WPARAM wp, LPARAM lp) {
         }
       }
       if (dragging_) {
-        dropIndicatorX_ = x;
+        TabStripGeometry gDrop({}, models_.size());
+        const std::size_t to = gDrop.dropIndex(rects_, dragFromIdx_, x);
+        dropIndicatorX_ = (to < rects_.size())
+            ? rects_[to].left
+            : (rects_.empty() ? x : rects_.back().right);
         InvalidateRect(hwnd_, nullptr, FALSE);
       }
       // Track mouse so we get WM_MOUSELEAVE.
