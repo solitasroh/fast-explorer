@@ -19,7 +19,6 @@ using fast_explorer::core::saveSessionState;
 using fast_explorer::core::SessionState;
 using fast_explorer::tests::diskPathExists;
 using fast_explorer::tests::TempDir;
-using fast_explorer::tests::writeEmptyDiskFile;
 
 namespace {
 
@@ -485,8 +484,6 @@ FE_TEST_CASE(SettingsStore_Load_V3FileWithoutViewKeys_UsesV4Defaults) {
   // And the rest of the v3 payload is intact.
   FE_ASSERT_EQ(s.windowX, 100);
 }
-
-using fast_explorer::ui::defaultRatiosFor;
 
 FE_TEST_CASE(SettingsStore_v5_RoundTrip_QuadA) {
   SessionState in{};
