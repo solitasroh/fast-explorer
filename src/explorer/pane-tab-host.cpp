@@ -11,7 +11,20 @@ namespace fast_explorer::ui {
 
 PaneTabHost::PaneTabHost(MainWindow* host, std::size_t paneIdx,
                          PaneController*& activeCell)
-    : host_(host), paneIdx_(paneIdx), activeCell_(activeCell) {}
+    : host_(host), paneIdx_(paneIdx), activeCell_(activeCell) {
+  if (host_ && host_->handle()) {
+    strip_ = std::make_unique<TabStrip>(host_->handle(), paneIdx);
+    strip_->onActivate = [this](std::size_t j) { activateTab(j); };
+    strip_->onClose    = [this](std::size_t j) { closeTab(j); };
+    strip_->onNew      = [this]() { openNewTab(); };
+    strip_->onReorder  = [this](std::size_t f, std::size_t t) {
+      moveTab(f, t);
+    };
+    strip_->onContextMenu = [this](std::size_t j, POINT pt) {
+      host_->showTabContextMenu(paneIdx_, j, pt);
+    };
+  }
+}
 
 PaneTabHost::~PaneTabHost() = default;
 

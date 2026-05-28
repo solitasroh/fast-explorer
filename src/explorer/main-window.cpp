@@ -33,7 +33,6 @@
 #include "explorer/messages.h"
 #include "explorer/pane-controller.h"
 #include "winui_lite/chrome/pane-layout.h"
-#include "winui_lite/chrome/pane-manager.h"
 #include "winui_lite/chrome/pane-splitter.h"
 #include "../../resources/resource-ids.h"
 #include "winui_lite/widgets/address-input.h"
@@ -325,10 +324,10 @@ MainWindow::~MainWindow() {
 
 bool MainWindow::installPaneCoordinators(std::size_t idx, HWND listView) {
   if (idx >= iconCoords_.size() || listView == nullptr ||
-      !paneManager_ || idx >= paneManager_->count()) {
+      activeForPane_[idx] == nullptr) {
     return false;
   }
-  PaneController& pane = paneManager_->at(idx);
+  PaneController& pane = *activeForPane_[idx];
   try {
     iconCoords_[idx] = std::make_unique<IconCacheCoordinator>(
         hwnd_, listView, GetDpiForWindow(hwnd_), idx);
@@ -393,8 +392,8 @@ void MainWindow::relayout() {
                                         clientW, clientH,
                                         /*reservedTop*/ 0, statusH);
 
-  // Position slot HWNDs. Each slot's RECT contains its toolbar row at
-  // the top and the listview below.
+  // Position slot HWNDs. Each slot's RECT contains (top-to-bottom):
+  // tab strip (if any), toolbar row, listview.
   const int rowH = scaleForDpi(42, GetDpiForWindow(hwnd_));
   for (std::size_t i = 0; i < listViews_.size(); ++i) {
     const RECT& r = result.slots[i];
@@ -405,18 +404,35 @@ void MainWindow::relayout() {
                                        : addressBars_[i];
 
     if (!active || w <= 0 || h <= 0) {
+      if (paneTabHosts_[i] && paneTabHosts_[i]->stripHandle()) {
+        ShowWindow(paneTabHosts_[i]->stripHandle(), SW_HIDE);
+      }
       if (rowHwnd) ShowWindow(rowHwnd, SW_HIDE);
       if (listViews_[i]) ShowWindow(listViews_[i], SW_HIDE);
       continue;
     }
+
+    // Tab strip at the top of the slot.
+    int slotTop = r.top;
+    if (paneTabHosts_[i] && paneTabHosts_[i]->stripHandle()) {
+      const int stripH = paneTabHosts_[i]->stripPreferredHeight();
+      SetWindowPos(paneTabHosts_[i]->stripHandle(), nullptr,
+                   r.left, slotTop, w, stripH,
+                   SWP_NOZORDER | SWP_NOACTIVATE);
+      ShowWindow(paneTabHosts_[i]->stripHandle(), SW_SHOWNA);
+      slotTop += stripH;
+    }
+
     if (rowHwnd) {
-      SetWindowPos(rowHwnd, nullptr, r.left, r.top, w, rowH,
+      SetWindowPos(rowHwnd, nullptr, r.left, slotTop, w, rowH,
                    SWP_NOZORDER | SWP_NOACTIVATE);
       ShowWindow(rowHwnd, SW_SHOWNA);
     }
     if (listViews_[i]) {
-      SetWindowPos(listViews_[i], nullptr, r.left, r.top + rowH,
-                   w, h - rowH, SWP_NOZORDER | SWP_NOACTIVATE);
+      const int lvTop = slotTop + rowH;
+      const int lvH = r.bottom - lvTop;
+      SetWindowPos(listViews_[i], nullptr, r.left, lvTop,
+                   w, lvH > 0 ? lvH : 0, SWP_NOZORDER | SWP_NOACTIVATE);
       ShowWindow(listViews_[i], SW_SHOWNA);
     }
   }
@@ -481,8 +497,13 @@ bool MainWindow::installPaneAt(std::size_t idx) {
   // Slot 0 is set up in onCreate; never re-installed from here.
   if (idx == 0) return true;
   if (idx >= listViews_.size()) return false;
-  if (!paneManager_ || idx >= paneManager_->count()) return false;
   if (hwnd_ == nullptr) return false;
+
+  // Create the PaneTabHost first — it constructs the PaneControllers
+  // and writes activeForPane_[idx] via restoreFromSession/activateTab.
+  paneTabHosts_[idx] = std::make_unique<PaneTabHost>(
+      this, idx, activeForPane_[idx]);
+  paneTabHosts_[idx]->restoreFromSession(capturedState_->panes[idx]);
 
   // Create the listview (mirror the slot-0 creation in onCreate).
   HWND lv = createListView(hwnd_, instance_);
@@ -497,7 +518,7 @@ bool MainWindow::installPaneAt(std::size_t idx) {
   listViews_[idx] = lv;
 
   // Drop target.
-  auto* dt = new (std::nothrow) PaneDropTarget(lv, paneManager_.get(), idx);
+  auto* dt = new (std::nothrow) PaneDropTarget(lv, &activeForPane_[idx], idx);
   if (dt) {
     if (SUCCEEDED(RegisterDragDrop(lv, dt))) {
       dropTargets_[idx] = dt;
@@ -529,13 +550,13 @@ bool MainWindow::installPaneAt(std::size_t idx) {
 
   // Inherit current view toggle so the freshly opened pane's first
   // enumerate honours the user's saved/active preference.
-  paneManager_->at(idx).setIncludeHidden(showHidden_);
+  if (activeForPane_[idx]) activeForPane_[idx]->setIncludeHidden(showHidden_);
 
   if (!installPaneCoordinators(idx, lv)) {
     // Coordinator construction failed mid-flight. Roll back the
     // visible UI so we do not leave a listview backed by a partial
-    // coordinator chain. Caller (enterLayout) is responsible for the
-    // corresponding paneManager_->closePane() if needed.
+    // coordinator chain. Caller (enterLayout) is responsible for
+    // resetting paneTabHosts_[idx] if needed.
     if (dropTargets_[idx] != nullptr) {
       RevokeDragDrop(lv);
       dropTargets_[idx]->Release();
@@ -554,13 +575,14 @@ bool MainWindow::installPaneAt(std::size_t idx) {
     listViews_[idx] = nullptr;
     return false;
   }
-  // openFolder (if any) is driven by the caller; sync address bar so
-  // the slot is not blank between create and the first openFolder.
+  // openFolder (if any) is driven by restoreFromSession above; sync
+  // address bar so the slot is not blank before the first enum batch.
   syncAddressBar(idx);
   // Construct port adapters last so a half-built slot never leaves an
   // adapter pointing at a torn-down PaneController. If anything above
   // fails (return false), the adapters_[idx] slot stays empty.
-  activeForPane_[idx] = &paneManager_->at(idx);  // bridge: same owner
+  // activeForPane_[idx] was already written by paneTabHosts_[idx]->
+  // restoreFromSession -> activateTab above.
   itemSources_[idx] = std::make_unique<adapters::ShellItemSource>(
       activeForPane_[idx]);
   itemDispatchers_[idx] =
@@ -581,15 +603,16 @@ void MainWindow::uninstallPaneAt(std::size_t idx) {
   if (hwnd_ == nullptr) return;
 
   // Drop adapters first — they borrow non-owning pointers into the
-  // PaneController that the rest of teardown (and the eventual
-  // paneManager_->closePane) is about to invalidate. Reset the cell
-  // AFTER all adapters are gone so no adapter destructor can
-  // dereference a stale cell.
+  // PaneController. Reset the cell AFTER all adapters are gone so no
+  // adapter destructor can dereference a stale cell.
   contextMenus_[idx].reset();
   dragDrops_[idx].reset();
   clipboards_[idx].reset();
   itemDispatchers_[idx].reset();
   itemSources_[idx].reset();
+  // Destroy the host (which owns the PaneControllers) only after the
+  // adapters that borrow from it have been torn down.
+  paneTabHosts_[idx].reset();
   activeForPane_[idx] = nullptr;
 
   // Hide the popup before any pane HWNDs go away — its mouse hook
@@ -650,41 +673,44 @@ void MainWindow::uninstallPaneAt(std::size_t idx) {
 void MainWindow::enterLayout(fast_explorer::core::LayoutPreset target) {
   using fast_explorer::core::LayoutPreset;
   using fast_explorer::core::slotCountForPreset;
-  if (hwnd_ == nullptr || !paneManager_) return;
+  if (hwnd_ == nullptr) return;
 
   const std::size_t targetCount = slotCountForPreset(target);
 
   // Grow.
-  while (paneManager_->count() < targetCount &&
-         paneManager_->count() < PaneManager<PaneController>::kMaxPanes) {
-    const std::wstring fallback = paneManager_->active().currentPath();
-    paneManager_->openPane(hwnd_, L"");  // create slot only
-    const std::size_t newIdx = paneManager_->count() - 1;
+  while (paneCount_ < targetCount && paneCount_ < kMaxPanes) {
+    const std::wstring fallback =
+        activeForPane_[activePane_] ? activeForPane_[activePane_]->currentPath()
+                                    : std::wstring{};
+    const std::size_t newIdx = paneCount_++;
     if (!installPaneAt(newIdx)) {
-      // installPaneAt rolled back its UI; release the now-orphan
-      // PaneController slot so count() reflects reality.
-      paneManager_->closePane();
+      // installPaneAt rolled back; undo the count bump.
+      --paneCount_;
       break;
     }
-    // Drive the folder load on the freshly opened slot.
-    if (!fallback.empty() && paneManager_->at(newIdx).openFolder(fallback)) {
-      clearListViewForNavigation(newIdx);
-      if (newIdx < firstBatchSeen_.size()) {
-        firstBatchSeen_[newIdx] = false;
+    // The folder was restored from session in installPaneAt. If the
+    // session was empty (fresh install), fall back to the active pane.
+    if (activeForPane_[newIdx] &&
+        activeForPane_[newIdx]->currentPath().empty() &&
+        !fallback.empty()) {
+      if (activeForPane_[newIdx]->openFolder(fallback)) {
+        clearListViewForNavigation(newIdx);
+        if (newIdx < firstBatchSeen_.size()) {
+          firstBatchSeen_[newIdx] = false;
+        }
+        const std::wstring text = loadingStatusText(fallback);
+        setPaneStatusText(newIdx, text.c_str());
       }
-      const std::wstring text = loadingStatusText(fallback);
-      setPaneStatusText(newIdx, text.c_str());
     }
     syncAddressBar(newIdx);
   }
 
   // Shrink.
-  while (paneManager_->count() > targetCount) {
-    const std::size_t idx = paneManager_->count() - 1;
+  while (paneCount_ > targetCount) {
+    const std::size_t idx = --paneCount_;
     uninstallPaneAt(idx);
-    paneManager_->closePane();
   }
-  pane_ = &paneManager_->active();
+  pane_ = activeForPane_[activePane_];
 
   preset_ = target;
   if (target == LayoutPreset::Dual_V) {
@@ -694,19 +720,20 @@ void MainWindow::enterLayout(fast_explorer::core::LayoutPreset target) {
     orientation_ = LayoutOrientation::Horizontal;
     lastDualPreset_ = target;
   }
-  if (paneManager_->activeIndex() >= targetCount) {
-    paneManager_->setActive(targetCount - 1);
-    pane_ = &paneManager_->active();
+  if (activePane_ >= targetCount) {
+    activePane_ = targetCount - 1;
+    pane_ = activeForPane_[activePane_];
   }
   applyActivePaneAppearance();
   relayout();
 }
 
 void MainWindow::setActivePane(std::size_t idx) {
-  if (!paneManager_ || !paneManager_->setActive(idx)) {
+  if (idx >= paneCount_ || activeForPane_[idx] == nullptr) {
     return;
   }
-  pane_ = &paneManager_->active();
+  activePane_ = idx;
+  pane_ = activeForPane_[activePane_];
   if (listViews_[idx] != nullptr) {
     SetFocus(listViews_[idx]);
   }
@@ -724,7 +751,7 @@ void MainWindow::setLayoutOrientation(LayoutOrientation orientation) {
     return;
   }
   orientation_ = orientation;
-  if (paneManager_ && (paneManager_->count() > 1)) {
+  if (paneCount_ > 1) {
     relayout();
   }
 }
@@ -760,10 +787,8 @@ void MainWindow::applyInitialState(
   // first openFolder.
   showHidden_ = state.showHidden;
   showExtensions_ = state.showExtensions;
-  if (paneManager_) {
-    for (std::size_t i = 0; i < paneManager_->count(); ++i) {
-      paneManager_->at(i).setIncludeHidden(showHidden_);
-    }
+  for (std::size_t i = 0; i < paneCount_; ++i) {
+    if (activeForPane_[i]) activeForPane_[i]->setIncludeHidden(showHidden_);
   }
 }
 
@@ -771,7 +796,6 @@ void MainWindow::restoreLayoutFromSession(
     const fast_explorer::core::SessionState& state) {
   using fast_explorer::core::LayoutPreset;
   using fast_explorer::core::slotCountForPreset;
-  if (!paneManager_) return;
 
   // Pull persisted ratios into the live store so the first relayout
   // honours the user's prior splitter positions. Per-preset slots that
@@ -797,29 +821,23 @@ void MainWindow::restoreLayoutFromSession(
 
   const std::size_t targetCount = slotCountForPreset(state.preset);
 
-  // Slot 0 was opened by onCreate (its path was loaded in main.cpp
-  // from state.panePaths[0] / lastPath). Open slots 1..targetCount-1
-  // with their persisted paths.
-  for (std::size_t i = 1;
-       i < targetCount && i < PaneManager<PaneController>::kMaxPanes; ++i) {
-    paneManager_->openPane(hwnd_, L"");  // create slot
+  // Slot 0 was opened by onCreate (its PaneTabHost was created there,
+  // restoreFromSession already ran for pane 0). Open slots 1..targetCount-1.
+  for (std::size_t i = 1; i < targetCount && i < kMaxPanes; ++i) {
+    paneCount_ = i + 1;  // tentatively bump; rolled back on failure
     if (!installPaneAt(i)) {
-      paneManager_->closePane();
+      paneCount_ = i;   // roll back
       break;
     }
-    // Use the active tab's path for this pane (v6 schema).
-    const std::wstring path =
-        (!state.panes[i].tabs.empty())
-            ? state.panes[i].tabs[state.panes[i].activeTab].path
-            : std::wstring{};
-    const std::wstring& openIn =
-        !path.empty() ? path : paneManager_->active().currentPath();
-    if (!openIn.empty() && paneManager_->at(i).openFolder(openIn)) {
+    // installPaneAt calls restoreFromSession on paneTabHosts_[i], which
+    // already opens the session path. Just clear the listview chrome so
+    // the "Loading…" indicator appears while the enum is in flight.
+    if (activeForPane_[i] && !activeForPane_[i]->currentPath().empty()) {
       clearListViewForNavigation(i);
       if (i < firstBatchSeen_.size()) {
         firstBatchSeen_[i] = false;
       }
-      const std::wstring text = loadingStatusText(openIn);
+      const std::wstring text = loadingStatusText(activeForPane_[i]->currentPath());
       setPaneStatusText(i, text.c_str());
     }
     syncAddressBar(i);
@@ -833,9 +851,9 @@ void MainWindow::restoreLayoutFromSession(
     orientation_ = LayoutOrientation::Horizontal;
     lastDualPreset_ = preset_;
   }
-  if (state.activePane < paneManager_->count()) {
-    paneManager_->setActive(state.activePane);
-    pane_ = &paneManager_->active();
+  if (state.activePane < paneCount_) {
+    activePane_ = state.activePane;
+    pane_ = activeForPane_[activePane_];
   }
   applyActivePaneAppearance();
   relayout();
@@ -852,32 +870,29 @@ bool MainWindow::openFolder(const std::wstring& path) {
   }
   perf_.record(fast_explorer::core::PerfTracker::EventId::PaneOpenStart);
   fast_explorer::core::recordMemoryProbe(perf_);
-  const std::size_t activeIdx =
-      paneManager_ ? paneManager_->activeIndex() : 0;
-  if (activeIdx < firstBatchSeen_.size()) {
-    firstBatchSeen_[activeIdx] = false;
+  if (activePane_ < firstBatchSeen_.size()) {
+    firstBatchSeen_[activePane_] = false;
   }
   if (!pane_->openFolder(path)) {
     return false;
   }
-  clearListViewForNavigation(activeIdx);
-  syncAddressBar(paneManager_ ? paneManager_->activeIndex() : 0);
+  clearListViewForNavigation(activePane_);
+  syncAddressBar(activePane_);
   const std::wstring text = loadingStatusText(path);
-  setPaneStatusText(activeIdx, text.c_str());
+  setPaneStatusText(activePane_, text.c_str());
   return true;
 }
 
 void MainWindow::syncAddressBar(std::size_t paneIdx) {
-  if (!paneManager_ || paneIdx >= paneManager_->count() ||
-      paneIdx >= addressBars_.size() ||
-      addressBars_[paneIdx] == nullptr) {
+  if (paneIdx >= paneCount_ || paneIdx >= addressBars_.size() ||
+      addressBars_[paneIdx] == nullptr || activeForPane_[paneIdx] == nullptr) {
     return;
   }
-  const std::wstring& path = paneManager_->at(paneIdx).currentPath();
+  const std::wstring& path = activeForPane_[paneIdx]->currentPath();
   SetWindowTextW(addressBars_[paneIdx], path.c_str());
   // Popup is shared; only mirror the active pane to avoid stealing
   // the dropdown highlight during an inactive-pane navigation.
-  if (addressBarPopup_ && paneManager_->activeIndex() == paneIdx) {
+  if (addressBarPopup_ && activePane_ == paneIdx) {
     addressBarPopup_->reflectCurrentPath(path);
   }
 }
@@ -970,10 +985,10 @@ void MainWindow::showToolMenuForPane(std::size_t paneIdx) {
 
 void MainWindow::updateNavButtonStates(std::size_t paneIdx) noexcept {
   if (paneIdx >= paneToolbarRows_.size() || !paneToolbarRows_[paneIdx] ||
-      !paneManager_ || paneIdx >= paneManager_->count()) {
+      paneIdx >= paneCount_ || activeForPane_[paneIdx] == nullptr) {
     return;
   }
-  const auto& pc = paneManager_->at(paneIdx);
+  const auto& pc = *activeForPane_[paneIdx];
   auto& row = *paneToolbarRows_[paneIdx];
   row.setNavButtonEnabled(0, pc.canGoBack());
   row.setNavButtonEnabled(1, pc.canGoForward());
@@ -1081,12 +1096,11 @@ void MainWindow::applyListViewTheme(HWND lv) noexcept {
 }
 
 void MainWindow::applyActivePaneAppearance() noexcept {
-  if (!paneManager_) return;
-  const std::size_t active = paneManager_->activeIndex();
+  const std::size_t active = activePane_;
   // Inactive pane gets the dialog face colour so the focused pane is
   // visually obvious in dual mode; single mode skips the dim since
   // there is no other pane to contrast against.
-  const bool dual = (paneManager_->count() > 1);
+  const bool dual = (paneCount_ > 1);
   const bool dark = isAppInDarkMode();
   const COLORREF activeBg   = dark ? RGB(32, 32, 32)
                                     : GetSysColor(COLOR_WINDOW);
@@ -1134,26 +1148,23 @@ bool MainWindow::isStaleGeneration(WPARAM wParam) const {
 }
 
 PaneController* MainWindow::paneForWParam(WPARAM wParam) const {
-  if (!paneManager_) {
-    return nullptr;
-  }
   const std::size_t idx = paneIndexFromWParam(wParam);
-  if (idx >= paneManager_->count()) {
+  if (idx >= paneCount_) {
     return nullptr;
   }
-  return &paneManager_->at(idx);
+  return activeForPane_[idx];
 }
 
 SelectionSync* MainWindow::activeSelectionSync() {
-  if (!paneManager_) return nullptr;
-  const std::size_t idx = paneManager_->activeIndex();
-  return idx < selectionSyncs_.size() ? selectionSyncs_[idx].get() : nullptr;
+  return activePane_ < selectionSyncs_.size()
+             ? selectionSyncs_[activePane_].get()
+             : nullptr;
 }
 
 LabelEditController* MainWindow::activeLabelEdit() {
-  if (!paneManager_) return nullptr;
-  const std::size_t idx = paneManager_->activeIndex();
-  return idx < labelEdits_.size() ? labelEdits_[idx].get() : nullptr;
+  return activePane_ < labelEdits_.size()
+             ? labelEdits_[activePane_].get()
+             : nullptr;
 }
 
 LRESULT CALLBACK MainWindow::addressBarSubclassProc(
@@ -1195,14 +1206,13 @@ LRESULT CALLBACK MainWindow::addressBarSubclassProc(
 }
 
 void MainWindow::deleteFocusedItem() {
-  if (!paneManager_) return;
   // VK_DELETE accelerator fires globally; route it only when a
   // list-view actually owns focus so editing in the address bar or
   // an in-place label edit is not hijacked.
   HWND focusedCtrl = GetFocus();
   std::size_t paneIdx = 0;
   if (!paneIndexFromListView(focusedCtrl, paneIdx) ||
-      paneIdx >= paneManager_->count()) {
+      paneIdx >= paneCount_ || activeForPane_[paneIdx] == nullptr) {
     return;
   }
   // Explorer parity: VK_DELETE acts on the ENTIRE selection, not just
@@ -1212,7 +1222,7 @@ void MainWindow::deleteFocusedItem() {
   // displaySubset → visibleOrder mapping). Falls back to the focused
   // row when nothing is selected (e.g. Delete pressed after a
   // single-click without Shift/Ctrl).
-  PaneController& pane = paneManager_->at(paneIdx);
+  PaneController& pane = *activeForPane_[paneIdx];
   std::vector<int> rows;
   int r = -1;
   while ((r = ListView_GetNextItem(focusedCtrl, r, LVNI_SELECTED)) >= 0) {
@@ -1245,8 +1255,8 @@ void MainWindow::deleteFocusedItem() {
 
 void MainWindow::handleAddressCommit(std::size_t paneIdx) {
   if (paneIdx >= addressBars_.size() ||
-      addressBars_[paneIdx] == nullptr || !paneManager_ ||
-      paneIdx >= paneManager_->count()) {
+      addressBars_[paneIdx] == nullptr ||
+      paneIdx >= paneCount_ || activeForPane_[paneIdx] == nullptr) {
     return;
   }
   HWND bar = addressBars_[paneIdx];
@@ -1273,7 +1283,7 @@ void MainWindow::handleAddressCommit(std::size_t paneIdx) {
                                   : nullptr;
   const bool ok =
       source ? source->navigateTo(text)
-             : paneManager_->at(paneIdx).openFolder(text);
+             : activeForPane_[paneIdx]->openFolder(text);
   if (ok) {
     clearListViewForNavigation(paneIdx);
     syncAddressBar(paneIdx);
@@ -1283,7 +1293,7 @@ void MainWindow::handleAddressCommit(std::size_t paneIdx) {
 void MainWindow::setPaneStatusText(std::size_t paneIdx, const wchar_t* text) {
   if (text == nullptr) return;
   if (paneIdx >= kMaxPanes) return;
-  if (!paneManager_ || paneIdx != paneManager_->activeIndex()) {
+  if (paneIdx != activePane_) {
     return;  // Only active pane drives the (single) status bar.
   }
   statusBar_.setText(0, text);
@@ -1351,10 +1361,9 @@ LRESULT MainWindow::handleMessage(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPa
       WORD btn = 0;
       if (cmd == APPCOMMAND_BROWSER_BACKWARD) btn = kTbBack;
       else if (cmd == APPCOMMAND_BROWSER_FORWARD) btn = kTbForward;
-      if (btn != 0 && paneManager_) {
-        const std::size_t active = paneManager_->activeIndex();
+      if (btn != 0 && pane_ != nullptr) {
         SendMessageW(hwnd, WM_COMMAND,
-                     MAKEWPARAM(packCmd(btn, active), 0), 0);
+                     MAKEWPARAM(packCmd(btn, activePane_), 0), 0);
         return TRUE;
       }
       return DefWindowProcW(hwnd, msg, wParam, lParam);
@@ -1379,13 +1388,13 @@ LRESULT MainWindow::handleMessage(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPa
       return 0;
     case kWmFeAddressPopupPick: {
       auto* payload = reinterpret_cast<std::wstring*>(wParam);
-      if (payload && paneManager_) {
+      if (payload) {
         std::wstring path = std::move(*payload);
         delete payload;
         const std::size_t idx = static_cast<std::size_t>(lParam);
-        if (idx < paneManager_->count()) {
+        if (idx < paneCount_ && activeForPane_[idx] != nullptr) {
           setActivePane(idx);
-          if (paneManager_->at(idx).openFolder(path)) {
+          if (activeForPane_[idx]->openFolder(path)) {
             clearListViewForNavigation(idx);
             syncAddressBar(idx);
           }
@@ -1415,11 +1424,11 @@ LRESULT MainWindow::handleMessage(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPa
     }
     case kWmFeFilterDismiss: {
       const std::size_t idx = static_cast<std::size_t>(wParam);
-      if (paneManager_ && idx < paneManager_->count()) {
-        paneManager_->at(idx).clearFilter();
+      if (idx < paneCount_ && activeForPane_[idx] != nullptr) {
+        activeForPane_[idx]->clearFilter();
         if (idx < listViews_.size() && listViews_[idx] != nullptr) {
           const std::size_t shown =
-              paneManager_->at(idx).store().displayedCount();
+              activeForPane_[idx]->store().displayedCount();
           ListView_SetItemCountEx(listViews_[idx],
                                   static_cast<int>(shown),
                                   LVSICF_NOSCROLL);
@@ -1458,22 +1467,19 @@ LRESULT MainWindow::handleMessage(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPa
         p.tabs.clear();
         p.activeTab = 0;
       }
-      if (paneManager_) {
-        for (std::size_t i = 0;
-             i < paneManager_->count() &&
-             i < fast_explorer::core::kMaxPanes; ++i) {
-          // v6: persist current path as a single tab (no multi-tab yet).
+      // Capture per-pane session state from PaneTabHosts.
+      for (std::size_t i = 0; i < paneCount_ && i < fast_explorer::core::kMaxPanes; ++i) {
+        if (paneTabHosts_[i]) {
+          capturedState_->panes[i] = paneTabHosts_[i]->captureSession();
+        } else if (activeForPane_[i]) {
           fast_explorer::core::TabRecordV6 t;
-          t.path = paneManager_->at(i).currentPath();
+          t.path = activeForPane_[i]->currentPath();
           capturedState_->panes[i].tabs.push_back(std::move(t));
           capturedState_->panes[i].activeTab = 0;
         }
-        capturedState_->paneCount = paneManager_->count();
-        capturedState_->activePane = paneManager_->activeIndex();
-      } else {
-        capturedState_->paneCount = 1;
-        capturedState_->activePane = 0;
       }
+      capturedState_->paneCount = paneCount_;
+      capturedState_->activePane = activePane_;
       capturedState_->preset = preset_;
       capturedState_->ratiosPerPreset = ratiosPerPreset_;
 
@@ -1547,7 +1553,7 @@ LRESULT MainWindow::onCreate(HWND hwnd) {
   // at the top. The wrapper owns the subclass state (heap allocated,
   // freed at WM_NCDESTROY) so this call site stays one line.
   statusBar_.create(hwnd, instance_);
-  // dropTargets_[0] is registered after paneManager_ exists; see below.
+  // dropTargets_[0] is registered after paneTabHosts_[0] is created; see below.
   paneToolbarRows_[0] = std::make_unique<PaneToolbarRow>();
   if (!paneToolbarRows_[0]->create(hwnd, instance_, 0,
                                     makePaneToolbarRowConfig())) {
@@ -1568,10 +1574,14 @@ LRESULT MainWindow::onCreate(HWND hwnd) {
     addressBarPopup_ = std::make_unique<AddressBarPopup>(hwnd);
     searchPopup_ = std::make_unique<SearchPopup>(hwnd);
   }
-  paneManager_ = std::make_unique<PaneManager<PaneController>>();
-  paneManager_->openInitial(hwnd);
-  pane_ = &paneManager_->active();
-  activeForPane_[0] = &paneManager_->at(0);  // bridge: same owner
+  // Create slot 0's PaneTabHost, which creates the first PaneController
+  // and writes activeForPane_[0] via restoreFromSession -> activateTab.
+  paneTabHosts_[0] = std::make_unique<PaneTabHost>(
+      this, 0, activeForPane_[0]);
+  paneTabHosts_[0]->restoreFromSession(capturedState_->panes[0]);
+  pane_ = activeForPane_[0];
+  paneCount_ = 1;
+  activePane_ = 0;
   itemSources_[0] = std::make_unique<adapters::ShellItemSource>(
       activeForPane_[0]);
   itemDispatchers_[0] =
@@ -1585,7 +1595,7 @@ LRESULT MainWindow::onCreate(HWND hwnd) {
                                                          hwnd);
   {
     auto* dt =
-        new (std::nothrow) PaneDropTarget(listView_, paneManager_.get(), 0);
+        new (std::nothrow) PaneDropTarget(listView_, &activeForPane_[0], 0);
     if (dt) {
       if (SUCCEEDED(RegisterDragDrop(listView_, dt))) {
         dropTargets_[0] = dt;
@@ -1783,8 +1793,7 @@ LRESULT MainWindow::onCommand(HWND hwnd, UINT msg, WPARAM wParam,
     // (routeEditClipboardIfFocused / routeEditSelectAllIfFocused),
     // and the dual / orientation toggle that branches on preset_.
     if (accelRouter_.dispatch(LOWORD(wParam))) return 0;
-    const std::size_t activeIdx =
-        paneManager_ ? paneManager_->activeIndex() : 0;
+    const std::size_t activeIdx = activePane_;
     switch (LOWORD(wParam)) {
       // kAccelFocusAddress migrated to accelRouter_ (step 12).
       case kAccelNavBack:
@@ -1899,9 +1908,8 @@ LRESULT MainWindow::onCommand(HWND hwnd, UINT msg, WPARAM wParam,
         if (focused != nullptr &&
             paneIndexFromListView(focused, paneIdx)) {
           lv = focused;
-        } else if (paneManager_) {
-          const std::size_t active = paneManager_->activeIndex();
-          if (active < listViews_.size()) lv = listViews_[active];
+        } else {
+          if (activePane_ < listViews_.size()) lv = listViews_[activePane_];
         }
         if (lv != nullptr) {
           ListView_SetItemState(lv, -1, LVIS_SELECTED, LVIS_SELECTED);
@@ -1922,8 +1930,8 @@ LRESULT MainWindow::onTimer(HWND hwnd, UINT msg, WPARAM wParam,
       wParam < kTimerFsCoalesceBase + kMaxPanes) {
     const std::size_t idx = wParam - kTimerFsCoalesceBase;
     KillTimer(hwnd, wParam);
-    if (paneManager_ && idx < paneManager_->count()) {
-      paneManager_->at(idx).refresh();
+    if (idx < paneCount_ && activeForPane_[idx]) {
+      activeForPane_[idx]->refresh();
     }
     return 0;
   }
@@ -1945,7 +1953,8 @@ LRESULT MainWindow::onTimer(HWND hwnd, UINT msg, WPARAM wParam,
 }
 
 void MainWindow::applyFilterFromPopup(std::size_t paneIdx) {
-  if (!paneManager_ || paneIdx >= paneManager_->count() || !searchPopup_) {
+  if (paneIdx >= paneCount_ || activeForPane_[paneIdx] == nullptr ||
+      !searchPopup_) {
     return;
   }
   const std::wstring text = searchPopup_->currentText();
@@ -1955,7 +1964,7 @@ void MainWindow::applyFilterFromPopup(std::size_t paneIdx) {
   // contract and avoids a separate mode-toggle UI for now.
   const auto detected = detectFilterMode(text);
   FilterPattern pattern(detected.query, detected.mode);
-  PaneController& pane = paneManager_->at(paneIdx);
+  PaneController& pane = *activeForPane_[paneIdx];
   pane.setFilter(pattern);
   if (paneIdx < listViews_.size() && listViews_[paneIdx] != nullptr) {
     const std::size_t shown = pane.store().displayedCount();
@@ -1975,10 +1984,10 @@ void MainWindow::applyFilterFromPopup(std::size_t paneIdx) {
 }
 
 void MainWindow::refreshSelectionSummary(std::size_t paneIdx) {
-  if (!paneManager_ || paneIdx >= paneManager_->count()) {
+  if (paneIdx >= paneCount_ || activeForPane_[paneIdx] == nullptr) {
     return;
   }
-  const PaneController& pane = paneManager_->at(paneIdx);
+  const PaneController& pane = *activeForPane_[paneIdx];
   const std::size_t totalCount = pane.store().itemCount();
   const auto sum = pane.selectionSummary();
   const std::wstring text =
@@ -2089,11 +2098,11 @@ LRESULT MainWindow::onIconBatch(WPARAM wParam) {
 
 void MainWindow::redrawVisibleRows(std::size_t idx) {
   if (idx >= listViews_.size() || listViews_[idx] == nullptr ||
-      !paneManager_ || idx >= paneManager_->count()) {
+      idx >= paneCount_ || activeForPane_[idx] == nullptr) {
     return;
   }
   const int count =
-      static_cast<int>(paneManager_->at(idx).store().publishedCount());
+      static_cast<int>(activeForPane_[idx]->store().publishedCount());
   if (count > 0) {
     ListView_RedrawItems(listViews_[idx], 0, count - 1);
   }
@@ -2154,7 +2163,7 @@ LRESULT MainWindow::onFsChange(HWND hwnd, WPARAM wParam) {
   // checks below cover pane teardown / count shrink races.
   const std::size_t idx = paneIndexFromWParam(wParam);
   if (idx >= kMaxPanes) return 0;
-  if (!paneManager_ || idx >= paneManager_->count()) return 0;
+  if (idx >= paneCount_ || activeForPane_[idx] == nullptr) return 0;
   // Debounce: every event restarts the per-pane timer; the actual
   // refresh fires once after kFsCoalesceMs of quiet. We pack the
   // pane index into the timer id so two panes' debounce windows do
@@ -2165,11 +2174,10 @@ LRESULT MainWindow::onFsChange(HWND hwnd, WPARAM wParam) {
 }
 
 void MainWindow::handleClipboardCopy(bool cut) {
-  if (!paneManager_) return;
-  const std::size_t idx = paneManager_->activeIndex();
+  const std::size_t idx = activePane_;
   if (idx >= listViews_.size() || listViews_[idx] == nullptr) return;
-  if (!clipboards_[idx]) return;
-  PaneController& pane = paneManager_->at(idx);
+  if (!clipboards_[idx] || activeForPane_[idx] == nullptr) return;
+  PaneController& pane = *activeForPane_[idx];
   // Single listview scan produces both the id vector for the port
   // and the leaf vector for the host-side cut-state visuals. The
   // adapter will do its own id->leaf lookup against the store; that
@@ -2200,11 +2208,10 @@ void MainWindow::handleClipboardCopy(bool cut) {
 }
 
 void MainWindow::handleClipboardPaste() {
-  if (!paneManager_) return;
-  const std::size_t idx = paneManager_->activeIndex();
+  const std::size_t idx = activePane_;
   if (idx >= listViews_.size() || listViews_[idx] == nullptr) return;
-  if (!clipboards_[idx]) return;
-  PaneController& pane = paneManager_->at(idx);
+  if (!clipboards_[idx] || activeForPane_[idx] == nullptr) return;
+  PaneController& pane = *activeForPane_[idx];
   if (pane.currentPath().empty()) return;
   if (clipboards_[idx]->pasteInto(pane.currentPath()) ==
       ports::PasteOutcome::Success) {
@@ -2215,13 +2222,13 @@ void MainWindow::handleClipboardPaste() {
 
 void MainWindow::applyCutStateToListView(std::size_t paneIdx) noexcept {
   if (paneIdx >= listViews_.size() || listViews_[paneIdx] == nullptr ||
-      !paneManager_ || paneIdx >= paneManager_->count()) {
+      paneIdx >= paneCount_ || activeForPane_[paneIdx] == nullptr) {
     return;
   }
   HWND lv = listViews_[paneIdx];
   ListView_SetItemState(lv, -1, 0, LVIS_CUT);
   if (cutState_.empty()) return;
-  PaneController& pane = paneManager_->at(paneIdx);
+  PaneController& pane = *activeForPane_[paneIdx];
   if (pane.currentPath() != cutState_.folder()) return;
   const auto& store = pane.store();
   const auto count = store.publishedCount();
@@ -2244,10 +2251,10 @@ void MainWindow::clearCutState() noexcept {
 }
 
 void MainWindow::handleBeginDrag(NMHDR* hdr) {
-  if (hdr == nullptr || !paneManager_) return;
+  if (hdr == nullptr) return;
   std::size_t paneIdx = 0;
   if (!paneIndexFromListView(hdr->hwndFrom, paneIdx) ||
-      paneIdx >= paneManager_->count()) {
+      paneIdx >= paneCount_ || activeForPane_[paneIdx] == nullptr) {
     return;
   }
   if (!dragDrops_[paneIdx]) return;
@@ -2256,7 +2263,7 @@ void MainWindow::handleBeginDrag(NMHDR* hdr) {
   // + DoDragDrop sequence so this entry point stays Win32-agnostic.
   std::vector<ports::ItemId> ids;
   HWND lv = hdr->hwndFrom;
-  const auto& store = paneManager_->at(paneIdx).store();
+  const auto& store = activeForPane_[paneIdx]->store();
   int row = -1;
   while ((row = ListView_GetNextItem(lv, row, LVNI_SELECTED)) >= 0) {
     const auto r = static_cast<std::size_t>(row);
@@ -2270,11 +2277,11 @@ void MainWindow::handleBeginDrag(NMHDR* hdr) {
 }
 
 void MainWindow::finalizeSortApply(std::size_t paneIdx) {
-  if (!paneManager_ || paneIdx >= paneManager_->count() ||
+  if (paneIdx >= paneCount_ || activeForPane_[paneIdx] == nullptr ||
       paneIdx >= listViews_.size() || listViews_[paneIdx] == nullptr) {
     return;
   }
-  PaneController& target = paneManager_->at(paneIdx);
+  PaneController& target = *activeForPane_[paneIdx];
   HWND lv = listViews_[paneIdx];
   const auto spec = target.currentSortSpec();
   updateSortIndicator(lv, sortKeyToColumnIndex(spec.key), spec.direction);
@@ -2382,8 +2389,7 @@ LRESULT MainWindow::handleListViewNotify(NMHDR* hdr) {
       return 0;
     case NM_SETFOCUS: {
       std::size_t idx = 0;
-      if (paneIndexFromListView(hdr->hwndFrom, idx) &&
-          paneManager_ && paneManager_->activeIndex() != idx) {
+      if (paneIndexFromListView(hdr->hwndFrom, idx) && activePane_ != idx) {
         // Click on either pane (including its empty area) reroutes
         // accelerators (Alt+Up, F5, F2, Del, Ctrl+Shift+N) to that
         // pane by flipping active.
@@ -2397,13 +2403,13 @@ LRESULT MainWindow::handleListViewNotify(NMHDR* hdr) {
 }
 
 void MainWindow::handleListViewRightClick(NMHDR* hdr) {
-  if (hdr == nullptr || paneManager_ == nullptr) return;
+  if (hdr == nullptr) return;
   std::size_t paneIdx = 0;
   if (!paneIndexFromListView(hdr->hwndFrom, paneIdx) ||
-      paneIdx >= paneManager_->count()) {
+      paneIdx >= paneCount_ || activeForPane_[paneIdx] == nullptr) {
     return;
   }
-  PaneController& targetPane = paneManager_->at(paneIdx);
+  PaneController& targetPane = *activeForPane_[paneIdx];
   const std::wstring& folderPath = targetPane.currentPath();
   if (folderPath.empty()) return;
 
@@ -2556,12 +2562,11 @@ LRESULT MainWindow::handleCustomDraw(NMHDR* hdr) {
         return CDRF_DODEFAULT;
       }
       std::size_t paneIdx = 0;
-      if (!paneManager_ ||
-          !paneIndexFromListView(cd->nmcd.hdr.hwndFrom, paneIdx) ||
-          paneIdx >= paneManager_->count()) {
+      if (!paneIndexFromListView(cd->nmcd.hdr.hwndFrom, paneIdx) ||
+          paneIdx >= paneCount_ || activeForPane_[paneIdx] == nullptr) {
         return CDRF_DODEFAULT;
       }
-      const auto& store = paneManager_->at(paneIdx).store();
+      const auto& store = activeForPane_[paneIdx]->store();
       const auto row = static_cast<std::size_t>(cd->nmcd.dwItemSpec);
       if (row >= store.publishedCount()) {
         return CDRF_DODEFAULT;
@@ -2600,7 +2605,7 @@ void MainWindow::handleGetDispInfo(NMHDR* hdr) {
 }
 
 void MainWindow::handleGetDispInfoBody(NMHDR* hdr) {
-  if (hdr == nullptr || !paneManager_) {
+  if (hdr == nullptr) {
     return;
   }
   // The dispatcher routes every list-view's notifications through
@@ -2608,10 +2613,10 @@ void MainWindow::handleGetDispInfoBody(NMHDR* hdr) {
   // the active-pane cache to keep the inactive pane's rows correct.
   std::size_t paneIdx = 0;
   if (!paneIndexFromListView(hdr->hwndFrom, paneIdx) ||
-      paneIdx >= paneManager_->count()) {
+      paneIdx >= paneCount_ || activeForPane_[paneIdx] == nullptr) {
     return;
   }
-  PaneController& sourcePane = paneManager_->at(paneIdx);
+  PaneController& sourcePane = *activeForPane_[paneIdx];
   auto* disp = reinterpret_cast<NMLVDISPINFOW*>(hdr);
   if (disp->item.iItem < 0) {
     return;
@@ -2683,12 +2688,12 @@ void MainWindow::handleGetDispInfoBody(NMHDR* hdr) {
 }
 
 void MainWindow::applyListViewGroups(std::size_t paneIdx) {
-  if (!paneManager_ || paneIdx >= paneManager_->count() ||
+  if (paneIdx >= paneCount_ || activeForPane_[paneIdx] == nullptr ||
       paneIdx >= listViews_.size() || listViews_[paneIdx] == nullptr) {
     return;
   }
   HWND lv = listViews_[paneIdx];
-  PaneController& pane = paneManager_->at(paneIdx);
+  PaneController& pane = *activeForPane_[paneIdx];
   const auto gk = pane.groupBy();
   // Defensive: turn group view off before mutating definitions, so
   // common-controls doesn't try to render in a half-rebuilt state.
@@ -2734,7 +2739,7 @@ void MainWindow::applyListViewGroups(std::size_t paneIdx) {
 }
 
 LRESULT MainWindow::handleOdFindItem(NMHDR* hdr) {
-  if (hdr == nullptr || !paneManager_) {
+  if (hdr == nullptr) {
     return -1;
   }
   auto* nmf = reinterpret_cast<NMLVFINDITEMW*>(hdr);
@@ -2745,10 +2750,10 @@ LRESULT MainWindow::handleOdFindItem(NMHDR* hdr) {
   }
   std::size_t paneIdx = 0;
   if (!paneIndexFromListView(hdr->hwndFrom, paneIdx) ||
-      paneIdx >= paneManager_->count()) {
+      paneIdx >= paneCount_ || activeForPane_[paneIdx] == nullptr) {
     return -1;
   }
-  const auto& store = paneManager_->at(paneIdx).store();
+  const auto& store = activeForPane_[paneIdx]->store();
   const std::size_t total = store.publishedCount();
   if (total == 0) {
     return -1;
@@ -2796,12 +2801,12 @@ LRESULT MainWindow::handleOdFindItem(NMHDR* hdr) {
 }
 
 void MainWindow::handleItemActivate(NMHDR* hdr) {
-  if (hdr == nullptr || !paneManager_) {
+  if (hdr == nullptr) {
     return;
   }
   std::size_t paneIdx = 0;
   if (!paneIndexFromListView(hdr->hwndFrom, paneIdx) ||
-      paneIdx >= paneManager_->count()) {
+      paneIdx >= paneCount_ || activeForPane_[paneIdx] == nullptr) {
     return;
   }
   auto* nmia = reinterpret_cast<NMITEMACTIVATE*>(hdr);
@@ -2812,7 +2817,7 @@ void MainWindow::handleItemActivate(NMHDR* hdr) {
   // one; flipping activeness keeps subsequent accelerators on the
   // source pane.
   setActivePane(paneIdx);
-  auto& target = paneManager_->at(paneIdx);
+  auto& target = *activeForPane_[paneIdx];
   const auto row = static_cast<std::uint32_t>(nmia->iItem);
   // Activating a file shells out (ShellExecuteExW) without navigating
   // the pane, so clearing the list-view / wiping the address bar
@@ -2828,12 +2833,12 @@ void MainWindow::handleItemActivate(NMHDR* hdr) {
 }
 
 void MainWindow::handleColumnClick(NMHDR* hdr) {
-  if (hdr == nullptr || !paneManager_) {
+  if (hdr == nullptr) {
     return;
   }
   std::size_t paneIdx = 0;
   if (!paneIndexFromListView(hdr->hwndFrom, paneIdx) ||
-      paneIdx >= paneManager_->count() ||
+      paneIdx >= paneCount_ || activeForPane_[paneIdx] == nullptr ||
       listViews_[paneIdx] == nullptr) {
     return;
   }
@@ -2842,7 +2847,7 @@ void MainWindow::handleColumnClick(NMHDR* hdr) {
   if (!columnIndexToSortKey(nmlv->iSubItem, key)) {
     return;
   }
-  PaneController& target = paneManager_->at(paneIdx);
+  PaneController& target = *activeForPane_[paneIdx];
   const auto dispatch = target.requestSort(key);
   if (dispatch == fast_explorer::ui::SortDispatch::Rejected) {
     return;
@@ -2856,14 +2861,39 @@ void MainWindow::handleColumnClick(NMHDR* hdr) {
   }
 }
 
-// ---- Phase 4 stubs (filled in by Phase 5 Task 24) ----------------------
+// ---- Phase 5 Task 24: real implementations --------------------------------
 
-void MainWindow::bindListViewToActiveTab(std::size_t /*paneIdx*/) {
-  // Stub: Phase 5 Task 24 provides the real implementation.
+void MainWindow::bindListViewToActiveTab(std::size_t paneIdx) {
+  PaneController* pane = (paneIdx < paneCount_) ? activeForPane_[paneIdx]
+                                                 : nullptr;
+  if (!pane) return;
+  HWND lv = (paneIdx < listViews_.size()) ? listViews_[paneIdx] : nullptr;
+  if (!lv) return;
+  const std::size_t n = pane->store().publishedCount();
+  ListView_SetItemCountEx(lv, static_cast<int>(n), LVSICF_NOINVALIDATEALL);
+  InvalidateRect(lv, nullptr, TRUE);
 }
 
-void MainWindow::refreshPaneChrome(std::size_t /*paneIdx*/) {
-  // Stub: Phase 5 Task 24 provides the real implementation.
+void MainWindow::refreshPaneChrome(std::size_t paneIdx) {
+  PaneController* pane = (paneIdx < paneCount_) ? activeForPane_[paneIdx]
+                                                 : nullptr;
+  if (!pane) return;
+  if (paneIdx < addressBars_.size() && addressBars_[paneIdx]) {
+    SetWindowTextW(addressBars_[paneIdx], pane->currentPath().c_str());
+    if (addressBarPopup_ && activePane_ == paneIdx) {
+      addressBarPopup_->reflectCurrentPath(pane->currentPath());
+    }
+  }
+  updateNavButtonStates(paneIdx);
+  refreshSelectionSummary(paneIdx);
+}
+
+// ---- Phase 5 Task 25 stub (filled by Phase 6 Task 29) -------------------
+
+void MainWindow::showTabContextMenu(std::size_t /*paneIdx*/,
+                                    std::size_t /*tabIdx*/,
+                                    POINT /*screen*/) {
+  // No-op stub. Phase 6 Task 29 provides the real implementation.
 }
 
 }  // namespace fast_explorer::ui

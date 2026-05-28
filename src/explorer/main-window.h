@@ -10,6 +10,7 @@
 #include "winui_lite/chrome/command-router.h"
 #include "winui_lite/chrome/layout-preset.h"
 #include "explorer/cut-state-tracker.h"
+#include "explorer/pane-tab-host.h"
 #include "winui_lite/chrome/pane-layout.h"
 #include "explorer/search-popup.h"
 #include "winui_lite/chrome/splitter-ratios.h"
@@ -38,7 +39,6 @@ class ShellClipboard;
 class ShellDragDrop;
 class ShellContextMenuAdapter;
 }
-template <class TPane> class PaneManager;
 class PaneToolbarRow;
 class SelectionSync;
 
@@ -70,6 +70,9 @@ class MainWindow : public WindowBase {
   // real implementations land in Phase 5 Task 24.
   void bindListViewToActiveTab(std::size_t paneIdx);
   void refreshPaneChrome(std::size_t paneIdx);
+
+  // Tab right-click context menu stub. Phase 6 Task 29 fills the body.
+  void showTabContextMenu(std::size_t paneIdx, std::size_t tabIdx, POINT screen);
 
   // Switches to the given preset, opening or closing slots as needed.
   // Implementation lands in Task 27. Currently a no-op stub so the
@@ -162,10 +165,10 @@ class MainWindow : public WindowBase {
   // (idx>=1) so the construction sequence stays in one place.
   bool installPaneCoordinators(std::size_t idx, HWND listView);
   // Creates per-slot UI (listview, toolbar row, address bar, drop
-  // target, coordinators) for the slot at `idx`. Assumes the
-  // PaneController at idx already exists in paneManager_. Slot 0 is
-  // special: its listview is created in onCreate, so installPaneAt(0)
-  // is never called. Used by enterLayout when growing pane count.
+  // target, coordinators) for the slot at `idx`. Slot 0 is special:
+  // its listview and PaneTabHost are created in onCreate, so
+  // installPaneAt(0) is never called. Used by enterLayout when growing
+  // pane count.
   bool installPaneAt(std::size_t idx);
 
   // Tears down per-slot UI for slot `idx` (releases coordinators,
@@ -290,18 +293,22 @@ class MainWindow : public WindowBase {
   CutStateTracker cutState_;
   std::unique_ptr<AddressBarPopup> addressBarPopup_;
   std::array<bool, 4> firstBatchSeen_{false, false, false, false};
-  std::unique_ptr<PaneManager<PaneController>> paneManager_;
+  // Per-pane tab host: owns all tabs (PaneControllers) for each slot.
+  // Created in installPaneAt / onCreate, destroyed in uninstallPaneAt.
+  std::array<std::unique_ptr<PaneTabHost>, 4> paneTabHosts_;
+  // Index of the focused pane (0-based). Updated by setActivePane.
+  std::size_t activePane_ = 0;
+  // Number of active pane slots (1..4). Matches slotCountForPreset(preset_).
+  std::size_t paneCount_ = 1;
   // Cell array for the per-pane adapter indirection. Each element is
-  // the "current" PaneController* for pane i. Adapters store a pointer
-  // to this element so a future tab-switch only needs to write one
-  // pointer per pane (O(1)) rather than reconstruct all adapters.
-  // Phase 3 bridge: still mirrors paneManager_->at(i) directly.
+  // the "current" PaneController* for pane i. PaneTabHost writes this
+  // on every activateTab call (O(1) tab switch). Adapters store a pointer
+  // to this element so a tab-switch never reconstructs them.
   std::array<PaneController*, 4> activeForPane_{nullptr, nullptr, nullptr,
                                                 nullptr};
-  // Cached pointer to the manager's currently active pane. Refreshed
-  // by onCreate (and by the active-pane switch handler in a later M9
-  // atom). Never owns; the PaneController itself is owned by
-  // paneManager_.
+  // Cached pointer to the currently active pane (same as
+  // activeForPane_[activePane_]). Refreshed by onCreate and
+  // setActivePane. Never owns; owned by the active PaneTabHost.
   PaneController* pane_ = nullptr;
   std::unique_ptr<class FormatCache> formatCache_;
   // Per-pane coordinators indexed by pane index. Slot 0 is populated
@@ -314,7 +321,7 @@ class MainWindow : public WindowBase {
   // comes up (slot 0 in onCreate; slots 1-3 at the tail of
   // installPaneAt) and destroyed BEFORE the controller goes away
   // (reset at the head of uninstallPaneAt, and on window teardown
-  // via member-destruction order — declared AFTER paneManager_).
+  // via member-destruction order — declared AFTER paneTabHosts_).
   // Each adapter borrows a non-owning pointer to its controller.
   std::array<std::unique_ptr<adapters::ShellItemSource>, 4> itemSources_;
   std::array<std::unique_ptr<adapters::ShellItemDispatcher>, 4>

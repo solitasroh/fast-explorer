@@ -11,7 +11,6 @@
 namespace fast_explorer::ui {
 
 class PaneController;
-template <class TPane> class PaneManager;
 
 // IDropTarget for a single pane's list-view. Delegates to the shell-
 // provided IDropTarget of either the hovered folder row or the pane
@@ -19,7 +18,9 @@ template <class TPane> class PaneManager;
 // = move, cross-drive = copy) and conflict UI itself.
 class PaneDropTarget final : public IDropTarget {
  public:
-  PaneDropTarget(HWND lv, PaneManager<PaneController>* paneManager,
+  // `activeCell` is the MainWindow::activeForPane_[paneIdx] pointer;
+  // the target reads through it so tab switches are transparent.
+  PaneDropTarget(HWND lv, PaneController* const* activeCell,
                  std::size_t paneIdx) noexcept;
 
   STDMETHODIMP QueryInterface(REFIID riid, void** ppv) override;
@@ -42,7 +43,7 @@ class PaneDropTarget final : public IDropTarget {
   void clearCurrentTarget() noexcept;
 
   HWND lv_;
-  PaneManager<PaneController>* paneManager_;
+  PaneController* const* activeCell_;  // borrowed; written by host on tab switch
   std::size_t paneIdx_;
   ComPtr<IDataObject> currentData_;
   ComPtr<IDropTarget> currentTarget_;

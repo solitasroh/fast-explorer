@@ -22,7 +22,6 @@
 #include "explorer/shell-actions.h"
 #include "winui_lite/chrome/command-router.h"
 #include "winui_lite/chrome/layout-preset.h"
-#include "winui_lite/chrome/pane-manager.h"
 
 namespace fast_explorer::ui {
 
@@ -41,7 +40,7 @@ void MainWindow::registerAccelHandlers() {
   using fast_explorer::core::LayoutPreset;
 
   auto activeIndex = [this]() noexcept -> std::size_t {
-    return paneManager_ ? paneManager_->activeIndex() : 0;
+    return activePane_;
   };
 
   accelRouter_.registerCommand(kAccelFocusAddress, [this, activeIndex] {
@@ -67,15 +66,15 @@ void MainWindow::registerAccelHandlers() {
 
   accelRouter_.registerCommand(kAccelCopyPath, [this, activeIndex] {
     const auto idx = activeIndex();
-    if (paneManager_ && idx < paneManager_->count()) {
-      copyPathToClipboard(paneManager_->at(idx).currentPath(), hwnd_);
+    if (idx < paneCount_ && activeForPane_[idx]) {
+      copyPathToClipboard(activeForPane_[idx]->currentPath(), hwnd_);
     }
   });
 
   accelRouter_.registerCommand(kAccelProperties, [this, activeIndex] {
     const auto idx = activeIndex();
-    if (paneManager_ && idx < paneManager_->count()) {
-      showFolderProperties(paneManager_->at(idx).currentPath(), hwnd_);
+    if (idx < paneCount_ && activeForPane_[idx]) {
+      showFolderProperties(activeForPane_[idx]->currentPath(), hwnd_);
     }
   });
 
@@ -98,15 +97,14 @@ void MainWindow::registerAccelHandlers() {
   });
 
   accelRouter_.registerCommand(kAccelFilter, [this] {
-    if (searchPopup_ && paneManager_) {
-      searchPopup_->show(paneManager_->activeIndex());
+    if (searchPopup_) {
+      searchPopup_->show(activePane_);
     }
   });
 
   accelRouter_.registerCommand(kAccelPaneSwitch, [this] {
-    if (paneManager_ && paneManager_->count() > 1) {
-      const std::size_t next =
-          (paneManager_->activeIndex() + 1) % paneManager_->count();
+    if (paneCount_ > 1) {
+      const std::size_t next = (activePane_ + 1) % paneCount_;
       setActivePane(next);
     }
   });
@@ -118,14 +116,13 @@ void MainWindow::registerAccelHandlers() {
   // list-view.
   // -----------------------------------------------------------------
   auto applyGroupBy = [this](fast_explorer::core::GroupKey gk) {
-    if (!paneManager_) return;
-    const std::size_t idx = paneManager_->activeIndex();
-    if (idx >= paneManager_->count()) return;
+    const std::size_t idx = activePane_;
+    if (idx >= paneCount_ || !activeForPane_[idx]) return;
     // setGroupBy → requestSort. Sync sorts (under the worker threshold)
     // need an explicit finalizeSortApply so the group-header visual
     // lands immediately; the async path posts kWmFeSortComplete which
     // routes through onSortComplete → finalizeSortApply on its own.
-    const auto disp = paneManager_->at(idx).setGroupBy(gk);
+    const auto disp = activeForPane_[idx]->setGroupBy(gk);
     if (disp == fast_explorer::ui::SortDispatch::AppliedSync) {
       finalizeSortApply(idx);
     }
@@ -154,8 +151,9 @@ void MainWindow::registerAccelHandlers() {
 
   accelRouter_.registerPackedCommand(
       kTbAddressDropdown, [this](std::size_t pane) {
-        if (!addressBarPopup_ || !paneManager_ ||
-            pane >= paneManager_->count() ||
+        if (!addressBarPopup_ ||
+            pane >= paneCount_ ||
+            !activeForPane_[pane] ||
             pane >= addressBars_.size() ||
             addressBars_[pane] == nullptr) {
           return;
@@ -169,13 +167,13 @@ void MainWindow::registerAccelHandlers() {
         } else {
           addressBarPopup_->setActivePane(pane);
           addressBarPopup_->showFor(addressBars_[pane],
-                                     paneManager_->at(pane).currentPath());
+                                     activeForPane_[pane]->currentPath());
         }
       });
 
   // Navigation toolbar group shares the activate-and-refresh pattern.
   auto navAction = [this](std::size_t pane, bool changed) {
-    if (paneManager_ && pane < paneManager_->count()) {
+    if (pane < paneCount_ && activeForPane_[pane]) {
       setActivePane(pane);
       if (changed) {
         clearListViewForNavigation(pane);
@@ -188,25 +186,25 @@ void MainWindow::registerAccelHandlers() {
     }
   };
   accelRouter_.registerPackedCommand(kTbBack, [this, navAction](std::size_t p) {
-    if (paneManager_ && p < paneManager_->count()) {
-      navAction(p, paneManager_->at(p).back());
+    if (p < paneCount_ && activeForPane_[p]) {
+      navAction(p, activeForPane_[p]->back());
     }
   });
   accelRouter_.registerPackedCommand(
       kTbForward, [this, navAction](std::size_t p) {
-        if (paneManager_ && p < paneManager_->count()) {
-          navAction(p, paneManager_->at(p).forward());
+        if (p < paneCount_ && activeForPane_[p]) {
+          navAction(p, activeForPane_[p]->forward());
         }
       });
   accelRouter_.registerPackedCommand(kTbUp, [this, navAction](std::size_t p) {
-    if (paneManager_ && p < paneManager_->count()) {
-      navAction(p, paneManager_->at(p).up());
+    if (p < paneCount_ && activeForPane_[p]) {
+      navAction(p, activeForPane_[p]->up());
     }
   });
   accelRouter_.registerPackedCommand(
       kTbRefresh, [this, navAction](std::size_t p) {
-        if (paneManager_ && p < paneManager_->count()) {
-          navAction(p, paneManager_->at(p).refresh());
+        if (p < paneCount_ && activeForPane_[p]) {
+          navAction(p, activeForPane_[p]->refresh());
         }
       });
 
@@ -215,15 +213,15 @@ void MainWindow::registerAccelHandlers() {
   // logic inline since the host owns the state.
   accelRouter_.registerPackedCommand(
       kMenuNewFolder, [this](std::size_t pane) {
-        if (paneManager_ && pane < paneManager_->count()) {
+        if (pane < paneCount_ && activeForPane_[pane]) {
           setActivePane(pane);
           if (auto* le = activeLabelEdit()) le->beginCreateSubfolder();
         }
       });
   accelRouter_.registerPackedCommand(
       kMenuRefresh, [this](std::size_t pane) {
-        if (paneManager_ && pane < paneManager_->count() &&
-            paneManager_->at(pane).refresh()) {
+        if (pane < paneCount_ && activeForPane_[pane] &&
+            activeForPane_[pane]->refresh()) {
           clearListViewForNavigation(pane);
           syncAddressBar(pane);
           updateNavButtonStates(pane);
@@ -231,26 +229,26 @@ void MainWindow::registerAccelHandlers() {
       });
   accelRouter_.registerPackedCommand(
       kMenuOpenExplorer, [this](std::size_t pane) {
-        if (paneManager_ && pane < paneManager_->count()) {
-          openInExplorer(paneManager_->at(pane).currentPath());
+        if (pane < paneCount_ && activeForPane_[pane]) {
+          openInExplorer(activeForPane_[pane]->currentPath());
         }
       });
   accelRouter_.registerPackedCommand(
       kMenuOpenTerminal, [this](std::size_t pane) {
-        if (paneManager_ && pane < paneManager_->count()) {
-          launchTerminalInFolder(paneManager_->at(pane).currentPath(), hwnd_);
+        if (pane < paneCount_ && activeForPane_[pane]) {
+          launchTerminalInFolder(activeForPane_[pane]->currentPath(), hwnd_);
         }
       });
   accelRouter_.registerPackedCommand(
       kMenuCopyPath, [this](std::size_t pane) {
-        if (paneManager_ && pane < paneManager_->count()) {
-          copyPathToClipboard(paneManager_->at(pane).currentPath(), hwnd_);
+        if (pane < paneCount_ && activeForPane_[pane]) {
+          copyPathToClipboard(activeForPane_[pane]->currentPath(), hwnd_);
         }
       });
   accelRouter_.registerPackedCommand(
       kMenuProperties, [this](std::size_t pane) {
-        if (paneManager_ && pane < paneManager_->count()) {
-          showFolderProperties(paneManager_->at(pane).currentPath(), hwnd_);
+        if (pane < paneCount_ && activeForPane_[pane]) {
+          showFolderProperties(activeForPane_[pane]->currentPath(), hwnd_);
         }
       });
   accelRouter_.registerPackedCommand(
@@ -261,10 +259,10 @@ void MainWindow::registerAccelHandlers() {
         // enumerator snapshots the flag at navigate start, so the
         // order is set → refresh.
         showHidden_ = !showHidden_;
-        if (!paneManager_) return;
-        for (std::size_t i = 0; i < paneManager_->count(); ++i) {
-          paneManager_->at(i).setIncludeHidden(showHidden_);
-          if (paneManager_->at(i).refresh()) {
+        for (std::size_t i = 0; i < paneCount_; ++i) {
+          if (!activeForPane_[i]) continue;
+          activeForPane_[i]->setIncludeHidden(showHidden_);
+          if (activeForPane_[i]->refresh()) {
             clearListViewForNavigation(i);
           }
         }

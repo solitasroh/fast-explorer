@@ -7,7 +7,6 @@
 #include "core/file-entry.h"
 #include "core/file-model-store.h"
 #include "explorer/pane-controller.h"
-#include "winui_lite/chrome/pane-manager.h"
 #include "explorer/shell-bind.h"
 
 namespace fast_explorer::ui {
@@ -24,9 +23,9 @@ std::wstring joinPath(const std::wstring& base, std::wstring_view leaf) {
 }  // namespace
 
 PaneDropTarget::PaneDropTarget(HWND lv,
-                                PaneManager<PaneController>* paneManager,
+                                PaneController* const* activeCell,
                                 std::size_t paneIdx) noexcept
-    : lv_(lv), paneManager_(paneManager), paneIdx_(paneIdx) {}
+    : lv_(lv), activeCell_(activeCell), paneIdx_(paneIdx) {}
 
 STDMETHODIMP PaneDropTarget::QueryInterface(REFIID riid, void** ppv) {
   if (ppv == nullptr) return E_POINTER;
@@ -59,7 +58,8 @@ void PaneDropTarget::clearCurrentTarget() noexcept {
 }
 
 bool PaneDropTarget::rebindTarget(POINT screenPt) {
-  if (!paneManager_ || paneIdx_ >= paneManager_->count()) {
+  PaneController* pane = activeCell_ ? *activeCell_ : nullptr;
+  if (!pane) {
     return false;
   }
   POINT clientPt = screenPt;
@@ -71,15 +71,14 @@ bool PaneDropTarget::rebindTarget(POINT screenPt) {
   if (hitRow == lastHitRow_ && currentTarget_) {
     return false;
   }
-  PaneController& pane = paneManager_->at(paneIdx_);
-  std::wstring targetPath = pane.currentPath();
+  std::wstring targetPath = pane->currentPath();
   if (hitRow >= 0) {
-    const auto& store = pane.store();
+    const auto& store = pane->store();
     const auto row = static_cast<std::size_t>(hitRow);
     if (row < store.publishedCount()) {
       const auto& entry = store.visibleAt(row);
       if (fast_explorer::core::isDirectory(entry)) {
-        targetPath = joinPath(pane.currentPath(),
+        targetPath = joinPath(pane->currentPath(),
                               fast_explorer::core::nameView(entry));
       }
     }
