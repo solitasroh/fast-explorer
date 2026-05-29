@@ -63,6 +63,7 @@ inline constexpr WORD kAccelNewTab        = 123;  // Ctrl+T
 inline constexpr WORD kAccelCloseTab      = 124;  // Ctrl+W
 inline constexpr WORD kAccelTabCycleNext  = 125;  // Ctrl+Tab
 inline constexpr WORD kAccelTabCyclePrev  = 126;  // Ctrl+Shift+Tab
+inline constexpr WORD kAccelToggleTheme   = 127;  // Ctrl+Shift+D
 
 // Toolbar button IDs (per-pane nav toolbar — back / forward / up /
 // refresh). The packing rule mirrors the menu-item convention adopted

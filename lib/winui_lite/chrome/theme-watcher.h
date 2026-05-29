@@ -41,10 +41,23 @@ struct RowTheme {
   COLORREF hoverPill;
 };
 
-// Single registry probe of HKCU\...\Personalize\AppsUseLightTheme.
-// Cheap (no caching needed: one open+query+close pair) and idempotent.
-// Returns false when the key is missing or unreadable so the legacy
-// light theme is the safe default for non-Windows-10+ hosts.
+// User-controllable theme override. System follows the OS
+// AppsUseLightTheme probe (the historical behaviour); Light / Dark
+// force that mode regardless of the OS setting. Set via the keyboard
+// toggle (Ctrl+Shift+D) and persisted across restarts.
+enum class ThemeMode { System = 0, Light = 1, Dark = 2 };
+
+// Sets / reads the process-wide override consulted by isAppInDarkMode().
+// UI-thread only — a plain global, consistent with this header's
+// "one top-level window broadcasts theme downward" model (no watcher).
+void setThemeMode(ThemeMode mode) noexcept;
+ThemeMode themeMode() noexcept;
+
+// Effective dark/light the app should paint right now: the override
+// when one is set, otherwise a registry probe of
+// HKCU\...\Personalize\AppsUseLightTheme (cheap, one open+query+close;
+// returns false — light — when the key is missing so the legacy light
+// theme is the safe default for non-Windows-10+ hosts).
 bool isAppInDarkMode() noexcept;
 
 // True iff a WM_SETTINGCHANGE notification is the "user toggled
@@ -62,6 +75,18 @@ bool isThemeSettingChange(WPARAM wParam, LPARAM lParam) noexcept;
 //
 // Safe to call repeatedly; only the first call performs work.
 void enableProcessDarkMode() noexcept;
+
+// Pushes the current isAppInDarkMode() decision down to uxtheme's
+// per-process preferred app mode, then flushes uxtheme's colour-policy
+// cache. Needed on a runtime in-app theme toggle: system-drawn controls
+// (notably the listview scrollbar, routed to "Explorer::ScrollBar" by
+// the dark-scrollbar hook) follow the PROCESS mode, not g_themeMode, so
+// flipping g_themeMode alone leaves them on the OS theme. Maps a Light /
+// Dark override to ForceLight / ForceDark and System back to AllowDark
+// (OS-tracking). Call after setThemeMode() and before broadcasting
+// WM_THEMECHANGED, which re-opens each control's theme data so the new
+// mode takes effect. Unlike enableProcessDarkMode() this is re-callable.
+void syncProcessDarkMode() noexcept;
 
 // OS-tracking palette: returns the dark table when isAppInDarkMode()
 // is true, otherwise a light table built from system colours.

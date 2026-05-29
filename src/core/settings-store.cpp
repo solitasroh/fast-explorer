@@ -43,6 +43,8 @@ constexpr std::string_view kKeyOrientation{"orientation"};
 // not part of the custom JSON dialect this file supports.
 constexpr std::string_view kKeyShowHidden    {"view_show_hidden"};
 constexpr std::string_view kKeyShowExtensions{"view_show_extensions"};
+// Schema v6 (v0.7.1): theme override. Int 0/1/2 = system/light/dark.
+constexpr std::string_view kKeyThemeOverride {"theme_override"};
 constexpr std::string_view kLayoutSingle  {"single"};
 constexpr std::string_view kLayoutDual    {"dual"};
 constexpr std::string_view kOrientVertical  {"vertical"};
@@ -538,6 +540,14 @@ class JsonReader {
       else                       state.showExtensions = value;
       return true;
     }
+    if (key == kKeyThemeOverride) {
+      int raw = 0;
+      if (!parseIntInto(raw)) return false;
+      // Lenient: an out-of-range value (corrupt/future) clamps to
+      // System rather than failing the whole load.
+      state.themeOverride = (raw == 1 || raw == 2) ? raw : 0;
+      return true;
+    }
     if (key == kKeySchemaVersion) {
       int v = 0;
       if (!parseIntInto(v)) return false;
@@ -753,6 +763,7 @@ bool saveSessionState(const std::wstring& path, const SessionState& state) {
   appendKeyRatios    (out, state.ratiosPerPreset,                                  false);
   appendKeyInt       (out, kKeyShowHidden,    state.showHidden     ? 1 : 0,        false);
   appendKeyInt       (out, kKeyShowExtensions,state.showExtensions ? 1 : 0,        false);
+  appendKeyInt       (out, kKeyThemeOverride, state.themeOverride,                 false);
   out.append("\n}\n");
 
   const std::wstring temp = path + L".tmp";

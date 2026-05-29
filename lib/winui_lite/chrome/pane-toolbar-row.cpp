@@ -124,6 +124,19 @@ LRESULT CALLBACK addressEditNcPaddingSubclass(
     state->horizPad = padX;
     return 0;
   }
+  if (msg == WM_THEMECHANGED) {
+    // The border + fill colours come from currentRowTheme(), which now
+    // reflects the flipped theme. RDW_FRAME re-runs our WM_NCPAINT so
+    // the border + NC padding update. RDW_ERASE is what forces a
+    // WM_ERASEBKGND, which is the only path that refills the Edit's
+    // client interior with the *new* WM_CTLCOLOREDIT brush — without it
+    // a plain RDW_INVALIDATE leaves the body stuck on the old theme
+    // colour (WM_PAINT only repaints behind the glyphs, not the empty
+    // remainder of the textbox) on a runtime light↔dark toggle.
+    RedrawWindow(hwnd, nullptr, nullptr,
+                 RDW_FRAME | RDW_INVALIDATE | RDW_ERASE | RDW_UPDATENOW);
+    return DefSubclassProc(hwnd, msg, wParam, lParam);
+  }
   if (msg == WM_NCPAINT) {
     HDC dc = GetWindowDC(hwnd);
     if (dc != nullptr) {

@@ -56,6 +56,11 @@ struct SessionState {
   bool showHidden = false;
   bool showExtensions = true;
 
+  // User theme override: 0 = follow system, 1 = force light, 2 = force
+  // dark. Maps to ui::ThemeMode. Default 0 keeps a fresh install
+  // tracking the OS theme until the user toggles (Ctrl+Shift+D).
+  int themeOverride = 0;
+
   // Internal-only: populated by the reader for v5 backward-compat,
   // consumed by the migrator at the tail of loadSessionState. Not
   // written by the writer.

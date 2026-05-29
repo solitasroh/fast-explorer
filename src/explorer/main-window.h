@@ -157,6 +157,12 @@ class MainWindow : public WindowBase {
   // the title bar and Mica backdrop track Windows theme. Called
   // on create and on WM_SETTINGCHANGE("ImmersiveColorSet").
   void applySystemTheme();
+  // Ctrl+Shift+D: flip the effective theme to its opposite and force
+  // it as an explicit override (light↔dark), then re-theme the whole
+  // window and broadcast WM_THEMECHANGED to chrome children so they
+  // re-read isAppInDarkMode() — the system only auto-broadcasts that
+  // on a real OS theme flip, not on our programmatic override.
+  void toggleTheme();
   LRESULT onSize(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam);
   LRESULT onCommand(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam);
   LRESULT onTimer(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam);

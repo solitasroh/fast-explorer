@@ -2,7 +2,10 @@
 
 namespace fast_explorer::ui {
 
-bool isAppInDarkMode() noexcept {
+namespace {
+ThemeMode g_themeMode = ThemeMode::System;
+
+bool osPrefersDark() noexcept {
   HKEY key = nullptr;
   if (RegOpenKeyExW(HKEY_CURRENT_USER,
                     L"Software\\Microsoft\\Windows\\CurrentVersion"
@@ -16,6 +19,19 @@ bool isAppInDarkMode() noexcept {
                             reinterpret_cast<BYTE*>(&value), &size);
   RegCloseKey(key);
   return r == ERROR_SUCCESS && value == 0;
+}
+}  // namespace
+
+void setThemeMode(ThemeMode mode) noexcept { g_themeMode = mode; }
+ThemeMode themeMode() noexcept { return g_themeMode; }
+
+bool isAppInDarkMode() noexcept {
+  switch (g_themeMode) {
+    case ThemeMode::Light: return false;
+    case ThemeMode::Dark:  return true;
+    case ThemeMode::System:
+    default:               return osPrefersDark();
+  }
 }
 
 bool isThemeSettingChange(WPARAM /*wParam*/, LPARAM lParam) noexcept {
@@ -41,6 +57,10 @@ enum PreferredAppMode {
   PAM_ForceLight = 3,
 };
 using SetPreferredAppMode_t = int (WINAPI*)(PreferredAppMode);
+// uxtheme.dll ordinal 104: RefreshImmersiveColorPolicyState(). Drops
+// uxtheme's cached "is this process dark?" decision so the next
+// OpenThemeData / WM_THEMECHANGED re-reads the mode set above.
+using RefreshImmersiveColorPolicyState_t = void (WINAPI*)();
 }  // namespace
 
 void enableProcessDarkMode() noexcept {
@@ -56,6 +76,30 @@ void enableProcessDarkMode() noexcept {
   // Module handle intentionally leaked: uxtheme stays loaded for the
   // life of the process via comctl32 / SetWindowTheme anyway, and
   // unloading would race in-flight theme callbacks.
+}
+
+void syncProcessDarkMode() noexcept {
+  HMODULE ux = LoadLibraryExW(L"uxtheme.dll", nullptr,
+                              LOAD_LIBRARY_SEARCH_SYSTEM32);
+  if (ux == nullptr) return;
+  auto setMode = reinterpret_cast<SetPreferredAppMode_t>(
+      GetProcAddress(ux, MAKEINTRESOURCEA(135)));
+  if (setMode != nullptr) {
+    // Force the override so system-drawn controls ignore the OS setting
+    // and match the in-app toggle; fall back to AllowDark (OS-tracking)
+    // when the user has cleared the override back to System.
+    PreferredAppMode mode = PAM_AllowDark;
+    if (g_themeMode == ThemeMode::Dark) {
+      mode = PAM_ForceDark;
+    } else if (g_themeMode == ThemeMode::Light) {
+      mode = PAM_ForceLight;
+    }
+    setMode(mode);
+  }
+  auto refresh = reinterpret_cast<RefreshImmersiveColorPolicyState_t>(
+      GetProcAddress(ux, MAKEINTRESOURCEA(104)));
+  if (refresh != nullptr) refresh();
+  // Module handle intentionally leaked (see enableProcessDarkMode).
 }
 
 RowTheme currentRowTheme() noexcept {

@@ -127,6 +127,11 @@ void MainWindow::registerAccelHandlers() {
     if (auto* h = paneTabHost(activePane_)) h->cyclePrev();
   });
 
+  // Ctrl+Shift+D: toggle light↔dark theme override (persisted at exit).
+  accelRouter_.registerCommand(kAccelToggleTheme, [this] {
+    toggleTheme();
+  });
+
   // -----------------------------------------------------------------
   // Group-by submenu — raw (unpacked) ids in the 0x8000 range, fired
   // from the empty-area context menu's '분류 방법' submenu. Active

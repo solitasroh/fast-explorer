@@ -1534,6 +1534,7 @@ LRESULT MainWindow::handleMessage(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPa
       capturedState_->orientation = orientation_;
       capturedState_->showHidden = showHidden_;
       capturedState_->showExtensions = showExtensions_;
+      capturedState_->themeOverride = static_cast<int>(themeMode());
       if (addressBarPopup_) {
         addressBarPopup_->hide();
         addressBarPopup_.reset();
@@ -1801,6 +1802,37 @@ void MainWindow::applySystemTheme() {
   // unconditionally.
   const int backdrop = 2;
   DwmSetWindowAttribute(hwnd_, 38, &backdrop, sizeof(backdrop));
+}
+
+void MainWindow::toggleTheme() {
+  if (hwnd_ == nullptr) return;
+  // Flip relative to what's on screen now (whether that came from the
+  // OS probe or a prior override) and pin it as an explicit choice so
+  // the app stops tracking the OS until the user toggles again.
+  setThemeMode(isAppInDarkMode() ? ThemeMode::Light : ThemeMode::Dark);
+
+  // The listview scrollbar is system-drawn ("Explorer::ScrollBar" via
+  // the dark-scrollbar hook) and follows uxtheme's per-process mode, not
+  // our g_themeMode override. Push the new override down to uxtheme so
+  // the WM_THEMECHANGED pass below re-themes the scrollbar to match;
+  // without this only the app's self-painted surfaces flip and the
+  // scrollbar stays on the startup theme.
+  syncProcessDarkMode();
+
+  // Mirror the system's own theme-flip broadcast: send WM_THEMECHANGED
+  // to every child so toolbar rows, status bar, and tab strips re-read
+  // isAppInDarkMode() and rebuild their palettes. Done before the
+  // listview/title-bar passes below so applyActivePaneAppearance's
+  // explicit background colours stay authoritative.
+  EnumChildWindows(
+      hwnd_,
+      [](HWND child, LPARAM) -> BOOL {
+        SendMessageW(child, WM_THEMECHANGED, 0, 0);
+        return TRUE;
+      },
+      0);
+  applySystemTheme();          // title bar + Mica
+  applyActivePaneAppearance(); // listview rows + group headers
 }
 
 LRESULT MainWindow::onDpiChanged(HWND hwnd, WPARAM wParam, LPARAM lParam) {

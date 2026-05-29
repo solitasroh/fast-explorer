@@ -272,6 +272,13 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance,
       if (settingsLoaded) {
         logger.info(L"settings loaded from %ls", settingsPath.c_str());
       }
+      // Apply the persisted theme override before the window (and its
+      // chrome) is created so the very first paint honours it instead
+      // of flashing the OS theme first. 1=light, 2=dark, else system.
+      fast_explorer::ui::setThemeMode(
+          initialState.themeOverride == 1 ? fast_explorer::ui::ThemeMode::Light
+          : initialState.themeOverride == 2 ? fast_explorer::ui::ThemeMode::Dark
+          : fast_explorer::ui::ThemeMode::System);
       fast_explorer::ui::MainWindow window(services.memory(), services.perf());
       if (window.create(instance, showCommand)) {
         // Publish the HWND so WinSparkle's shutdown-request callback
@@ -330,6 +337,8 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance,
              fast_explorer::ui::kAccelTabCycleNext},
             {static_cast<BYTE>(FCONTROL | FSHIFT | FVIRTKEY), VK_TAB,
              fast_explorer::ui::kAccelTabCyclePrev},
+            {static_cast<BYTE>(FCONTROL | FSHIFT | FVIRTKEY), L'D',
+             fast_explorer::ui::kAccelToggleTheme},
             {static_cast<BYTE>(FALT | FVIRTKEY), VK_RETURN,
              fast_explorer::ui::kAccelProperties},
             {static_cast<BYTE>(FALT | FVIRTKEY), L'M',
