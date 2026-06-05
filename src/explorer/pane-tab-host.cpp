@@ -4,6 +4,7 @@
 
 #include <algorithm>
 
+#include "core/location.h"
 #include "explorer/main-window.h"
 #include "explorer/pane-tab-host-state.h"
 
@@ -72,10 +73,15 @@ void PaneTabHost::rebuildStrip() {
     TabModel m;
     // Title is leaf of currentPath or "Home" if empty.
     const auto& full = t->currentPath();
-    auto slash = full.find_last_of(L"\\/");
-    m.title = (slash == std::wstring::npos)
-        ? full
-        : (slash + 1 < full.size() ? full.substr(slash + 1) : full);
+    const auto location = core::parseLocation(full);
+    if (location.kind == core::LocationKind::ShellKnownFolder) {
+      m.title = core::displayNameForLocation(location);
+    } else {
+      auto slash = full.find_last_of(L"\\/");
+      m.title = (slash == std::wstring::npos)
+          ? full
+          : (slash + 1 < full.size() ? full.substr(slash + 1) : full);
+    }
     if (m.title.empty()) m.title = L"Home";
     m.hasCloseX = true;
     models.push_back(std::move(m));
@@ -194,9 +200,11 @@ void PaneTabHost::restoreFromSession(const core::PaneSessionV6& panel) {
   }
   for (const auto& t : panel.tabs) {
     auto pc = std::make_unique<PaneController>(host_->handle(), paneIdx_);
-    if (t.path.empty()) {
+    const std::wstring restoreTarget =
+        t.location.empty() ? t.path : t.location;
+    if (restoreTarget.empty()) {
       pc->openFolder(homeFolder());
-    } else if (!pc->openFolder(t.path)) {
+    } else if (!pc->openFolder(restoreTarget)) {
       pc->openFolder(homeFolder());   // fall back if path no longer valid
     }
     tabs_.push_back(std::move(pc));
@@ -210,7 +218,8 @@ core::PaneSessionV6 PaneTabHost::captureSession() const {
   core::PaneSessionV6 out;
   out.tabs.reserve(tabs_.size());
   for (const auto& t : tabs_) {
-    out.tabs.push_back(core::TabRecordV6{t->currentPath()});
+    out.tabs.push_back(core::TabRecordV6{t->currentPath(),
+                                         t->currentLocation()});
   }
   out.activeTab = activeTab_;
   return out;

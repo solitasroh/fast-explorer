@@ -5,6 +5,9 @@
 
 #include <cstddef>
 #include <memory>
+#include <string>
+#include <string_view>
+#include <unordered_map>
 
 #include "core/file-entry.h"
 
@@ -39,6 +42,8 @@ class IconCacheCoordinator {
   // subsequent hits, placeholder + background request on first
   // sight of a non-cached extension.
   int resolveIconIndex(const fast_explorer::core::FileEntry& entry);
+  int resolveIconIndex(const fast_explorer::core::FileEntry& entry,
+                       std::wstring_view iconLocation);
 
   // Drain the icon-provider's resolved HICONs into the ImageList
   // and update the extension cache. Returns true when at least
@@ -57,6 +62,7 @@ class IconCacheCoordinator {
   std::unique_ptr<IconCache> iconCache_;
   std::unique_ptr<ExtensionIconCache> extensionCache_;
   std::unique_ptr<IconProvider> iconProvider_;
+  std::unordered_map<std::wstring, int> locationIconCache_;
 };
 
 }  // namespace fast_explorer::ui

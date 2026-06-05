@@ -7,12 +7,15 @@
 #include "bench-fs-helper.h"
 #include "core/path-utils.h"
 #include "test-harness.h"
+#include "explorer/filter-pattern.h"
 #include "explorer/label-edit-controller.h"
 #include "explorer/pane-controller.h"
 
 using fast_explorer::tests::diskPathExists;
 using fast_explorer::tests::TempDir;
 using fast_explorer::tests::writeEmptyDiskFile;
+using fast_explorer::ui::FilterMode;
+using fast_explorer::ui::FilterPattern;
 using fast_explorer::ui::LabelEditController;
 using fast_explorer::ui::PaneController;
 
@@ -137,6 +140,29 @@ FE_TEST_CASE(LabelEditController_BeginCreateSubfolder_NameCollision_SuffixesNumb
   LabelEditController ctl(nullptr, pane);
   ctl.beginCreateSubfolder();
   pane.shellWorkerForTest().waitForProcessedForTest(1);
+  FE_ASSERT_WSTREQ(ctl.pendingFolderNameForTest(), L"New folder (2)");
+  FE_ASSERT_TRUE(diskPathExists(fast_explorer::core::joinPath(tmp.path(),
+                                                          L"New folder (2)")));
+}
+
+FE_TEST_CASE(LabelEditController_BeginCreateSubfolder_FilteredStoreStillAvoidsHiddenCollision) {
+  TempDir tmp(L"labeledit-create-filter-collide");
+  FE_ASSERT_TRUE(CreateDirectoryW(tmp.path().c_str(), nullptr) != 0);
+  const std::wstring existing =
+      fast_explorer::core::joinPath(tmp.path(), L"New folder");
+  FE_ASSERT_TRUE(CreateDirectoryW(existing.c_str(), nullptr) != 0);
+  writeEmptyDiskFile(fast_explorer::core::joinPath(tmp.path(), L"target.txt"));
+
+  PaneController pane(nullptr);
+  FE_ASSERT_TRUE(pane.openFolder(tmp.path()));
+  pane.joinForTest();
+  pane.setFilter(FilterPattern(L"target", FilterMode::Plain));
+  FE_ASSERT_EQ(pane.store().displayedCount(), static_cast<std::size_t>(1));
+
+  LabelEditController ctl(nullptr, pane);
+  ctl.beginCreateSubfolder();
+  pane.shellWorkerForTest().waitForProcessedForTest(1);
+
   FE_ASSERT_WSTREQ(ctl.pendingFolderNameForTest(), L"New folder (2)");
   FE_ASSERT_TRUE(diskPathExists(fast_explorer::core::joinPath(tmp.path(),
                                                           L"New folder (2)")));

@@ -25,6 +25,7 @@ void FileModelStore::reset(std::wstring newRoot) {
   // A reset implies a new folder; any prior filter subset is no
   // longer meaningful (its raw indices belonged to the old store).
   displaySubset_.clear();
+  displaySubsetActive_ = false;
   ++generation_;
 }
 
@@ -73,20 +74,43 @@ const FileEntry& FileModelStore::entryAt(std::size_t index) const noexcept {
   return entries_[index];
 }
 
-const FileEntry& FileModelStore::visibleAt(std::size_t visibleIndex) const noexcept {
-  // When a filter subset is active, the index addresses the subset's
-  // row, and the raw entry is looked up through the subset; otherwise
-  // the sorted permutation in visibleOrder_ drives the lookup.
-  if (!displaySubset_.empty()) {
+const FileEntry& FileModelStore::visibleAt(
+    std::size_t visibleIndex) const noexcept {
+  [[maybe_unused]] const std::uint32_t readable =
+      workerSize_.load(std::memory_order_acquire);
+  if (displaySubsetActive_) {
     assert(visibleIndex < displaySubset_.size());
     const std::uint32_t raw = displaySubset_[visibleIndex];
-    assert(raw < workerSize_.load(std::memory_order_acquire));
+    assert(raw < readable);
     return entries_[raw];
   }
-  assert(visibleIndex < workerSize_.load(std::memory_order_acquire));
+  assert(visibleIndex < visibleOrder_.size());
   const std::uint32_t raw = visibleOrder_[visibleIndex];
-  assert(raw < workerSize_.load(std::memory_order_acquire));
+  assert(raw < readable);
   return entries_[raw];
+}
+
+std::optional<std::uint32_t> FileModelStore::rawIndexForVisibleRow(
+    std::size_t visibleIndex) const noexcept {
+  const std::uint32_t published = publishedCount();
+  if (displaySubsetActive_) {
+    if (visibleIndex >= displaySubset_.size()) {
+      return std::nullopt;
+    }
+    const std::uint32_t raw = displaySubset_[visibleIndex];
+    if (raw >= published) {
+      return std::nullopt;
+    }
+    return raw;
+  }
+  if (visibleIndex >= published) {
+    return std::nullopt;
+  }
+  const std::uint32_t raw = visibleOrder_[visibleIndex];
+  if (raw >= published) {
+    return std::nullopt;
+  }
+  return raw;
 }
 
 void FileModelStore::sort(SortSpec spec) {
@@ -122,11 +146,19 @@ void FileModelStore::setDisplaySubset(
   // so every value is already a valid entry index. Move-assign so
   // the swap cost stays O(1).
   displaySubset_ = std::move(subset);
+  displaySubsetActive_ = true;
+}
+
+void FileModelStore::appendDisplaySubset(
+    std::vector<std::uint32_t> subset) {
+  displaySubsetActive_ = true;
+  displaySubset_.reserve(displaySubset_.size() + subset.size());
+  displaySubset_.insert(displaySubset_.end(), subset.begin(), subset.end());
 }
 
 void FileModelStore::clearDisplaySubset() noexcept {
   displaySubset_.clear();
-  displaySubset_.shrink_to_fit();
+  displaySubsetActive_ = false;
 }
 
 }  // namespace fast_explorer::core

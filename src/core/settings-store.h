@@ -23,6 +23,7 @@ constexpr std::size_t kMaxPanes = 4;
 
 struct TabRecordV6 {
   std::wstring path;
+  std::wstring location;
 };
 
 struct PaneSessionV6 {

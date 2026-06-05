@@ -1,66 +1,84 @@
 # Fast Explorer
 
-A keyboard-driven dual-pane file explorer for Windows.
+Fast Explorer is a native Windows file explorer focused on responsive
+large-folder navigation. It supports tabs, multi-pane layouts, filtering,
+grouping, shell file operations, session restore, dark/light theme toggle,
+and high-volume enumeration benchmarks.
 
 ## Download
 
-Get the latest release from the [Releases page](https://github.com/solitasroh/fast-explorer/releases).
+Get the latest release from the
+[Releases page](https://github.com/solitasroh/fast-explorer/releases).
 
 1. Download `FastExplorer-<version>-win64.zip`.
-2. Extract the archive anywhere (the app is portable — no installer).
+2. Extract the archive anywhere.
 3. Run `FastExplorer.exe`.
 
 **System requirements**: Windows 10 or Windows 11, x64.
 
-> The first time you launch the app, Windows SmartScreen may warn because the
-> binary is not (yet) signed with an EV certificate. Click **More info →
-> Run anyway**. Auto-update payloads are verified independently via Ed25519
-> signatures, so even without OS-level signing, tampered updates are rejected.
+## Highlights
 
-## Auto-update
+- Owner-data list view for large folders, with background enumeration.
+- Stable selection across sorting, filtering, refresh, and tab switches.
+- Tabs per pane and up to four-pane layouts.
+- Filter popup via `Ctrl+F`; ESC or explicit clear removes the filter.
+- Grouping by name, modified date, or type.
+- Shell-backed delete, rename, create folder, copy, cut, paste, context menu,
+  and drag/drop for normal filesystem locations.
+- `shell:ThisPC`, `shell:Network`, `shell:NetHood`, generic `shell:*` /
+  `::{CLSID}` Shell namespace locations, UNC shares, mapped drives, and
+  Network Shortcuts support where Windows exposes resolvable targets.
+- Session restore for paths, shell locations, tabs, panes, layout, ratios,
+  view toggles, theme mode, and window placement.
+- WinSparkle auto-update with Ed25519 update signature verification.
 
-Fast Explorer checks for updates once per day on startup, using
-[WinSparkle](https://winsparkle.org/). When a new release is published,
-the app shows a small dialog letting you install it immediately or skip
-the version. Update payloads are signed with an Ed25519 keypair held by
-the project maintainer; signatures are verified inside the app before the
-update is applied.
+See [docs/usage-guide.md](docs/usage-guide.md) for shortcuts, shell/network
+behavior, benchmark commands, and troubleshooting.
 
-Auto-update can be disabled per-user — uncheck the option in the
-"Check for Updates" prompt, or delete the registry value at
-`HKCU\Software\Fast Explorer Project\Fast Explorer\WinSparkle\CheckForUpdates`.
+## Building From Source
 
-## Building from source
+Requirements:
 
-Requirements: Visual Studio 2022 or newer (with the **Desktop development
-with C++** workload), CMake ≥ 3.24, Ninja.
+- Visual Studio 2022 or newer with **Desktop development with C++**.
+- Windows 10/11 SDK.
+- CMake 3.24 or newer.
+- Ninja, or another CMake-supported MSVC generator.
 
-```pwsh
-cmake --preset msvc-x64-release
-cmake --build --preset release
-```
-
-The Release exe lands in `build/FastExplorer.exe` together with
-`WinSparkle.dll` (auto-staged by CMake).
-
-Run the unit tests with:
+Open a Visual Studio developer environment before configuring/building. Common
+paths are:
 
 ```pwsh
-cd build
-ctest --output-on-failure
+cmd /c '"C:\Program Files\Microsoft Visual Studio\18\Professional\Common7\Tools\VsDevCmd.bat" -arch=x64 -host_arch=x64 -no_logo && cmake -B build -S . && cmake --build build'
 ```
 
-## Release process
+If your install is Community or BuildTools, replace `Professional` in the path.
+When a specific SDK is needed locally, add for example
+`-winsdk=10.0.22621.0` to the `VsDevCmd.bat` call.
 
-See [docs/RELEASING.md](docs/RELEASING.md) for the full workflow.
+## Tests And Benchmarks
 
-Short version:
+```pwsh
+cmd /c '"C:\Program Files\Microsoft Visual Studio\18\Professional\Common7\Tools\VsDevCmd.bat" -arch=x64 -host_arch=x64 -no_logo && cmake --build build'
+ctest --test-dir build --output-on-failure
+build\core-tests.exe
+build\winui_lite_tests.exe
+```
 
-1. Bump `project(FastExplorer VERSION x.y.z)` in [CMakeLists.txt](CMakeLists.txt).
-2. Commit, then tag: `git tag vX.Y.Z && git push --tags`.
-3. The [Release workflow](.github/workflows/release.yml) builds the ZIP,
-   signs it, updates `appcast/appcast.xml`, attaches the ZIP to a new
-   GitHub Release, and publishes the appcast to the `gh-pages` branch.
+Benchmark smoke:
+
+```pwsh
+build\FastExplorerBench.exe generate --preset medium --out %TEMP%\fe-medium
+build\FastExplorerBench.exe enumerate --path %TEMP%\fe-medium --runs 5
+build\FastExplorerBench.exe head-to-head --path %TEMP%\fe-medium --runs 5
+```
+
+Use `large-flat` for the 100k-file performance gate.
+
+## Release Process
+
+See [docs/RELEASING.md](docs/RELEASING.md). Do not create tags, releases, or
+packages from routine development work unless that release is explicitly
+requested.
 
 ## License
 

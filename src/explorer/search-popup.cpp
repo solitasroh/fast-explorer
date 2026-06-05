@@ -248,7 +248,9 @@ void SearchPopup::postDismissToOwner() {
 // Mirrors AddressBarPopup pattern: thread_local hook owner so two
 // concurrent popups (impossible here but cheap to future-proof)
 // cannot cross-fire. The hook only filters left-button-down
-// outside the popup rect and forwards everything else.
+// outside the popup rect and forwards everything else. Outside clicks
+// hide the popup but intentionally keep the active filter; ESC and
+// explicit clear are the only filter-dismiss paths.
 
 namespace {
 thread_local SearchPopup* tHookOwner = nullptr;
@@ -274,7 +276,6 @@ LRESULT CALLBACK SearchPopup::mouseHookProc(int code, WPARAM wParam,
   if (code >= 0 && wParam == WM_LBUTTONDOWN && tHookOwner) {
     const auto* m = reinterpret_cast<const MOUSEHOOKSTRUCT*>(lParam);
     if (m && !tHookOwner->containsScreenPoint(m->pt)) {
-      tHookOwner->postDismissToOwner();
       tHookOwner->hide();
     }
   }

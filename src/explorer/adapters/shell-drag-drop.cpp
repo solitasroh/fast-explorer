@@ -5,6 +5,7 @@
 
 #include "core/file-entry.h"
 #include "core/file-model-store.h"
+#include "core/location.h"
 #include "winui_lite/chrome/com-raii.h"
 #include "explorer/drop-source.h"
 #include "explorer/pane-controller.h"
@@ -20,11 +21,10 @@ std::vector<std::wstring> resolveLeaves(
   std::vector<std::wstring> out;
   out.reserve(ids.size());
   const auto& store = pane.store();
-  const auto bound = store.publishedCount();
   for (ports::ItemId id : ids) {
     if (id == ports::kInvalidItemId) continue;
     const std::size_t row = static_cast<std::size_t>(id - 1);
-    if (row >= bound) continue;
+    if (!store.rawIndexForVisibleRow(row).has_value()) continue;
     const auto& entry = store.visibleAt(row);
     if (entry.namePtr == nullptr || entry.nameLength == 0) continue;
     out.emplace_back(entry.namePtr, entry.nameLength);
@@ -44,6 +44,7 @@ bool ShellDragDrop::beginDrag(const std::vector<ports::ItemId>& ids) {
   if (listView_ == nullptr) return false;
   const std::wstring& folderPath = c->currentPath();
   if (folderPath.empty()) return false;
+  if (fast_explorer::core::isShellLocation(folderPath)) return false;
   const auto leaves = resolveLeaves(*c, ids);
   if (leaves.empty()) return false;
 

@@ -627,6 +627,26 @@ FE_TEST_CASE(SettingsStore_V6_RoundTripPreservesTabs) {
   FE_ASSERT_EQ(loaded.panes[1].tabs.size(), static_cast<std::size_t>(1));
 }
 
+FE_TEST_CASE(SettingsStore_V7_RoundTripPreservesTabLocations) {
+  TempDir tmp(L"settings-v7-location-rt");
+  const std::wstring path = makeSettingsPath(tmp);
+  SessionState written;
+  written.panes[0].tabs.push_back({L"shell:ThisPC", L"shell:ThisPC"});
+  written.panes[0].tabs.push_back({L"\\\\server", L"\\\\server"});
+  written.panes[0].activeTab = 1;
+  written.paneCount = 1;
+  written.preset = LayoutPreset::Single;
+
+  FE_ASSERT_TRUE(saveSessionState(path, written));
+
+  SessionState loaded;
+  FE_ASSERT_TRUE(loadSessionState(path, loaded));
+  FE_ASSERT_EQ(loaded.panes[0].tabs.size(), static_cast<std::size_t>(2));
+  FE_ASSERT_WSTREQ(loaded.panes[0].tabs[0].location, L"shell:ThisPC");
+  FE_ASSERT_WSTREQ(loaded.panes[0].tabs[1].location, L"\\\\server");
+  FE_ASSERT_WSTREQ(loaded.panes[0].tabs[0].path, L"shell:ThisPC");
+}
+
 FE_TEST_CASE(SettingsStore_V6_EmptyTabsArrayBecomesHomePlaceholder) {
   TempDir tmp(L"settings-v6-empty-tabs");
   const std::wstring path = makeSettingsPath(tmp);

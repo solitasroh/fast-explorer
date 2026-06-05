@@ -85,16 +85,15 @@ void SelectionSync::syncFromListView() {
   // 100k rows this is ~ms. Acceptable; the per-row delta version
   // was correct in theory but unreliable in practice.
   const auto& store = pane_.store();
-  const std::span<const std::uint32_t> order = store.visibleOrder();
-  const std::size_t published = store.publishedCount();
   try {
     pane_.clearSelection();
     int row = -1;
     while ((row = ListView_GetNextItem(listView_, row, LVNI_SELECTED)) !=
            -1) {
       const std::size_t r = static_cast<std::size_t>(row);
-      if (r >= published || r >= order.size()) break;
-      pane_.selectRaw(order[r]);
+      const auto raw = store.rawIndexForVisibleRow(r);
+      if (!raw.has_value()) continue;
+      pane_.selectRaw(*raw);
     }
   } catch (const std::bad_alloc&) {
     // Same recovery as the prior delta version — reapplyFromPane()

@@ -4,6 +4,7 @@
 #include <cstdio>
 #include <cstring>
 #include <cwchar>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -386,6 +387,47 @@ FE_TEST_CASE(file_model_store_visibleOrder_size_invariant_after_batch) {
   FileModelStore store(L"X:\\d");
   store.appendBatch(batch);
   FE_ASSERT_EQ(store.visibleOrder().size(), store.itemCount());
+}
+
+FE_TEST_CASE(file_model_store_empty_display_subset_stays_active) {
+  NameArena backing;
+  FileModelStore store(L"X:\\d");
+  store.appendEntry(makeEntry(L"alpha.txt", backing));
+  store.appendEntry(makeEntry(L"bravo.txt", backing));
+  store.appendEntry(makeEntry(L"charlie.txt", backing));
+  store.publish(static_cast<std::uint32_t>(store.itemCount()));
+
+  store.setDisplaySubset({});
+
+  FE_ASSERT_TRUE(store.hasDisplaySubset());
+  FE_ASSERT_EQ(store.displayedCount(), static_cast<std::size_t>(0));
+
+  store.clearDisplaySubset();
+  FE_ASSERT_FALSE(store.hasDisplaySubset());
+  FE_ASSERT_EQ(store.displayedCount(), static_cast<std::size_t>(3));
+}
+
+FE_TEST_CASE(file_model_store_visible_row_to_raw_index_honors_subset) {
+  NameArena backing;
+  FileModelStore store(L"X:\\d");
+  store.appendEntry(makeEntry(L"alpha.txt", backing));
+  store.appendEntry(makeEntry(L"bravo.txt", backing));
+  store.appendEntry(makeEntry(L"charlie.txt", backing));
+  store.publish(static_cast<std::uint32_t>(store.itemCount()));
+
+  store.setDisplaySubset({2u, 0u});
+
+  const auto first = store.rawIndexForVisibleRow(0);
+  const auto second = store.rawIndexForVisibleRow(1);
+  const auto hidden = store.rawIndexForVisibleRow(2);
+  FE_ASSERT_TRUE(first.has_value());
+  FE_ASSERT_TRUE(second.has_value());
+  FE_ASSERT_FALSE(hidden.has_value());
+  FE_ASSERT_EQ(*first, 2u);
+  FE_ASSERT_EQ(*second, 0u);
+  FE_ASSERT_WSTREQ(std::wstring(store.visibleAt(0).namePtr,
+                                store.visibleAt(0).nameLength),
+                   L"charlie.txt");
 }
 
 // ---------------------------------------------------------------------------

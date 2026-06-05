@@ -2,6 +2,7 @@
 
 #include <windows.h>
 
+#include <algorithm>
 #include <atomic>
 #include <cstdint>
 #include <string>
@@ -13,6 +14,7 @@
 #include "core/file-model-store.h"
 #include "core/file-sort.h"
 #include "core/fs-watcher.h"
+#include "core/location.h"
 #include "core/win32-fs-backend.h"
 #include "explorer/filter-pattern.h"
 #include "explorer/pane-sort-coordinator.h"
@@ -61,6 +63,17 @@ class PaneController {
   // false on out-of-range row or when the shell call fails; folder
   // activation propagates openFolder's return value.
   bool openItem(std::uint32_t row);
+
+  // Maps a visible row to the concrete filesystem or shell-location
+  // target used for activation. For normal folders this is
+  // currentPath + leaf; for synthetic Shell roots (This PC, Network)
+  // it is the row's backing drive/UNC/link target.
+  bool sourcePathForVisibleRow(std::uint32_t row, std::wstring& out) const;
+
+  // Maps a visible synthetic Shell row to the path or Shell location whose
+  // icon should be shown in the list view. Returns false for normal
+  // filesystem rows, which continue to use extension/folder placeholders.
+  bool iconLocationForVisibleRow(std::uint32_t row, std::wstring& out) const;
 
   // Queue a recycle-bin delete for the file/folder at the given
   // visible row. Returns false on out-of-range row (no command
@@ -171,11 +184,28 @@ class PaneController {
       return;
     }
     const auto& view = store_.visibleOrder();
-    const std::size_t bound = store_.publishedCount();
+    const std::size_t bound =
+        std::min<std::size_t>(store_.publishedCount(), view.size());
+    const bool canRefineExistingSubset =
+        store_.hasDisplaySubset() &&
+        filterAppliedThrough_ == bound &&
+        currentFilter_.mode() == FilterMode::Plain &&
+        pattern.mode() == FilterMode::Plain &&
+        !currentFilter_.query().empty() &&
+        pattern.query().starts_with(currentFilter_.query());
     std::vector<std::uint32_t> subset;
-    subset.reserve(bound);
-    for (std::size_t i = 0; i < bound; ++i) {
-      const std::uint32_t raw = view[i];
+    const std::size_t scanCount =
+        canRefineExistingSubset ? store_.displayedCount() : bound;
+    subset.reserve(scanCount);
+    for (std::size_t i = 0; i < scanCount; ++i) {
+      const auto mappedRaw =
+          canRefineExistingSubset
+              ? store_.rawIndexForVisibleRow(i)
+              : std::optional<std::uint32_t>(view[i]);
+      if (!mappedRaw.has_value()) {
+        continue;
+      }
+      const std::uint32_t raw = *mappedRaw;
       const auto& e = store_.entryAt(raw);
       if (pattern.matches(fast_explorer::core::nameView(e))) {
         subset.push_back(raw);
@@ -183,11 +213,37 @@ class PaneController {
     }
     store_.setDisplaySubset(std::move(subset));
     currentFilter_ = pattern;
+    filterAppliedThrough_ = bound;
+  }
+
+  void extendActiveFilterToPublished() {
+    if (currentFilter_.isEmpty()) {
+      return;
+    }
+    const auto& view = store_.visibleOrder();
+    const std::size_t bound =
+        std::min<std::size_t>(store_.publishedCount(), view.size());
+    if (filterAppliedThrough_ > bound) {
+      filterAppliedThrough_ = 0;
+      store_.setDisplaySubset({});
+    }
+    std::vector<std::uint32_t> appended;
+    appended.reserve(bound - filterAppliedThrough_);
+    for (std::size_t i = filterAppliedThrough_; i < bound; ++i) {
+      const std::uint32_t raw = view[i];
+      const auto& e = store_.entryAt(raw);
+      if (currentFilter_.matches(fast_explorer::core::nameView(e))) {
+        appended.push_back(raw);
+      }
+    }
+    store_.appendDisplaySubset(std::move(appended));
+    filterAppliedThrough_ = bound;
   }
 
   void clearFilter() noexcept {
     store_.clearDisplaySubset();
     currentFilter_ = FilterPattern{};
+    filterAppliedThrough_ = 0;
   }
 
   [[nodiscard]] bool hasActiveFilter() const noexcept {
@@ -200,6 +256,21 @@ class PaneController {
 
   SelectionSummary selectionSummary() const noexcept {
     SelectionSummary out;
+    if (store_.hasDisplaySubset()) {
+      const std::size_t count = store_.displayedCount();
+      for (std::size_t row = 0; row < count; ++row) {
+        const auto raw = store_.rawIndexForVisibleRow(row);
+        if (!raw.has_value() || !selectedRaws_.contains(*raw)) {
+          continue;
+        }
+        ++out.selectedCount;
+        const auto& e = store_.entryAt(*raw);
+        if (!fast_explorer::core::isDirectory(e)) {
+          out.selectedBytes += e.size;
+        }
+      }
+      return out;
+    }
     out.selectedCount = selectedRaws_.size();
     const std::size_t bound = store_.publishedCount();
     for (std::uint32_t raw : selectedRaws_) {
@@ -250,6 +321,7 @@ class PaneController {
 
   uint32_t generation() const noexcept;
   const std::wstring& currentPath() const noexcept { return currentPath_; }
+  std::wstring currentLocation() const;
   const fast_explorer::core::FileModelStore& store() const noexcept {
     return store_;
   }
@@ -257,10 +329,28 @@ class PaneController {
   std::size_t paneIndex() const noexcept { return paneIndex_; }
 
  private:
-  bool navigateInternal(const std::wstring& path);
+  enum class FilterResetPolicy {
+    Clear,
+    Preserve,
+  };
 
-  // Validates `row` against publishedCount() and writes the
-  // absolute path of the visible entry at that row to `out`.
+  bool navigateInternal(const std::wstring& path,
+                        FilterResetPolicy filterPolicy);
+  bool navigateShellLocation(const fast_explorer::core::Location& location,
+                             FilterResetPolicy filterPolicy);
+  bool navigateShellNamespace(const fast_explorer::core::Location& location,
+                              FilterResetPolicy filterPolicy);
+  bool appendSyntheticEntry(std::wstring_view name,
+                            std::wstring targetPath,
+                            bool isDirectory = true,
+                            std::uint32_t attributes =
+                                FILE_ATTRIBUTE_DIRECTORY,
+                            std::wstring iconLocation = {});
+  void populateThisPc();
+  void populateNetworkShortcuts(bool includeMappedDrives);
+
+  // Validates `row` in the currently displayed list-view space and
+  // writes the absolute path of that visible entry to `out`.
   // Returns false on out-of-range row (out is left untouched).
   // Shared by openItem / deleteItem / renameItem to keep the
   // row-to-source-path lookup in one place.
@@ -284,7 +374,10 @@ class PaneController {
   // enumerationActive flag to refuse sorts that would race append.
   std::atomic<bool> workerActive_{false};
   std::unordered_set<std::uint32_t> selectedRaws_;
+  std::vector<std::wstring> syntheticTargets_;
+  std::vector<std::wstring> syntheticIconLocations_;
   FilterPattern currentFilter_;
+  std::size_t filterAppliedThrough_ = 0;
   PaneSortCoordinator sortCoord_;
   ShellWorker shellWorker_;
   fast_explorer::core::GroupKey groupBy_ =

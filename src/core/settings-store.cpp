@@ -63,8 +63,9 @@ constexpr std::string_view kKeyPanes         {"panes"};
 constexpr std::string_view kKeyTabs          {"tabs"};
 constexpr std::string_view kKeyActiveTab     {"active_tab"};
 constexpr std::string_view kKeyPath          {"path"};
+constexpr std::string_view kKeyLocation      {"location"};
 
-constexpr int kSchemaVersionCurrent = 6;
+constexpr int kSchemaVersionCurrent = 7;
 
 constexpr std::string_view presetLabel(LayoutPreset p) noexcept {
   switch (p) {
@@ -198,6 +199,11 @@ void appendKeyPanes(std::string& out,
       if (t > 0) out.append(", ");
       out.append("{\"path\": ");
       appendJsonEscapedString(out, p.tabs[t].path);
+      out.append(", \"location\": ");
+      const std::wstring_view loc =
+          p.tabs[t].location.empty() ? p.tabs[t].path
+                                     : p.tabs[t].location;
+      appendJsonEscapedString(out, loc);
       out.push_back('}');
     }
     out.append("], \"active_tab\": ");
@@ -423,6 +429,10 @@ class JsonReader {
                       std::string raw;
                       if (!parseStringInto(raw)) return false;
                       t.path = widenUtf8(raw);
+                    } else if (k2 == kKeyLocation) {
+                      std::string raw;
+                      if (!parseStringInto(raw)) return false;
+                      t.location = widenUtf8(raw);
                     } else {
                       if (!skipValue()) return false;
                     }
@@ -723,7 +733,7 @@ bool loadSessionState(const std::wstring& path, SessionState& state) {
   if (state.schemaVersionLoaded < 6) {
     for (std::size_t i = 0; i < state.paneCount && i < kMaxPanes; ++i) {
       if (!state.legacyPanePaths[i].empty() && state.panes[i].tabs.empty()) {
-        TabRecordV6 t{ state.legacyPanePaths[i] };
+        TabRecordV6 t{ state.legacyPanePaths[i], state.legacyPanePaths[i] };
         state.panes[i].tabs.push_back(std::move(t));
         state.panes[i].activeTab = 0;
       }
@@ -740,6 +750,14 @@ bool loadSessionState(const std::wstring& path, SessionState& state) {
       p.activeTab = 0;
     } else if (p.activeTab >= p.tabs.size()) {
       p.activeTab = p.tabs.size() - 1;
+    }
+    for (auto& t : p.tabs) {
+      if (t.location.empty()) {
+        t.location = t.path;
+      }
+      if (t.path.empty() && !t.location.empty()) {
+        t.path = t.location;
+      }
     }
   }
 

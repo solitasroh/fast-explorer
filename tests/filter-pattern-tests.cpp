@@ -38,6 +38,13 @@ FE_TEST_CASE(FilterPattern_Plain_KoreanSubstring_Matches) {
   FE_ASSERT_FALSE(p.matches(L"요약.pdf"));
 }
 
+FE_TEST_CASE(FilterPattern_Plain_LongName_MatchesWithoutRegexCap) {
+  std::wstring longName(5000, L'a');
+  longName.append(L"-needle.txt");
+  FilterPattern p(L"NEEDLE", FilterMode::Plain);
+  FE_ASSERT_TRUE(p.matches(longName));
+}
+
 // --- Wildcard mode ------------------------------------------------
 
 FE_TEST_CASE(FilterPattern_Wildcard_StarExtension) {

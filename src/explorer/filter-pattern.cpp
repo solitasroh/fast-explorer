@@ -80,6 +80,33 @@ bool wildcardMatch(std::wstring_view pat, std::wstring_view name) noexcept {
   return pi == pat.size();
 }
 
+bool plainContainsFolded(std::wstring_view name,
+                         std::wstring_view loweredNeedle) noexcept {
+  if (loweredNeedle.empty()) {
+    return true;
+  }
+  if (loweredNeedle.size() > name.size()) {
+    return false;
+  }
+  const wchar_t first = loweredNeedle.front();
+  const std::size_t limit = name.size() - loweredNeedle.size();
+  for (std::size_t i = 0; i <= limit; ++i) {
+    if (foldChar(name[i]) != first) {
+      continue;
+    }
+    std::size_t j = 1;
+    for (; j < loweredNeedle.size(); ++j) {
+      if (foldChar(name[i + j]) != loweredNeedle[j]) {
+        break;
+      }
+    }
+    if (j == loweredNeedle.size()) {
+      return true;
+    }
+  }
+  return false;
+}
+
 // Translate ECMAScript regex syntax errors during construction
 // into an empty optional — avoids throwing across the caller's
 // message pump. The icase flag is intentionally omitted because
@@ -113,6 +140,9 @@ FilterPattern::FilterPattern(std::wstring_view query, FilterMode mode)
 bool FilterPattern::matches(std::wstring_view name) const noexcept {
   if (query_.empty()) return true;
   if (!valid_) return false;
+  if (mode_ == FilterMode::Plain) {
+    return plainContainsFolded(name, query_);
+  }
   // Regex ReDoS guard: a hostile user pattern (e.g. (a+)+$) against
   // a very long name can hang the engine. Short-circuit anything
   // beyond the documented cap so the UI thread stays responsive.
@@ -127,7 +157,7 @@ bool FilterPattern::matches(std::wstring_view name) const noexcept {
   if (oom) return false;
   switch (mode_) {
     case FilterMode::Plain:
-      return loweredName.find(query_) != std::wstring_view::npos;
+      return plainContainsFolded(name, query_);
     case FilterMode::Wildcard:
       return wildcardMatch(query_, loweredName);
     case FilterMode::Regex:

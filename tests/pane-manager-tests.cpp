@@ -1,5 +1,6 @@
 #include <windows.h>
 
+#include "bench-fs-helper.h"
 #include "test-harness.h"
 #include "explorer/pane-controller.h"
 #include "winui_lite/chrome/pane-manager.h"
@@ -32,11 +33,13 @@ FE_TEST_CASE(PaneManager_ActiveReturnsThePane) {
 }
 
 FE_TEST_CASE(PaneManager_ActivePaneReceivesOpenFolder) {
+  fast_explorer::tests::TempDir tmp(L"pane-manager-active");
+  FE_ASSERT_TRUE(CreateDirectoryW(tmp.path().c_str(), nullptr) != 0);
   PaneManager pm;
   pm.openInitial(nullptr);
-  FE_ASSERT_TRUE(pm.active().openFolder(L"C:\\tmp"));
-  FE_ASSERT_WSTREQ(pm.active().currentPath(), L"C:\\tmp");
-  FE_ASSERT_WSTREQ(pm.at(0).currentPath(), L"C:\\tmp");
+  FE_ASSERT_TRUE(pm.active().openFolder(tmp.path()));
+  FE_ASSERT_WSTREQ(pm.active().currentPath(), tmp.path());
+  FE_ASSERT_WSTREQ(pm.at(0).currentPath(), tmp.path());
 }
 
 FE_TEST_CASE(PaneManager_OpenPane_AssignsIndexOneAndDualMode) {

@@ -19,9 +19,7 @@ std::wstring ShellItemDispatcher::textFor(ports::ItemId id,
   if (id == ports::kInvalidItemId) return {};
   const std::size_t visibleIndex = static_cast<std::size_t>(id - 1);
   const auto& store = c->store();
-  // publishedCount() is the UI-safe bound while a worker may be
-  // appending; visibleAt past that index would read mid-write data.
-  if (visibleIndex >= store.publishedCount()) return {};
+  if (!store.rawIndexForVisibleRow(visibleIndex).has_value()) return {};
   const auto& entry = store.visibleAt(visibleIndex);
   switch (field) {
     case ports::ItemField::Name:

@@ -4,6 +4,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <optional>
 #include <span>
 #include <string>
 #include <string_view>
@@ -145,14 +146,16 @@ class FileModelStore {
   // values in `subset` must already be raw entry indices (the order
   // they appear in visibleOrder_ for the current sort). The UI uses
   // displayedCount() to drive ListView_SetItemCountEx, and visibleAt()
-  // now consults the subset when one is present. Pass an empty vector
-  // (or call clearDisplaySubset) to expose the full visibleOrder.
+  // now consults the subset when it is active. An empty vector is a
+  // valid active subset (0 filter matches); call clearDisplaySubset()
+  // to expose the full visibleOrder again.
   void setDisplaySubset(std::vector<std::uint32_t> subset) noexcept;
+  void appendDisplaySubset(std::vector<std::uint32_t> subset);
   void clearDisplaySubset() noexcept;
 
   // True when a display subset is active (filter applied).
   [[nodiscard]] bool hasDisplaySubset() const noexcept {
-    return !displaySubset_.empty();
+    return displaySubsetActive_;
   }
 
   // Number of rows currently exposed to the UI. With no subset this
@@ -160,6 +163,12 @@ class FileModelStore {
   [[nodiscard]] std::size_t displayedCount() const noexcept {
     return hasDisplaySubset() ? displaySubset_.size() : publishedCount();
   }
+
+  // Maps a row in the currently displayed list-view space to the raw
+  // entries_ index. Returns nullopt when the row is outside the
+  // displayed range or the mapped raw entry is not published yet.
+  [[nodiscard]] std::optional<std::uint32_t> rawIndexForVisibleRow(
+      std::size_t visibleIndex) const noexcept;
 
   std::size_t entriesBytes() const noexcept {
     return static_cast<std::size_t>(kMaxEntries) * sizeof(FileEntry);
@@ -183,6 +192,7 @@ class FileModelStore {
   // Optional filter subset: empty when no filter is active; otherwise
   // holds the raw indices to expose to the UI (in visibleOrder).
   std::vector<std::uint32_t> displaySubset_;
+  bool displaySubsetActive_ = false;
   // workerSize_ is single-writer (the enumeration worker, via
   // appendEntry on its own thread). All readers — including UI-thread
   // accessors — see writes through the acquire/release pair below.

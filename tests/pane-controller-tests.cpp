@@ -1,11 +1,15 @@
 #include <unordered_set>
 
+#include <objbase.h>
+#include <shobjidl.h>
+
 #include "bench-fs-helper.h"
 #include "bench/dataset-generator.h"
 #include "core/file-grouping.h"
 #include "core/file-sort.h"
 #include "core/path-utils.h"
 #include "test-harness.h"
+#include "explorer/filter-pattern.h"
 #include "explorer/pane-controller.h"
 
 using fast_explorer::bench::generateDataset;
@@ -15,10 +19,72 @@ using fast_explorer::core::GroupKey;
 using fast_explorer::core::SortDirection;
 using fast_explorer::core::SortKey;
 using fast_explorer::tests::TempDir;
+using fast_explorer::ui::FilterMode;
+using fast_explorer::ui::FilterPattern;
 using fast_explorer::ui::PaneController;
 using fast_explorer::ui::SortDispatch;
 
 constexpr uint64_t kSmallPresetExpectedItems = 200;
+
+namespace {
+
+void createExistingDirectory(const std::wstring& path) {
+  FE_ASSERT_TRUE(CreateDirectoryW(path.c_str(), nullptr) != 0);
+}
+
+std::wstring parentPathOf(const std::wstring& path) {
+  const std::size_t pos = path.find_last_of(L"\\/");
+  FE_ASSERT_TRUE(pos != std::wstring::npos);
+  if (pos == 2 && path.size() >= 3 && path[1] == L':') {
+    return path.substr(0, 3);
+  }
+  return path.substr(0, pos);
+}
+
+std::wstring extendedPathOf(const std::wstring& path) {
+  return std::wstring(L"\\\\?\\") + path;
+}
+
+bool createShellLinkFile(const std::wstring& linkPath,
+                         const std::wstring& targetPath) {
+  const HRESULT init = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
+  const bool uninit = SUCCEEDED(init);
+  if (FAILED(init) && init != RPC_E_CHANGED_MODE) {
+    return false;
+  }
+
+  IShellLinkW* link = nullptr;
+  HRESULT hr = CoCreateInstance(CLSID_ShellLink, nullptr,
+                                CLSCTX_INPROC_SERVER,
+                                IID_PPV_ARGS(&link));
+  if (SUCCEEDED(hr) && link != nullptr) {
+    hr = link->SetPath(targetPath.c_str());
+    if (SUCCEEDED(hr)) {
+      hr = link->SetDescription(targetPath.c_str());
+    }
+  }
+
+  IPersistFile* persist = nullptr;
+  if (SUCCEEDED(hr) && link != nullptr) {
+    hr = link->QueryInterface(IID_PPV_ARGS(&persist));
+  }
+  if (SUCCEEDED(hr) && persist != nullptr) {
+    hr = persist->Save(linkPath.c_str(), TRUE);
+  }
+
+  if (persist != nullptr) {
+    persist->Release();
+  }
+  if (link != nullptr) {
+    link->Release();
+  }
+  if (uninit) {
+    CoUninitialize();
+  }
+  return SUCCEEDED(hr);
+}
+
+}  // namespace
 
 FE_TEST_CASE(PaneController_Default_HasZeroGenerationAndEmptyPath) {
   PaneController pc(nullptr);
@@ -28,16 +94,20 @@ FE_TEST_CASE(PaneController_Default_HasZeroGenerationAndEmptyPath) {
 }
 
 FE_TEST_CASE(PaneController_OpenFolder_ValidPath_AcceptsAndBumpsGeneration) {
+  TempDir tmp(L"pane-open-valid");
+  createExistingDirectory(tmp.path());
   PaneController pc(nullptr);
   const uint32_t before = pc.generation();
-  FE_ASSERT_TRUE(pc.openFolder(L"C:\\tmp"));
-  FE_ASSERT_WSTREQ(pc.currentPath(), L"C:\\tmp");
+  FE_ASSERT_TRUE(pc.openFolder(tmp.path()));
+  FE_ASSERT_WSTREQ(pc.currentPath(), tmp.path());
   FE_ASSERT_TRUE(pc.generation() != before);
 }
 
 FE_TEST_CASE(PaneController_OpenFolder_EmptyPath_Rejected) {
+  TempDir tmp(L"pane-open-empty-initial");
+  createExistingDirectory(tmp.path());
   PaneController pc(nullptr);
-  FE_ASSERT_TRUE(pc.openFolder(L"C:\\initial"));
+  FE_ASSERT_TRUE(pc.openFolder(tmp.path()));
   const uint32_t before = pc.generation();
   const std::wstring beforePath = pc.currentPath();
   FE_ASSERT_FALSE(pc.openFolder(L""));
@@ -52,22 +122,137 @@ FE_TEST_CASE(PaneController_OpenFolder_RelativePath_Rejected) {
 }
 
 FE_TEST_CASE(PaneController_OpenFolder_UncPath_Accepted) {
-  // UNC paths are valid; openFolder converts to \\?\UNC\... internally
-  // and stores the display form for currentPath(). No I/O is reached
-  // here (no hostWindow), but the path-validation gate must accept it.
+  // Server-only UNC paths are valid; Win32FsBackend enumerates shares
+  // with WNetEnumResource because there is no share folder to stat.
   PaneController pc(nullptr);
-  FE_ASSERT_TRUE(pc.openFolder(L"\\\\server\\share"));
-  FE_ASSERT_WSTREQ(pc.currentPath(), L"\\\\server\\share");
+  FE_ASSERT_TRUE(pc.openFolder(L"\\\\server"));
+  FE_ASSERT_WSTREQ(pc.currentPath(), L"\\\\server");
+}
+
+FE_TEST_CASE(PaneController_OpenFolder_ShellThisPc_ListsDriveRoots) {
+  PaneController pc(nullptr);
+  FE_ASSERT_TRUE(pc.openFolder(L"shell:ThisPC"));
+  FE_ASSERT_WSTREQ(pc.currentPath(), L"shell:ThisPC");
+  FE_ASSERT_WSTREQ(pc.currentLocation(), L"shell:ThisPC");
+  FE_ASSERT_TRUE(pc.store().publishedCount() > 0);
+  FE_ASSERT_TRUE(fast_explorer::core::isDirectory(pc.store().visibleAt(0)));
+}
+
+FE_TEST_CASE(PaneController_ShellThisPc_RowMapsToDriveRootTarget) {
+  PaneController pc(nullptr);
+  FE_ASSERT_TRUE(pc.openFolder(L"shell:ThisPC"));
+  FE_ASSERT_TRUE(pc.store().publishedCount() > 0);
+
+  std::wstring target;
+  FE_ASSERT_TRUE(pc.sourcePathForVisibleRow(0, target));
+  FE_ASSERT_FALSE(target.empty());
+  const DWORD attrs = GetFileAttributesW(target.c_str());
+  FE_ASSERT_TRUE(attrs != INVALID_FILE_ATTRIBUTES);
+  FE_ASSERT_TRUE((attrs & FILE_ATTRIBUTE_DIRECTORY) != 0);
+}
+
+FE_TEST_CASE(PaneController_ShellThisPc_RowExposesDriveIconLocation) {
+  PaneController pc(nullptr);
+  FE_ASSERT_TRUE(pc.openFolder(L"shell:ThisPC"));
+  FE_ASSERT_TRUE(pc.store().publishedCount() > 0);
+
+  std::wstring target;
+  std::wstring iconLocation;
+  FE_ASSERT_TRUE(pc.sourcePathForVisibleRow(0, target));
+  FE_ASSERT_TRUE(pc.iconLocationForVisibleRow(0, iconLocation));
+  FE_ASSERT_WSTREQ(iconLocation, target);
+}
+
+FE_TEST_CASE(PaneController_ShellThisPc_RefreshPreservesFilter) {
+  PaneController pc(nullptr);
+  FE_ASSERT_TRUE(pc.openFolder(L"shell:ThisPC"));
+  FE_ASSERT_TRUE(pc.store().publishedCount() > 0);
+
+  const auto& first = pc.store().visibleAt(0);
+  const std::wstring query(first.namePtr, first.nameLength);
+  pc.setFilter(FilterPattern(query, FilterMode::Plain));
+  FE_ASSERT_EQ(pc.store().displayedCount(), static_cast<std::size_t>(1));
+
+  FE_ASSERT_TRUE(pc.refresh());
+  FE_ASSERT_TRUE(pc.hasActiveFilter());
+  FE_ASSERT_EQ(pc.store().displayedCount(), static_cast<std::size_t>(1));
+}
+
+FE_TEST_CASE(PaneController_ShellRoot_FileOperationsAreRejected) {
+  PaneController pc(nullptr);
+  FE_ASSERT_TRUE(pc.openFolder(L"shell:ThisPC"));
+  FE_ASSERT_FALSE(pc.deleteItem(0));
+  FE_ASSERT_FALSE(pc.renameItem(0, L"renamed"));
+  FE_ASSERT_FALSE(pc.createSubfolder(L"new-folder"));
+}
+
+FE_TEST_CASE(PaneController_OpenFolder_ShellNetwork_AcceptsVirtualLocation) {
+  PaneController pc(nullptr);
+  FE_ASSERT_TRUE(pc.openFolder(L"shell:Network"));
+  FE_ASSERT_WSTREQ(pc.currentPath(), L"shell:Network");
+  FE_ASSERT_WSTREQ(pc.currentLocation(), L"shell:Network");
+  FE_ASSERT_TRUE(pc.generation() > 0);
+}
+
+FE_TEST_CASE(PaneController_OpenFolder_GenericShellNamespace_AcceptsRecycleBin) {
+  PaneController pc(nullptr);
+  FE_ASSERT_TRUE(
+      pc.openFolder(L"::{645FF040-5081-101B-9F08-00AA002F954E}"));
+  FE_ASSERT_WSTREQ(pc.currentPath(), L"shell:RecycleBinFolder");
+  FE_ASSERT_WSTREQ(pc.currentLocation(), L"shell:RecycleBinFolder");
+  FE_ASSERT_TRUE(pc.generation() > 0);
+}
+
+FE_TEST_CASE(PaneController_GenericShellNamespace_FileOperationsAreRejected) {
+  PaneController pc(nullptr);
+  FE_ASSERT_TRUE(
+      pc.openFolder(L"::{645FF040-5081-101B-9F08-00AA002F954E}"));
+  FE_ASSERT_FALSE(pc.createSubfolder(L"new-folder"));
+  FE_ASSERT_FALSE(pc.deleteItem(0));
+  FE_ASSERT_FALSE(pc.renameItem(0, L"renamed"));
+}
+
+FE_TEST_CASE(PaneController_OpenFolder_NetworkShortcutFolder_NavigatesToTarget) {
+  TempDir tmp(L"pane-network-shortcut-folder");
+  createExistingDirectory(tmp.path());
+
+  const std::wstring shortcutDir =
+      fast_explorer::core::joinPath(tmp.path(), L"Home");
+  const std::wstring targetDir =
+      fast_explorer::core::joinPath(tmp.path(), L"actual-home");
+  createExistingDirectory(shortcutDir);
+  createExistingDirectory(targetDir);
+  fast_explorer::tests::writeEmptyDiskFile(
+      fast_explorer::core::joinPath(targetDir, L"inside.txt"));
+
+  const std::wstring desktopIni =
+      fast_explorer::core::joinPath(shortcutDir, L"desktop.ini");
+  FE_ASSERT_TRUE(WritePrivateProfileStringW(
+      L".ShellClassInfo", L"CLSID2",
+      L"{0AFACED1-E828-11D1-9187-B532F1E9575D}",
+      desktopIni.c_str()) != 0);
+  FE_ASSERT_TRUE(createShellLinkFile(
+      fast_explorer::core::joinPath(shortcutDir, L"target.lnk"), targetDir));
+
+  PaneController pc(nullptr);
+  FE_ASSERT_TRUE(pc.openFolder(shortcutDir));
+  pc.joinForTest();
+  FE_ASSERT_WSTREQ(pc.currentPath(), targetDir);
+  FE_ASSERT_EQ(pc.store().publishedCount(), static_cast<std::size_t>(1));
 }
 
 FE_TEST_CASE(PaneController_OpenFolder_Twice_BumpsGenerationEachTime) {
+  TempDir a(L"pane-open-twice-a");
+  TempDir b(L"pane-open-twice-b");
+  createExistingDirectory(a.path());
+  createExistingDirectory(b.path());
   PaneController pc(nullptr);
-  FE_ASSERT_TRUE(pc.openFolder(L"C:\\a"));
+  FE_ASSERT_TRUE(pc.openFolder(a.path()));
   const uint32_t g1 = pc.generation();
-  FE_ASSERT_TRUE(pc.openFolder(L"C:\\b"));
+  FE_ASSERT_TRUE(pc.openFolder(b.path()));
   const uint32_t g2 = pc.generation();
   FE_ASSERT_TRUE(g2 != g1);
-  FE_ASSERT_WSTREQ(pc.currentPath(), L"C:\\b");
+  FE_ASSERT_WSTREQ(pc.currentPath(), b.path());
 }
 
 FE_TEST_CASE(PaneController_OpenFolder_DrivesEnumerationOnRealFs) {
@@ -94,48 +279,69 @@ FE_TEST_CASE(PaneController_Forward_NoHistory_ReturnsFalse) {
 }
 
 FE_TEST_CASE(PaneController_OpenThenBack_RestoresPrior) {
+  TempDir a(L"pane-history-a");
+  TempDir b(L"pane-history-b");
+  createExistingDirectory(a.path());
+  createExistingDirectory(b.path());
   PaneController pc(nullptr);
-  FE_ASSERT_TRUE(pc.openFolder(L"C:\\a"));
-  FE_ASSERT_TRUE(pc.openFolder(L"C:\\b"));
+  FE_ASSERT_TRUE(pc.openFolder(a.path()));
+  FE_ASSERT_TRUE(pc.openFolder(b.path()));
   FE_ASSERT_TRUE(pc.canGoBack());
   FE_ASSERT_TRUE(pc.back());
-  FE_ASSERT_WSTREQ(pc.currentPath(), L"C:\\a");
+  FE_ASSERT_WSTREQ(pc.currentPath(), a.path());
   FE_ASSERT_TRUE(pc.canGoForward());
   FE_ASSERT_FALSE(pc.canGoBack());
 }
 
 FE_TEST_CASE(PaneController_BackThenForward_RestoresLatest) {
+  TempDir a(L"pane-forward-a");
+  TempDir b(L"pane-forward-b");
+  createExistingDirectory(a.path());
+  createExistingDirectory(b.path());
   PaneController pc(nullptr);
-  pc.openFolder(L"C:\\a");
-  pc.openFolder(L"C:\\b");
+  pc.openFolder(a.path());
+  pc.openFolder(b.path());
   pc.back();
   FE_ASSERT_TRUE(pc.forward());
-  FE_ASSERT_WSTREQ(pc.currentPath(), L"C:\\b");
+  FE_ASSERT_WSTREQ(pc.currentPath(), b.path());
   FE_ASSERT_FALSE(pc.canGoForward());
 }
 
 FE_TEST_CASE(PaneController_OpenAfterBack_ClearsForward) {
+  TempDir a(L"pane-forward-clear-a");
+  TempDir b(L"pane-forward-clear-b");
+  TempDir c(L"pane-forward-clear-c");
+  createExistingDirectory(a.path());
+  createExistingDirectory(b.path());
+  createExistingDirectory(c.path());
   PaneController pc(nullptr);
-  pc.openFolder(L"C:\\a");
-  pc.openFolder(L"C:\\b");
+  pc.openFolder(a.path());
+  pc.openFolder(b.path());
   pc.back();
   FE_ASSERT_TRUE(pc.canGoForward());
-  FE_ASSERT_TRUE(pc.openFolder(L"C:\\c"));
+  FE_ASSERT_TRUE(pc.openFolder(c.path()));
   FE_ASSERT_FALSE(pc.canGoForward());
 }
 
 FE_TEST_CASE(PaneController_Up_FromFolder_ReturnsParent) {
+  TempDir tmp(L"pane-up-parent");
+  createExistingDirectory(tmp.path());
+  const std::wstring child =
+      fast_explorer::core::joinPath(tmp.path(), L"child");
+  createExistingDirectory(child);
   PaneController pc(nullptr);
-  pc.openFolder(L"C:\\foo\\bar");
+  pc.openFolder(child);
   FE_ASSERT_TRUE(pc.up());
-  FE_ASSERT_WSTREQ(pc.currentPath(), L"C:\\foo");
+  FE_ASSERT_WSTREQ(pc.currentPath(), tmp.path());
 }
 
 FE_TEST_CASE(PaneController_Up_FromDriveSubfolder_ReturnsDriveRoot) {
+  TempDir tmp(L"pane-up-real-parent");
+  createExistingDirectory(tmp.path());
   PaneController pc(nullptr);
-  pc.openFolder(L"C:\\foo");
+  pc.openFolder(tmp.path());
   FE_ASSERT_TRUE(pc.up());
-  FE_ASSERT_WSTREQ(pc.currentPath(), L"C:\\");
+  FE_ASSERT_WSTREQ(pc.currentPath(), parentPathOf(tmp.path()));
 }
 
 FE_TEST_CASE(PaneController_Up_FromDriveRoot_ReturnsFalse) {
@@ -150,25 +356,34 @@ FE_TEST_CASE(PaneController_Refresh_Empty_ReturnsFalse) {
 }
 
 FE_TEST_CASE(PaneController_Refresh_BumpsGenerationWithoutHistoryPush) {
+  TempDir a(L"pane-refresh-a");
+  TempDir b(L"pane-refresh-b");
+  createExistingDirectory(a.path());
+  createExistingDirectory(b.path());
   PaneController pc(nullptr);
-  FE_ASSERT_TRUE(pc.openFolder(L"C:\\a"));
-  FE_ASSERT_TRUE(pc.openFolder(L"C:\\b"));
+  FE_ASSERT_TRUE(pc.openFolder(a.path()));
+  FE_ASSERT_TRUE(pc.openFolder(b.path()));
   const uint32_t before = pc.generation();
   const auto backDepthBefore = pc.canGoBack();
   FE_ASSERT_TRUE(pc.refresh());
   FE_ASSERT_TRUE(pc.generation() != before);
-  FE_ASSERT_WSTREQ(pc.currentPath(), L"C:\\b");
+  FE_ASSERT_WSTREQ(pc.currentPath(), b.path());
   FE_ASSERT_EQ(pc.canGoBack(), backDepthBefore);
 }
 
 FE_TEST_CASE(PaneController_Up_FromExtendedPrefix_NormalizesToDisplay) {
+  TempDir tmp(L"pane-up-extended");
+  createExistingDirectory(tmp.path());
+  const std::wstring child =
+      fast_explorer::core::joinPath(tmp.path(), L"child");
+  createExistingDirectory(child);
   PaneController pc(nullptr);
   // openFolder accepts the \\?\ extended-length form and stores it
-  // verbatim.  computeParent should still produce the canonical "C:\"
+  // verbatim. computeParent should still produce the canonical
   // display form by toDisplay-normalising the input first.
-  pc.openFolder(L"\\\\?\\C:\\foo");
+  pc.openFolder(extendedPathOf(child));
   FE_ASSERT_TRUE(pc.up());
-  FE_ASSERT_WSTREQ(pc.currentPath(), L"C:\\");
+  FE_ASSERT_WSTREQ(pc.currentPath(), tmp.path());
 }
 
 FE_TEST_CASE(PaneController_OpenFolder_Twice_CancelsAndReopens) {
@@ -386,6 +601,102 @@ FE_TEST_CASE(PaneController_Selection_RowsFollowSortReorder) {
   FE_ASSERT_TRUE(rawsAtSelectedRows.count(rawB) == 1);
 }
 
+FE_TEST_CASE(PaneController_Selection_RowsFollowActiveFilter) {
+  TempDir tmp(L"pane-sel-filter");
+  FE_ASSERT_TRUE(CreateDirectoryW(tmp.path().c_str(), nullptr) != 0);
+  fast_explorer::tests::writeEmptyDiskFile(tmp.path() + L"\\alpha.txt");
+  fast_explorer::tests::writeEmptyDiskFile(tmp.path() + L"\\target.txt");
+
+  PaneController pane(nullptr);
+  FE_ASSERT_TRUE(pane.openFolder(tmp.path()));
+  pane.joinForTest();
+
+  const auto& store = pane.store();
+  std::uint32_t targetRaw = UINT32_MAX;
+  for (std::uint32_t raw = 0;
+       raw < static_cast<std::uint32_t>(store.publishedCount()); ++raw) {
+    const auto& entry = store.entryAt(raw);
+    if (std::wstring_view(entry.namePtr, entry.nameLength) == L"target.txt") {
+      targetRaw = raw;
+      break;
+    }
+  }
+  FE_ASSERT_TRUE(targetRaw != UINT32_MAX);
+
+  pane.setFilter(FilterPattern(L"target", FilterMode::Plain));
+  FE_ASSERT_EQ(pane.store().displayedCount(), static_cast<std::size_t>(1));
+  pane.selectRaw(targetRaw);
+
+  const auto rows = pane.selectedRowsUnderCurrentOrder();
+  FE_ASSERT_EQ(rows.size(), static_cast<std::size_t>(1));
+  FE_ASSERT_EQ(rows[0], 0);
+}
+
+FE_TEST_CASE(PaneController_SourcePathForVisibleRow_HonorsActiveFilter) {
+  TempDir tmp(L"pane-sourcepath-filter");
+  FE_ASSERT_TRUE(CreateDirectoryW(tmp.path().c_str(), nullptr) != 0);
+  fast_explorer::tests::writeEmptyDiskFile(tmp.path() + L"\\alpha.txt");
+  const std::wstring targetPath = tmp.path() + L"\\target.txt";
+  fast_explorer::tests::writeEmptyDiskFile(targetPath);
+
+  PaneController pane(nullptr);
+  FE_ASSERT_TRUE(pane.openFolder(tmp.path()));
+  pane.joinForTest();
+
+  pane.setFilter(FilterPattern(L"target", FilterMode::Plain));
+  FE_ASSERT_EQ(pane.store().displayedCount(), static_cast<std::size_t>(1));
+
+  std::wstring actual;
+  FE_ASSERT_TRUE(pane.sourcePathForVisibleRow(0, actual));
+  FE_ASSERT_WSTREQ(actual, targetPath);
+}
+
+FE_TEST_CASE(PaneController_FilterRefinement_NarrowsExistingSubset) {
+  TempDir tmp(L"pane-filter-refine");
+  FE_ASSERT_TRUE(CreateDirectoryW(tmp.path().c_str(), nullptr) != 0);
+  fast_explorer::tests::writeEmptyDiskFile(tmp.path() + L"\\alpha.txt");
+  fast_explorer::tests::writeEmptyDiskFile(tmp.path() + L"\\alphabet.txt");
+  fast_explorer::tests::writeEmptyDiskFile(tmp.path() + L"\\beta.txt");
+
+  PaneController pane(nullptr);
+  FE_ASSERT_TRUE(pane.openFolder(tmp.path()));
+  pane.joinForTest();
+
+  pane.setFilter(FilterPattern(L"alpha", FilterMode::Plain));
+  FE_ASSERT_EQ(pane.store().displayedCount(), static_cast<std::size_t>(2));
+
+  pane.setFilter(FilterPattern(L"alphabet", FilterMode::Plain));
+  FE_ASSERT_EQ(pane.store().displayedCount(), static_cast<std::size_t>(1));
+  const auto& entry = pane.store().visibleAt(0);
+  FE_ASSERT_WSTREQ(std::wstring(entry.namePtr, entry.nameLength),
+                   L"alphabet.txt");
+}
+
+FE_TEST_CASE(PaneController_OpenFolder_MissingPathPreservesCurrentState) {
+  TempDir tmp(L"pane-missing-preserve");
+  FE_ASSERT_TRUE(CreateDirectoryW(tmp.path().c_str(), nullptr) != 0);
+  fast_explorer::tests::writeEmptyDiskFile(tmp.path() + L"\\keep.txt");
+
+  PaneController pane(nullptr);
+  FE_ASSERT_TRUE(pane.openFolder(tmp.path()));
+  pane.joinForTest();
+  const auto beforeGeneration = pane.generation();
+  const std::wstring beforePath = pane.currentPath();
+  const auto beforeCount = pane.store().publishedCount();
+  FE_ASSERT_TRUE(beforeCount > 0);
+  pane.selectRaw(0);
+
+  const std::wstring missing =
+      fast_explorer::core::joinPath(tmp.path(), L"does-not-exist");
+  FE_ASSERT_FALSE(pane.openFolder(missing));
+
+  FE_ASSERT_EQ(pane.generation(), beforeGeneration);
+  FE_ASSERT_WSTREQ(pane.currentPath(), beforePath);
+  FE_ASSERT_EQ(pane.store().publishedCount(), beforeCount);
+  FE_ASSERT_EQ(pane.selectedCount(), static_cast<std::size_t>(1));
+  FE_ASSERT_TRUE(pane.isRawSelected(0));
+}
+
 // ---------------------------------------------------------------------------
 // openItem
 // ---------------------------------------------------------------------------
@@ -437,6 +748,35 @@ FE_TEST_CASE(PaneController_OpenItem_FolderBranch_NavigatesIntoChild) {
   FE_ASSERT_TRUE(pane.openItem(childRow));
   pane.joinForTest();
   FE_ASSERT_WSTREQ(pane.currentPath(), childPath);
+}
+
+FE_TEST_CASE(PaneController_OpenItem_FolderBranch_PreservesActiveFilter) {
+  TempDir tmp(L"pane-openitem-folder-filter");
+  FE_ASSERT_TRUE(CreateDirectoryW(tmp.path().c_str(), nullptr) != 0);
+  const std::wstring childPath =
+      fast_explorer::core::joinPath(tmp.path(), L"needle-folder");
+  FE_ASSERT_TRUE(CreateDirectoryW(childPath.c_str(), nullptr) != 0);
+  fast_explorer::tests::writeEmptyDiskFile(
+      fast_explorer::core::joinPath(childPath, L"needle.txt"));
+  fast_explorer::tests::writeEmptyDiskFile(
+      fast_explorer::core::joinPath(childPath, L"other.txt"));
+
+  PaneController pane(nullptr);
+  FE_ASSERT_TRUE(pane.openFolder(tmp.path()));
+  pane.joinForTest();
+  pane.setFilter(FilterPattern(L"needle", FilterMode::Plain));
+  FE_ASSERT_TRUE(pane.hasActiveFilter());
+  FE_ASSERT_EQ(pane.store().displayedCount(), static_cast<std::size_t>(1));
+
+  FE_ASSERT_TRUE(pane.openItem(0));
+  pane.joinForTest();
+  FE_ASSERT_WSTREQ(pane.currentPath(), childPath);
+  FE_ASSERT_TRUE(pane.hasActiveFilter());
+  pane.setFilter(pane.currentFilter());
+  FE_ASSERT_EQ(pane.store().displayedCount(), static_cast<std::size_t>(1));
+  const auto& entry = pane.store().visibleAt(0);
+  FE_ASSERT_EQ(std::wstring_view(entry.namePtr, entry.nameLength),
+               std::wstring_view(L"needle.txt"));
 }
 
 FE_TEST_CASE(PaneController_RequestSort_ActuallyReordersVisible) {

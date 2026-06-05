@@ -4,6 +4,7 @@
 
 #include "core/file-entry.h"
 #include "core/file-model-store.h"
+#include "core/location.h"
 #include "explorer/messages.h"
 #include "explorer/pane-controller.h"
 #include "explorer/shell-context-menu.h"
@@ -18,11 +19,10 @@ std::vector<std::wstring> resolveLeaves(
   std::vector<std::wstring> out;
   out.reserve(ids.size());
   const auto& store = pane.store();
-  const auto bound = store.publishedCount();
   for (ports::ItemId id : ids) {
     if (id == ports::kInvalidItemId) continue;
     const std::size_t row = static_cast<std::size_t>(id - 1);
-    if (row >= bound) continue;
+    if (!store.rawIndexForVisibleRow(row).has_value()) continue;
     const auto& entry = store.visibleAt(row);
     if (entry.namePtr == nullptr || entry.nameLength == 0) continue;
     out.emplace_back(entry.namePtr, entry.nameLength);
@@ -41,14 +41,34 @@ std::wstring singleFolderPath(
   if (id == ports::kInvalidItemId) return {};
   const auto& store = pane.store();
   const std::size_t row = static_cast<std::size_t>(id - 1);
-  if (row >= store.publishedCount()) return {};
+  if (!store.rawIndexForVisibleRow(row).has_value()) return {};
   const auto& entry = store.visibleAt(row);
   if (!fast_explorer::core::isDirectory(entry)) return {};
-  if (entry.namePtr == nullptr || entry.nameLength == 0) return {};
-  const std::wstring leaf(entry.namePtr, entry.nameLength);
-  const std::wstring& folder = pane.currentPath();
-  if (folder.empty()) return {};
-  return folder + L"\\" + leaf;
+  std::wstring out;
+  return pane.sourcePathForVisibleRow(static_cast<std::uint32_t>(row), out)
+             ? out
+             : std::wstring{};
+}
+
+void showOpenInNewTabOnly(HWND ownerHwnd,
+                          POINT screenPt,
+                          const std::wstring& targetFolder,
+                          const std::function<void(const std::wstring&)>& cb) {
+  if (ownerHwnd == nullptr || targetFolder.empty() || !cb) {
+    return;
+  }
+  HMENU menu = CreatePopupMenu();
+  if (menu == nullptr) {
+    return;
+  }
+  AppendMenuW(menu, MF_STRING, kVerbOpenInNewTab, L"새 탭에서 열기");
+  const UINT picked = TrackPopupMenuEx(
+      menu, TPM_RETURNCMD | TPM_RIGHTBUTTON | TPM_LEFTALIGN | TPM_TOPALIGN,
+      screenPt.x, screenPt.y, ownerHwnd, nullptr);
+  DestroyMenu(menu);
+  if (picked == kVerbOpenInNewTab) {
+    cb(targetFolder);
+  }
 }
 
 }  // namespace
@@ -68,6 +88,11 @@ void ShellContextMenuAdapter::show(
   // Detect single-folder selection: prepend "새 탭에서 열기" at the top
   // of the context menu.
   const std::wstring targetFolder = singleFolderPath(*c, ids);
+  if (fast_explorer::core::isShellLocation(folderPath)) {
+    showOpenInNewTabOnly(ownerHwnd_, screenPt, targetFolder, onOpenInNewTab);
+    return;
+  }
+
   ShellContextMenu::PrependItem prepend;
   if (!targetFolder.empty() && onOpenInNewTab) {
     prepend.id    = kVerbOpenInNewTab;

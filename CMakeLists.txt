@@ -36,6 +36,8 @@ set(FE_APP_SOURCES
   src/app/app-services.h
   src/explorer/address-bar-popup.cpp
   src/explorer/address-bar-popup.h
+  src/explorer/shell-pidl-location.cpp
+  src/explorer/shell-pidl-location.h
   src/explorer/main-window.cpp
   src/explorer/main-window.h
   src/explorer/main-window-commands.cpp
@@ -119,6 +121,8 @@ set(FE_APP_SOURCES
   src/core/fs-backend.h
   src/core/fs-watcher.cpp
   src/core/fs-watcher.h
+  src/core/location.cpp
+  src/core/location.h
   src/core/memory-fs-backend.cpp
   src/core/memory-fs-backend.h
   src/core/name-arena.cpp
@@ -304,6 +308,7 @@ add_executable(core-tests
   tests/test-main.cpp
   tests/adapter-cell-tests.cpp
   tests/path-utils-tests.cpp
+  tests/location-tests.cpp
   tests/file-entry-tests.cpp
   tests/name-arena-tests.cpp
   tests/fs-backend-tests.cpp
@@ -338,6 +343,7 @@ add_executable(core-tests
   tests/process-memory-tests.cpp
   tests/selection-sync-tests.cpp
   tests/label-edit-controller-tests.cpp
+  tests/shell-pidl-location-tests.cpp
   tests/settings-store-tests.cpp
   tests/splitter-ratios-tests.cpp
   tests/command-router-tests.cpp
@@ -372,6 +378,8 @@ add_executable(core-tests
   src/explorer/filter-pattern.h
   src/explorer/search-popup.cpp
   src/explorer/search-popup.h
+  src/explorer/shell-pidl-location.cpp
+  src/explorer/shell-pidl-location.h
   src/explorer/pane-controller.cpp
   src/explorer/pane-controller.h
   src/explorer/adapters/shell-item-dispatcher.cpp
@@ -409,6 +417,8 @@ add_executable(core-tests
   src/core/fs-backend.h
   src/core/fs-watcher.cpp
   src/core/fs-watcher.h
+  src/core/location.cpp
+  src/core/location.h
   src/core/memory-fs-backend.cpp
   src/core/memory-fs-backend.h
   src/core/name-arena.cpp
@@ -434,6 +444,7 @@ target_link_libraries(core-tests PRIVATE
   winui_lite
   comctl32
   shell32
+  shlwapi
   ole32
   user32
   psapi

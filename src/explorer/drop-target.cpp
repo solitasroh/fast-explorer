@@ -6,22 +6,12 @@
 
 #include "core/file-entry.h"
 #include "core/file-model-store.h"
+#include "core/location.h"
 #include "explorer/main-window.h"
 #include "explorer/pane-controller.h"
 #include "explorer/shell-bind.h"
 
 namespace fast_explorer::ui {
-
-namespace {
-
-std::wstring joinPath(const std::wstring& base, std::wstring_view leaf) {
-  std::wstring out = base;
-  if (!out.empty() && out.back() != L'\\') out.push_back(L'\\');
-  out.append(leaf);
-  return out;
-}
-
-}  // namespace
 
 PaneDropTarget::PaneDropTarget(HWND lv,
                                 PaneController* const* activeCell,
@@ -74,17 +64,26 @@ bool PaneDropTarget::rebindTarget(POINT screenPt) {
   if (hitRow == lastHitRow_ && currentTarget_) {
     return false;
   }
-  std::wstring targetPath = pane->currentPath();
+  std::wstring targetPath;
+  if (!fast_explorer::core::isShellLocation(pane->currentPath())) {
+    targetPath = pane->currentPath();
+  }
   if (hitRow >= 0) {
     const auto& store = pane->store();
     const auto row = static_cast<std::size_t>(hitRow);
-    if (row < store.publishedCount()) {
-      const auto& entry = store.visibleAt(row);
+    const auto raw = store.rawIndexForVisibleRow(row);
+    if (raw.has_value()) {
+      const auto& entry = store.entryAt(*raw);
       if (fast_explorer::core::isDirectory(entry)) {
-        targetPath = joinPath(pane->currentPath(),
-                              fast_explorer::core::nameView(entry));
+        pane->sourcePathForVisibleRow(static_cast<std::uint32_t>(hitRow),
+                                      targetPath);
       }
     }
+  }
+  if (targetPath.empty()) {
+    clearCurrentTarget();
+    lastHitRow_ = hitRow;
+    return false;
   }
   clearCurrentTarget();
   currentTarget_ = queryFolderDropTarget(targetPath, lv_);

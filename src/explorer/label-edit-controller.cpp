@@ -40,7 +40,7 @@ void LabelEditController::beginCreateSubfolder() {
   std::vector<std::wstring_view> existing;
   existing.reserve(count);
   for (std::uint32_t i = 0; i < count; ++i) {
-    const auto& entry = store.visibleAt(i);
+    const auto& entry = store.entryAt(i);
     existing.emplace_back(entry.namePtr, entry.nameLength);
   }
   std::wstring leaf = uniqueFolderLeaf(existing, L"New folder");
@@ -59,9 +59,13 @@ void LabelEditController::maybeStartPendingEdit() {
   std::wstring target;
   target.swap(pendingFolderName_);
   const auto& store = pane_.store();
-  const std::uint32_t count = store.publishedCount();
-  for (std::uint32_t i = 0; i < count; ++i) {
-    const auto& entry = store.visibleAt(i);
+  const std::size_t count = store.displayedCount();
+  for (std::size_t i = 0; i < count; ++i) {
+    const auto raw = store.rawIndexForVisibleRow(i);
+    if (!raw.has_value()) {
+      continue;
+    }
+    const auto& entry = store.entryAt(*raw);
     if (std::wstring_view(entry.namePtr, entry.nameLength) == target) {
       ListView_SetItemState(listView_, static_cast<int>(i),
                             LVIS_FOCUSED | LVIS_SELECTED,

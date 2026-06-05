@@ -903,11 +903,11 @@ bool MainWindow::openFolder(const std::wstring& path) {
   }
   perf_.record(fast_explorer::core::PerfTracker::EventId::PaneOpenStart);
   fast_explorer::core::recordMemoryProbe(perf_);
-  if (activePane_ < firstBatchSeen_.size()) {
-    firstBatchSeen_[activePane_] = false;
-  }
   if (!pane_->openFolder(path)) {
     return false;
+  }
+  if (activePane_ < firstBatchSeen_.size()) {
+    firstBatchSeen_[activePane_] = false;
   }
   clearListViewForNavigation(activePane_);
   syncAddressBar(activePane_);
@@ -1325,6 +1325,11 @@ void MainWindow::handleAddressCommit(std::size_t paneIdx) {
   if (ok) {
     clearListViewForNavigation(paneIdx);
     syncAddressBar(paneIdx);
+  } else {
+    syncAddressBar(paneIdx);
+    const std::wstring error = errorStatusText(
+        fast_explorer::core::EnumerationError::PathNotFound);
+    setPaneStatusText(paneIdx, error.c_str());
   }
 }
 
@@ -1512,6 +1517,7 @@ LRESULT MainWindow::handleMessage(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPa
         } else if (activeForPane_[i]) {
           fast_explorer::core::TabRecordV6 t;
           t.path = activeForPane_[i]->currentPath();
+          t.location = activeForPane_[i]->currentLocation();
           capturedState_->panes[i].tabs.push_back(std::move(t));
           capturedState_->panes[i].activeTab = 0;
         }
@@ -2082,7 +2088,7 @@ void MainWindow::refreshSelectionSummary(std::size_t paneIdx) {
     return;
   }
   const PaneController& pane = *activeForPane_[paneIdx];
-  const std::size_t totalCount = pane.store().itemCount();
+  const std::size_t totalCount = pane.store().displayedCount();
   const auto sum = pane.selectionSummary();
   const std::wstring text =
       formatSelectionSummary(totalCount, sum.selectedCount, sum.selectedBytes);
@@ -2104,7 +2110,14 @@ LRESULT MainWindow::onEnumBatch(WPARAM wParam, LPARAM lParam) {
     fast_explorer::core::recordMemoryProbe(perf_);
     firstBatchSeen_[idx] = true;
   }
-  ListView_SetItemCountEx(listViews_[idx], static_cast<int>(count),
+  PaneController* target =
+      (idx < paneCount_) ? activeForPane_[idx] : nullptr;
+  std::size_t shown = static_cast<std::size_t>(count);
+  if (target != nullptr && target->hasActiveFilter()) {
+    target->extendActiveFilterToPublished();
+    shown = target->store().displayedCount();
+  }
+  ListView_SetItemCountEx(listViews_[idx], static_cast<int>(shown),
                           LVSICF_NOSCROLL);
   const std::wstring text = loadingProgressStatusText(count);
   setPaneStatusText(idx, text.c_str());
@@ -2123,7 +2136,11 @@ LRESULT MainWindow::onEnumComplete(WPARAM wParam) {
   // user-visible row count + header arrow + first paint all reflect
   // the sorted permutation in one shot.
   target->reapplyPersistedSort();
-  const size_t finalCount = target->store().itemCount();
+  if (target->hasActiveFilter()) {
+    const FilterPattern pattern = target->currentFilter();
+    target->setFilter(pattern);
+  }
+  const size_t finalCount = target->store().displayedCount();
   fast_explorer::core::recordMemoryProbe(perf_);
   const std::size_t idx = paneIndexFromWParam(wParam);
   // Single source of truth for the per-pane status line: the
@@ -2196,7 +2213,7 @@ void MainWindow::redrawVisibleRows(std::size_t idx) {
     return;
   }
   const int count =
-      static_cast<int>(activeForPane_[idx]->store().publishedCount());
+      static_cast<int>(activeForPane_[idx]->store().displayedCount());
   if (count > 0) {
     ListView_RedrawItems(listViews_[idx], 0, count - 1);
   }
@@ -2284,7 +2301,7 @@ void MainWindow::handleClipboardCopy(bool cut) {
   int row = -1;
   while ((row = ListView_GetNextItem(lv, row, LVNI_SELECTED)) >= 0) {
     const auto r = static_cast<std::size_t>(row);
-    if (r >= store.publishedCount()) continue;
+    if (!store.rawIndexForVisibleRow(r).has_value()) continue;
     const auto& entry = store.visibleAt(r);
     if (entry.namePtr == nullptr || entry.nameLength == 0) continue;
     ids.push_back(static_cast<ports::ItemId>(r + 1));
@@ -2325,7 +2342,7 @@ void MainWindow::applyCutStateToListView(std::size_t paneIdx) noexcept {
   PaneController& pane = *activeForPane_[paneIdx];
   if (pane.currentPath() != cutState_.folder()) return;
   const auto& store = pane.store();
-  const auto count = store.publishedCount();
+  const auto count = store.displayedCount();
   for (std::size_t row = 0; row < count; ++row) {
     const auto& entry = store.visibleAt(row);
     std::wstring leaf(entry.namePtr, entry.nameLength);
@@ -2361,7 +2378,7 @@ void MainWindow::handleBeginDrag(NMHDR* hdr) {
   int row = -1;
   while ((row = ListView_GetNextItem(lv, row, LVNI_SELECTED)) >= 0) {
     const auto r = static_cast<std::size_t>(row);
-    if (r >= store.publishedCount()) continue;
+    if (!store.rawIndexForVisibleRow(r).has_value()) continue;
     const auto& entry = store.visibleAt(r);
     if (entry.namePtr == nullptr || entry.nameLength == 0) continue;
     ids.push_back(static_cast<ports::ItemId>(r + 1));
@@ -2379,10 +2396,14 @@ void MainWindow::finalizeSortApply(std::size_t paneIdx) {
   HWND lv = listViews_[paneIdx];
   const auto spec = target.currentSortSpec();
   updateSortIndicator(lv, sortKeyToColumnIndex(spec.key), spec.direction);
+  if (target.hasActiveFilter()) {
+    const FilterPattern pattern = target.currentFilter();
+    target.setFilter(pattern);
+  }
   if (paneIdx < selectionSyncs_.size() && selectionSyncs_[paneIdx]) {
     selectionSyncs_[paneIdx]->reapplyFromPane();
   }
-  const int count = static_cast<int>(target.store().publishedCount());
+  const int count = static_cast<int>(target.store().displayedCount());
   if (count > 0) {
     ListView_RedrawItems(lv, 0, count - 1);
   }
@@ -2596,8 +2617,10 @@ void MainWindow::handleListViewRightClick(NMHDR* hdr) {
       // but trimming early keeps the id vector tight.
       ids.reserve(selectedRows.size());
       for (int row : selectedRows) {
-        if (static_cast<std::size_t>(row) < shown) {
-          const auto& e = store.visibleAt(static_cast<std::size_t>(row));
+        const auto visibleRow = static_cast<std::size_t>(row);
+        if (visibleRow < shown &&
+            store.rawIndexForVisibleRow(visibleRow).has_value()) {
+          const auto& e = store.visibleAt(visibleRow);
           if (e.namePtr != nullptr && e.nameLength > 0) {
             ids.push_back(static_cast<ports::ItemId>(row + 1));
           }
@@ -2615,8 +2638,10 @@ void MainWindow::handleListViewRightClick(NMHDR* hdr) {
                               LVIS_SELECTED | LVIS_FOCUSED,
                               LVIS_SELECTED | LVIS_FOCUSED);
       }
-      if (static_cast<std::size_t>(clicked) < shown) {
-        const auto& e = store.visibleAt(static_cast<std::size_t>(clicked));
+      const auto visibleRow = static_cast<std::size_t>(clicked);
+      if (visibleRow < shown &&
+          store.rawIndexForVisibleRow(visibleRow).has_value()) {
+        const auto& e = store.visibleAt(visibleRow);
         if (e.namePtr != nullptr && e.nameLength > 0) {
           ids.push_back(static_cast<ports::ItemId>(clicked + 1));
         }
@@ -2662,7 +2687,7 @@ LRESULT MainWindow::handleCustomDraw(NMHDR* hdr) {
       }
       const auto& store = activeForPane_[paneIdx]->store();
       const auto row = static_cast<std::size_t>(cd->nmcd.dwItemSpec);
-      if (row >= store.publishedCount()) {
+      if (!store.rawIndexForVisibleRow(row).has_value()) {
         return CDRF_DODEFAULT;
       }
       if (!shouldRenderDimmed(store.visibleAt(row))) {
@@ -2724,7 +2749,7 @@ void MainWindow::handleGetDispInfoBody(NMHDR* hdr) {
   // matching batch of push_backs, so rows below it are guaranteed to
   // observe fully-initialized FileEntry records. itemCount() is unsafe
   // here because vector::size() may be mid-modification on the worker.
-  if (row >= store.publishedCount()) {
+  if (!store.rawIndexForVisibleRow(row).has_value()) {
     return;
   }
   // iItem is the visible row index from the list-view; map through
@@ -2733,7 +2758,17 @@ void MainWindow::handleGetDispInfoBody(NMHDR* hdr) {
   const auto& entry = store.visibleAt(row);
   if ((disp->item.mask & LVIF_IMAGE) != 0) {
     auto& coord = iconCoords_[paneIdx];
-    disp->item.iImage = coord ? coord->resolveIconIndex(entry) : 0;
+    if (coord) {
+      std::wstring iconLocation;
+      if (sourcePane.iconLocationForVisibleRow(
+              static_cast<std::uint32_t>(row), iconLocation)) {
+        disp->item.iImage = coord->resolveIconIndex(entry, iconLocation);
+      } else {
+        disp->item.iImage = coord->resolveIconIndex(entry);
+      }
+    } else {
+      disp->item.iImage = 0;
+    }
   }
   // Group-id must be assigned before the LVIF_TEXT early-return below,
   // since callbacks frequently request both flags in the same dispatch.
@@ -2848,7 +2883,7 @@ LRESULT MainWindow::handleOdFindItem(NMHDR* hdr) {
     return -1;
   }
   const auto& store = activeForPane_[paneIdx]->store();
-  const std::size_t total = store.publishedCount();
+  const std::size_t total = store.displayedCount();
   if (total == 0) {
     return -1;
   }
@@ -2917,7 +2952,7 @@ void MainWindow::handleItemActivate(NMHDR* hdr) {
   // the pane, so clearing the list-view / wiping the address bar
   // afterwards would discard the user's selection and current path.
   const bool willNavigate =
-      row < target.store().publishedCount() &&
+      target.store().rawIndexForVisibleRow(row).has_value() &&
       fast_explorer::core::isDirectory(target.store().visibleAt(row));
   target.openItem(row);
   if (willNavigate) {
@@ -2963,7 +2998,7 @@ void MainWindow::bindListViewToActiveTab(std::size_t paneIdx) {
   if (!pane) return;
   HWND lv = (paneIdx < listViews_.size()) ? listViews_[paneIdx] : nullptr;
   if (!lv) return;
-  const std::size_t n = pane->store().publishedCount();
+  const std::size_t n = pane->store().displayedCount();
   ListView_SetItemCountEx(lv, static_cast<int>(n), LVSICF_NOINVALIDATEALL);
   InvalidateRect(lv, nullptr, TRUE);
 }
@@ -3018,15 +3053,17 @@ LRESULT MainWindow::onListViewMButtonUp(std::size_t paneIdx, LPARAM lParam) {
   if (!h) return 0;
   PaneController& pane = h->activeTab();
   const auto& store = pane.store();
-  if (static_cast<std::size_t>(ht.iItem) >= store.publishedCount()) return 0;
-  const std::uint32_t raw = store.visibleOrder()[ht.iItem];
-  const auto& entry = store.entryAt(raw);
+  const auto raw = store.rawIndexForVisibleRow(
+      static_cast<std::size_t>(ht.iItem));
+  if (!raw.has_value()) return 0;
+  const auto& entry = store.entryAt(*raw);
   if (!fast_explorer::core::isDirectory(entry)) return 0;
 
-  const std::wstring leaf{fast_explorer::core::nameView(entry)};
-  std::wstring abs = pane.currentPath();
-  if (!abs.empty() && abs.back() != L'\\') abs.push_back(L'\\');
-  abs += leaf;
+  std::wstring abs;
+  if (!pane.sourcePathForVisibleRow(static_cast<std::uint32_t>(ht.iItem),
+                                    abs)) {
+    return 0;
+  }
   h->openInNewTab(abs);
   return 0;
 }

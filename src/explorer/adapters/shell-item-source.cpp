@@ -30,16 +30,13 @@ const std::wstring& ShellItemSource::currentLocation() const {
 std::size_t ShellItemSource::count() const {
   PaneController* c = *cell_;
   if (!c) return 0;
-  // publishedCount() is the UI-safe upper bound while the worker
-  // may still be appending. It increases monotonically inside a
-  // single navigation; navigateTo() resets the store underneath.
-  return c->store().publishedCount();
+  return c->store().displayedCount();
 }
 
 ports::ItemId ShellItemSource::idAt(std::size_t index) const {
   PaneController* c = *cell_;
   if (!c) return ports::kInvalidItemId;
-  if (index >= c->store().publishedCount()) {
+  if (!c->store().rawIndexForVisibleRow(index).has_value()) {
     return ports::kInvalidItemId;
   }
   // 1-based to keep 0 reserved as the invalid-id sentinel. Dispatcher

@@ -4,7 +4,8 @@
 // rect, hosting a large single-line EDIT control. Every keystroke
 // posts kWmFeFilterQuery to the owner with the current text;
 // debouncing + filter application happen on the owner side (atom
-// F3). ESC + outside-click hide the popup and post kWmFeFilterDismiss.
+// F3). ESC hides the popup and posts kWmFeFilterDismiss; outside-click
+// only hides the popup so the current filter remains active.
 //
 // Lifetime: one instance per MainWindow, created during onCreate and
 // destroyed with the owner. The popup HWND is created lazily on

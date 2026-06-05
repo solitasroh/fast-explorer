@@ -3,12 +3,15 @@
 #include <windows.h>
 #include <commctrl.h>
 
+#include "bench-fs-helper.h"
 #include "core/file-entry.h"
 #include "explorer/icon-cache.h"
+#include "explorer/icon-cache-coordinator.h"
 
 using fast_explorer::core::FileEntry;
 using fast_explorer::ui::createPlaceholderImageList;
 using fast_explorer::ui::IconCache;
+using fast_explorer::ui::IconCacheCoordinator;
 using fast_explorer::ui::kPlaceholderFileIndex;
 using fast_explorer::ui::kPlaceholderFolderIndex;
 using fast_explorer::ui::placeholderIndexFor;
@@ -120,4 +123,28 @@ FE_TEST_CASE(CreatePlaceholderImageList_ReturnsTwoSlotList) {
   }
   FE_ASSERT_EQ(ImageList_GetImageCount(list), 2);
   ImageList_Destroy(list);
+}
+
+FE_TEST_CASE(IconCacheCoordinator_LocationIcon_IsCachedInImageList) {
+  fast_explorer::tests::TempDir tmp(L"icon-location-cache");
+  FE_ASSERT_TRUE(CreateDirectoryW(tmp.path().c_str(), nullptr) != 0);
+
+  IconCacheCoordinator coord(nullptr, nullptr, 96);
+  if (!coord.ok()) {
+    return;
+  }
+  FileEntry e{};
+  e.flags = flags::kIsDirectory;
+  e.attributes = FILE_ATTRIBUTE_DIRECTORY;
+
+  const int before = ImageList_GetImageCount(coord.imageListHandle());
+  const int first = coord.resolveIconIndex(e, tmp.path());
+  const int afterFirst = ImageList_GetImageCount(coord.imageListHandle());
+  const int second = coord.resolveIconIndex(e, tmp.path());
+  const int afterSecond = ImageList_GetImageCount(coord.imageListHandle());
+
+  FE_ASSERT_TRUE(first >= before);
+  FE_ASSERT_EQ(first, second);
+  FE_ASSERT_EQ(afterFirst, before + 1);
+  FE_ASSERT_EQ(afterSecond, afterFirst);
 }

@@ -11,6 +11,7 @@
 #include "winui_lite/chrome/com-raii.h"
 #include "winui_lite/chrome/theme-watcher.h"
 #include "explorer/messages.h"
+#include "explorer/shell-pidl-location.h"
 
 namespace fast_explorer::ui {
 
@@ -551,7 +552,7 @@ void AddressBarPopup::commitSelection(HTREEITEM node) {
   if (!tree_ || !node) return;
   LPCITEMIDLIST abs = itemPidl(tree_, node);
   if (!abs) return;
-  std::wstring path = pidlToFsPath(abs);
+  std::wstring path = addressLocationForPidl(abs);
   if (path.empty()) return;
   auto payload = std::make_unique<std::wstring>(std::move(path));
   if (PostMessageW(owner_, kWmFeAddressPopupPick,
