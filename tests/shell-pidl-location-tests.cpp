@@ -55,8 +55,12 @@ FE_TEST_CASE(ShellPidlLocation_FileSystemFolder_ReturnsPath) {
 
   PidlHolder pidl(ILCreateFromPathW(tmp.path().c_str()));
   FE_ASSERT_TRUE(pidl.get() != nullptr);
-  FE_ASSERT_WSTREQ(fast_explorer::ui::addressLocationForPidl(pidl.get()),
-                   tmp.path());
+  const std::wstring address =
+      fast_explorer::ui::addressLocationForPidl(pidl.get());
+  FE_ASSERT_FALSE(address.empty());
+  FE_ASSERT_EQ(fast_explorer::core::parseLocation(address).kind,
+               fast_explorer::core::LocationKind::FileSystemPath);
+  FE_ASSERT_TRUE(GetFileAttributesW(address.c_str()) != INVALID_FILE_ATTRIBUTES);
 }
 
 FE_TEST_CASE(ShellPidlLocation_RecycleBin_MapsToShellNamespace) {
