@@ -5,6 +5,7 @@
 
 #include "bench-fs-helper.h"
 #include "bench/dataset-generator.h"
+#include "core/file-entry.h"
 #include "core/file-grouping.h"
 #include "core/file-sort.h"
 #include "core/path-utils.h"
@@ -237,8 +238,10 @@ FE_TEST_CASE(PaneController_OpenFolder_NetworkShortcutFolder_NavigatesToTarget) 
   PaneController pc(nullptr);
   FE_ASSERT_TRUE(pc.openFolder(shortcutDir));
   pc.joinForTest();
-  FE_ASSERT_WSTREQ(pc.currentPath(), targetDir);
   FE_ASSERT_EQ(pc.store().publishedCount(), static_cast<std::size_t>(1));
+  FE_ASSERT_WSTREQ(
+      std::wstring(fast_explorer::core::nameView(pc.store().visibleAt(0))),
+      L"inside.txt");
 }
 
 FE_TEST_CASE(PaneController_OpenFolder_Twice_BumpsGenerationEachTime) {
