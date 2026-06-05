@@ -132,6 +132,10 @@ void MainWindow::registerAccelHandlers() {
     toggleTheme();
   });
 
+  accelRouter_.registerCommand(kAccelToggleNavigationTree, [this] {
+    toggleNavigationTree();
+  });
+
   // -----------------------------------------------------------------
   // Group-by submenu — raw (unpacked) ids in the 0x8000 range, fired
   // from the empty-area context menu's '분류 방법' submenu. Active
@@ -301,6 +305,10 @@ void MainWindow::registerAccelHandlers() {
             InvalidateRect(listViews_[i], nullptr, FALSE);
           }
         }
+      });
+  accelRouter_.registerPackedCommand(
+      kMenuToggleNavigationTree, [this](std::size_t /*pane*/) {
+        toggleNavigationTree();
       });
   accelRouter_.registerPackedCommand(
       kMenuCheckUpdates, [](std::size_t /*pane*/) {

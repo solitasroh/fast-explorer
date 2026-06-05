@@ -36,6 +36,10 @@ set(FE_APP_SOURCES
   src/app/app-services.h
   src/explorer/address-bar-popup.cpp
   src/explorer/address-bar-popup.h
+  src/explorer/shell-tree-controller.cpp
+  src/explorer/shell-tree-controller.h
+  src/explorer/navigation-tree-pane.cpp
+  src/explorer/navigation-tree-pane.h
   src/explorer/shell-pidl-location.cpp
   src/explorer/shell-pidl-location.h
   src/explorer/main-window.cpp
@@ -344,6 +348,8 @@ add_executable(core-tests
   tests/selection-sync-tests.cpp
   tests/label-edit-controller-tests.cpp
   tests/shell-pidl-location-tests.cpp
+  tests/shell-tree-controller-tests.cpp
+  tests/navigation-tree-pane-tests.cpp
   tests/settings-store-tests.cpp
   tests/splitter-ratios-tests.cpp
   tests/command-router-tests.cpp
@@ -378,6 +384,10 @@ add_executable(core-tests
   src/explorer/filter-pattern.h
   src/explorer/search-popup.cpp
   src/explorer/search-popup.h
+  src/explorer/shell-tree-controller.cpp
+  src/explorer/shell-tree-controller.h
+  src/explorer/navigation-tree-pane.cpp
+  src/explorer/navigation-tree-pane.h
   src/explorer/shell-pidl-location.cpp
   src/explorer/shell-pidl-location.h
   src/explorer/pane-controller.cpp

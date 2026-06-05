@@ -64,6 +64,7 @@ inline constexpr WORD kAccelCloseTab      = 124;  // Ctrl+W
 inline constexpr WORD kAccelTabCycleNext  = 125;  // Ctrl+Tab
 inline constexpr WORD kAccelTabCyclePrev  = 126;  // Ctrl+Shift+Tab
 inline constexpr WORD kAccelToggleTheme   = 127;  // Ctrl+Shift+D
+inline constexpr WORD kAccelToggleNavigationTree = 132;  // Ctrl+B
 
 // Toolbar button IDs (per-pane nav toolbar — back / forward / up /
 // refresh). The packing rule mirrors the menu-item convention adopted
@@ -90,6 +91,7 @@ inline constexpr WORD kMenuProperties   = 313;  // Alt+Enter
 inline constexpr WORD kMenuShowHidden   = 320;  // toggle ✓
 inline constexpr WORD kMenuShowExt      = 321;  // toggle ✓
 inline constexpr WORD kMenuCheckUpdates = 330;  // win_sparkle_check_update_with_ui
+inline constexpr WORD kMenuToggleNavigationTree = 392;  // toggle ✓
 // 분류 방법 menu IDs — deliberately above the shell verb range (1..0x7FFF
 // used by ShellContextMenu) so they coexist when injected into the shell
 // background menu. TrackPopupMenuEx returns the raw command id, and our

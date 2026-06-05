@@ -1,9 +1,9 @@
 # Fast Explorer
 
 Fast Explorer is a native Windows file explorer focused on responsive
-large-folder navigation. It supports tabs, multi-pane layouts, filtering,
-grouping, shell file operations, session restore, dark/light theme toggle,
-and high-volume enumeration benchmarks.
+large-folder navigation. It supports a global left navigation tree, tabs,
+multi-pane layouts, filtering, grouping, shell file operations, session
+restore, dark/light theme toggle, and high-volume enumeration benchmarks.
 
 ## Download
 
@@ -20,6 +20,8 @@ Get the latest release from the
 
 - Owner-data list view for large folders, with background enumeration.
 - Stable selection across sorting, filtering, refresh, and tab switches.
+- Window-level left Navigation Tree via `Ctrl+B`, synced to the active pane
+  and active tab.
 - Tabs per pane and up to four-pane layouts.
 - Filter popup via `Ctrl+F`; ESC or explicit clear removes the filter.
 - Grouping by name, modified date, or type.
@@ -29,7 +31,8 @@ Get the latest release from the
   `::{CLSID}` Shell namespace locations, UNC shares, mapped drives, and
   Network Shortcuts support where Windows exposes resolvable targets.
 - Session restore for paths, shell locations, tabs, panes, layout, ratios,
-  view toggles, theme mode, and window placement.
+  Navigation Tree visibility/width, view toggles, theme mode, and window
+  placement.
 - WinSparkle auto-update with Ed25519 update signature verification.
 
 See [docs/usage-guide.md](docs/usage-guide.md) for shortcuts, shell/network

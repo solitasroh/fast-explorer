@@ -20,6 +20,8 @@
 
 #include <string>
 
+#include "explorer/shell-tree-controller.h"
+
 namespace fast_explorer::ui {
 
 class AddressBarPopup {
@@ -56,17 +58,11 @@ class AddressBarPopup {
   static LRESULT CALLBACK mouseHookProc(int, WPARAM, LPARAM);
   LRESULT handlePopupMessage(HWND, UINT, WPARAM, LPARAM);
   LRESULT onTreeNotify(NMHDR* hdr);
-  void onTreeExpanding(NMHDR* hdr);
-  void onTreeDeleteItem(NMHDR* hdr);
   void onTreeClick();
   void ensurePopupCreated();
   void installMouseHook();
   void uninstallMouseHook();
   bool containsScreenPoint(POINT pt) const noexcept;
-  void populateRoots();
-  void expandNode(HTREEITEM node);
-  void selectPath(const std::wstring& path);
-  HTREEITEM findChildByPath(HTREEITEM parent, const std::wstring& fsPath);
   void commitSelection(HTREEITEM node);
 
   HWND owner_ = nullptr;
@@ -79,7 +75,7 @@ class AddressBarPopup {
   // hide-then-immediately-reshow on every press.
   HWND anchor_ = nullptr;
   std::wstring pendingPath_;
-  bool rootsLoaded_ = false;
+  ShellTreeController treeController_;
   std::size_t activePaneIdx_ = 0;
 };
 

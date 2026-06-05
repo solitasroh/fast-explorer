@@ -62,6 +62,10 @@ struct SessionState {
   // tracking the OS theme until the user toggles (Ctrl+Shift+D).
   int themeOverride = 0;
 
+  // v8 fields (v0.8.1): global left navigation tree state.
+  bool navigationTreeVisible = true;
+  int navigationTreeWidthPx = 260;
+
   // Internal-only: populated by the reader for v5 backward-compat,
   // consumed by the migrator at the tail of loadSessionState. Not
   // written by the writer.

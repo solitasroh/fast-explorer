@@ -1,9 +1,9 @@
 # Fast Explorer 사용 가이드
 
 > 대상: 사용자 + 개발자
-> 갱신 기준: 현재 `main` 작업 트리, CMake 프로젝트 버전 0.7.1
+> 갱신 기준: v0.8.1 후보 작업 트리, 기준 릴리즈 v0.8.0, CMake 프로젝트 버전 0.8.0
 
-Fast Explorer는 Windows 네이티브 C++20 파일 탐색기입니다. 큰 폴더를 빠르게 열고, 탭/멀티 패널/필터/정렬/분류/파일 작업을 한 화면에서 다루는 데 초점을 둡니다.
+Fast Explorer는 Windows 네이티브 C++20 파일 탐색기입니다. 큰 폴더를 빠르게 열고, 좌측 Navigation Tree, 탭/멀티 패널/필터/정렬/분류/파일 작업을 한 화면에서 다루는 데 초점을 둡니다.
 
 ---
 
@@ -37,6 +37,15 @@ Fast Explorer는 Windows 네이티브 C++20 파일 탐색기입니다. 큰 폴�
 ---
 
 ## 2. 주요 기능
+
+### Navigation Tree
+
+- 창 좌측의 전역 Navigation Tree는 현재 활성 패널의 활성 탭 위치를 따라갑니다.
+- Tree node를 선택하면 현재 활성 패널의 활성 탭이 해당 위치로 이동합니다.
+- `Ctrl+B` 또는 햄버거 메뉴의 `Navigation tree` 항목으로 표시/숨김을 전환합니다.
+- 좌측 splitter로 폭을 조절할 수 있으며, 표시 여부와 폭은 session restore에 저장됩니다.
+- Home, Gallery, Desktop, Downloads, Documents, Pictures, Music, Videos, 사용자 프로필, This PC, Network, Network Shortcuts, Recycle Bin 등 Windows가 resolve 가능한 Shell 위치를 표시합니다.
+- v0.8.1에서는 탐색 전용입니다. Tree에서 drag/drop, 이름 변경, 삭제, Shell context menu, favorites/pins는 지원하지 않습니다.
 
 ### 탭
 
@@ -102,6 +111,7 @@ Shell 가상 위치(`shell:ThisPC`, `shell:Network`, `shell:NetHood`, 휴지통,
 - 패널 수, 활성 패널, 레이아웃 preset, splitter 비율
 - 각 패널의 탭 목록과 활성 탭
 - 일반 경로와 Shell location 문자열(`shell:*`, `::{CLSID}` 포함)
+- Navigation Tree 표시 여부와 폭
 - 숨김 파일 표시, 확장자 표시, 테마 override
 
 복원 시 경로가 사라졌거나 접근할 수 없으면 홈 폴더로 fallback합니다. Shell location은 `location` 필드로 복원되며, 이전 설정 파일의 `path`만 있는 탭도 계속 읽을 수 있습니다.
@@ -118,6 +128,7 @@ Shell 가상 위치(`shell:ThisPC`, `shell:Network`, `shell:NetHood`, 휴지통,
 | 단축키 | 동작 |
 |--------|------|
 | `Ctrl+L` | 주소창 포커스 |
+| `Ctrl+B` | 좌측 Navigation Tree 표시/숨김 |
 | `Enter` in address bar | 입력 위치로 이동 |
 | `Alt+Left` | 뒤로 |
 | `Alt+Right` | 앞으로 |

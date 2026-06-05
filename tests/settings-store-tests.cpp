@@ -647,6 +647,38 @@ FE_TEST_CASE(SettingsStore_V7_RoundTripPreservesTabLocations) {
   FE_ASSERT_WSTREQ(loaded.panes[0].tabs[0].path, L"shell:ThisPC");
 }
 
+FE_TEST_CASE(SettingsStore_V8_RoundTripNavigationTree) {
+  TempDir tmp(L"settings-v8-navigation-tree-rt");
+  const std::wstring path = makeSettingsPath(tmp);
+  SessionState written;
+  written.navigationTreeVisible = false;
+  written.navigationTreeWidthPx = 344;
+
+  FE_ASSERT_TRUE(saveSessionState(path, written));
+
+  SessionState loaded;
+  FE_ASSERT_TRUE(loadSessionState(path, loaded));
+  FE_ASSERT_FALSE(loaded.navigationTreeVisible);
+  FE_ASSERT_EQ(loaded.navigationTreeWidthPx, 344);
+}
+
+FE_TEST_CASE(SettingsStore_V7_MissingNavigationTreeFields_DefaultsVisible) {
+  TempDir tmp(L"settings-v7-navigation-defaults");
+  const std::wstring path = makeSettingsPath(tmp);
+  { SessionState seed; FE_ASSERT_TRUE(saveSessionState(path, seed)); }
+  const char* body =
+    "{\"schema_version\":7,\"pane_count\":1,\"active_pane\":0,"
+    "\"panes\":[{\"tabs\":[{\"path\":\"C:\\\\a\","
+    "\"location\":\"C:\\\\a\"}],\"active_tab\":0}],"
+    "\"preset\":\"single\"}";
+  FE_ASSERT_TRUE(writeRawUtf8(path, body));
+
+  SessionState loaded;
+  FE_ASSERT_TRUE(loadSessionState(path, loaded));
+  FE_ASSERT_TRUE(loaded.navigationTreeVisible);
+  FE_ASSERT_EQ(loaded.navigationTreeWidthPx, 260);
+}
+
 FE_TEST_CASE(SettingsStore_V6_EmptyTabsArrayBecomesHomePlaceholder) {
   TempDir tmp(L"settings-v6-empty-tabs");
   const std::wstring path = makeSettingsPath(tmp);

@@ -1,17 +1,8 @@
 #include "explorer/address-bar-popup.h"
 
-#include <shellapi.h>
-#include <shlwapi.h>
-#include <uxtheme.h>
-
-#include <cwctype>
 #include <memory>
-#include <vector>
 
-#include "winui_lite/chrome/com-raii.h"
-#include "winui_lite/chrome/theme-watcher.h"
 #include "explorer/messages.h"
-#include "explorer/shell-pidl-location.h"
 
 namespace fast_explorer::ui {
 
@@ -20,157 +11,12 @@ namespace {
 constexpr wchar_t kPopupClassName[] = L"FastExplorer.AddressBarPopup";
 constexpr int kPopupWidth = 480;
 constexpr int kPopupHeight = 420;
-// Per-expand cap so a runaway shell folder does not freeze the UI.
-constexpr int kMaxChildrenPerExpand = 512;
 
 int scaleForDpi(int value, UINT dpi) noexcept {
   return MulDiv(value, static_cast<int>(dpi), 96);
 }
 
 thread_local AddressBarPopup* tMouseHookOwner = nullptr;
-
-void applyTreePopupTheme(HWND popup, HWND tree) noexcept {
-  if (tree == nullptr) return;
-  const bool dark = isAppInDarkMode();
-  // DarkMode_Explorer also re-tints the chevron/expand glyphs so they
-  // read against the dark row backdrop; plain Explorer keeps the
-  // light-mode chevrons.
-  SetWindowTheme(tree, dark ? L"DarkMode_Explorer" : L"Explorer", nullptr);
-  if (dark) {
-    const RowTheme theme = currentRowTheme();
-    TreeView_SetBkColor(tree, theme.background);
-    TreeView_SetTextColor(tree, theme.text);
-  } else {
-    TreeView_SetBkColor(tree, static_cast<COLORREF>(-1));
-    TreeView_SetTextColor(tree, static_cast<COLORREF>(-1));
-  }
-  if (popup != nullptr) {
-    InvalidateRect(popup, nullptr, TRUE);
-  }
-}
-
-std::wstring strRetToString(STRRET& sr, LPCITEMIDLIST relative) {
-  wchar_t buf[MAX_PATH];
-  if (FAILED(StrRetToBufW(&sr, relative, buf,
-                          static_cast<UINT>(std::size(buf))))) {
-    return {};
-  }
-  return std::wstring(buf);
-}
-
-int systemIconIndexForPidl(LPCITEMIDLIST absolute) noexcept {
-  SHFILEINFOW sfi{};
-  const UINT flags = SHGFI_PIDL | SHGFI_SYSICONINDEX | SHGFI_SMALLICON;
-  if (SHGetFileInfoW(reinterpret_cast<LPCWSTR>(absolute), 0, &sfi,
-                     sizeof(sfi), flags) == 0) {
-    return -1;
-  }
-  return sfi.iIcon;
-}
-
-HIMAGELIST systemSmallImageList() noexcept {
-  SHFILEINFOW sfi{};
-  return reinterpret_cast<HIMAGELIST>(SHGetFileInfoW(
-      L"x", FILE_ATTRIBUTE_NORMAL, &sfi, sizeof(sfi),
-      SHGFI_SYSICONINDEX | SHGFI_SMALLICON | SHGFI_USEFILEATTRIBUTES));
-}
-
-PidlOwner knownFolderPidl(REFKNOWNFOLDERID id) noexcept {
-  PIDLIST_ABSOLUTE p = nullptr;
-  if (FAILED(SHGetKnownFolderIDList(id, KF_FLAG_DEFAULT, nullptr, &p))) {
-    return {};
-  }
-  return PidlOwner(p);
-}
-
-// .zip/.cab/.iso advertise SFGAO_FOLDER; STREAM bit distinguishes them.
-bool isRealDirectory(IShellFolder* parent, LPCITEMIDLIST relative) noexcept {
-  if (!parent || !relative) return false;
-  SFGAOF attrs = SFGAO_FOLDER | SFGAO_STREAM;
-  if (FAILED(parent->GetAttributesOf(1, &relative, &attrs))) {
-    return false;
-  }
-  return (attrs & SFGAO_FOLDER) != 0 && (attrs & SFGAO_STREAM) == 0;
-}
-
-ComPtr<IShellFolder> bindFolder(IShellFolder* desktop, LPCITEMIDLIST abs) {
-  ComPtr<IShellFolder> out;
-  if (!desktop || !abs) return out;
-  if (FAILED(desktop->BindToObject(abs, nullptr, IID_IShellFolder,
-                                   reinterpret_cast<void**>(out.put())))) {
-    out.reset();
-  }
-  return out;
-}
-
-std::wstring pidlToFsPath(LPCITEMIDLIST abs) {
-  wchar_t buf[MAX_PATH] = {};
-  if (!SHGetPathFromIDListW(abs, buf)) return {};
-  return std::wstring(buf);
-}
-
-std::wstring normalisePath(std::wstring p) {
-  if (p.size() > 3 && p.back() == L'\\') p.pop_back();
-  return p;
-}
-
-bool pathsEqual(const std::wstring& a, const std::wstring& b) noexcept {
-  if (a.size() != b.size()) return false;
-  return CompareStringOrdinal(a.c_str(), static_cast<int>(a.size()),
-                              b.c_str(), static_cast<int>(b.size()),
-                              TRUE) == CSTR_EQUAL;
-}
-
-// Sentinel lParam for the placeholder child that makes [+] visible
-// before real children are loaded.
-constexpr LPARAM kDummyLParam = static_cast<LPARAM>(-1);
-
-bool isDummyItem(const TVITEMW& it) noexcept {
-  return it.lParam == kDummyLParam;
-}
-
-void insertDummyChild(HWND tree, HTREEITEM parent) {
-  TVINSERTSTRUCTW ins{};
-  ins.hParent = parent;
-  ins.hInsertAfter = TVI_LAST;
-  ins.item.mask = TVIF_TEXT | TVIF_PARAM;
-  wchar_t placeholder[] = L"";
-  ins.item.pszText = placeholder;
-  ins.item.lParam = kDummyLParam;
-  TreeView_InsertItem(tree, &ins);
-}
-
-HTREEITEM insertNode(HWND tree, HTREEITEM parent, const std::wstring& name,
-                     PidlOwner abs, bool hasChildren) {
-  if (!tree || name.empty() || !abs) return nullptr;
-  const int icon = systemIconIndexForPidl(abs.get());
-  TVINSERTSTRUCTW ins{};
-  ins.hParent = parent;
-  ins.hInsertAfter = TVI_LAST;
-  ins.item.mask = TVIF_TEXT | TVIF_PARAM |
-                  ((icon >= 0) ? (TVIF_IMAGE | TVIF_SELECTEDIMAGE) : 0);
-  ins.item.pszText = const_cast<wchar_t*>(name.c_str());
-  ins.item.cchTextMax = static_cast<int>(name.size());
-  ins.item.iImage = icon;
-  ins.item.iSelectedImage = icon;
-  ins.item.lParam = reinterpret_cast<LPARAM>(abs.get());
-  HTREEITEM node = TreeView_InsertItem(tree, &ins);
-  if (!node) return nullptr;
-  (void)abs.release();
-  if (hasChildren) {
-    insertDummyChild(tree, node);
-  }
-  return node;
-}
-
-LPCITEMIDLIST itemPidl(HWND tree, HTREEITEM node) noexcept {
-  if (!tree || !node) return nullptr;
-  TVITEMW it{};
-  it.mask = TVIF_PARAM;
-  it.hItem = node;
-  if (!TreeView_GetItem(tree, &it)) return nullptr;
-  return reinterpret_cast<LPCITEMIDLIST>(it.lParam);
-}
 
 }  // namespace
 
@@ -181,9 +27,7 @@ AddressBarPopup::~AddressBarPopup() {
   // Force PIDL release before the TreeView is destroyed by
   // DestroyWindow's child cascade; relying on WM_DESTROY/TVN_DELETEITEM
   // bubble timing is fragile across Win32 versions.
-  if (tree_ && IsWindow(tree_)) {
-    TreeView_DeleteAllItems(tree_);
-  }
+  treeController_.detach();
   if (popup_ && IsWindow(popup_)) {
     DestroyWindow(popup_);
   }
@@ -237,13 +81,12 @@ void AddressBarPopup::ensurePopupCreated() {
     popup_ = nullptr;
     return;
   }
-  HIMAGELIST sys = systemSmallImageList();
-  if (sys) {
-    TreeView_SetImageList(tree_, sys, TVSIL_NORMAL);
+  if (!treeController_.attach(tree_)) {
+    DestroyWindow(popup_);
+    popup_ = nullptr;
+    tree_ = nullptr;
+    return;
   }
-  // Dark-mode aware theme + tree bg/text colours; falls back to plain
-  // Explorer theme + system defaults when the user is in light mode.
-  applyTreePopupTheme(popup_, tree_);
   SetWindowSubclass(tree_, &AddressBarPopup::treeSubclassProc, 0,
                     reinterpret_cast<DWORD_PTR>(this));
 }
@@ -256,11 +99,9 @@ void AddressBarPopup::showFor(HWND anchor, const std::wstring& currentPath) {
   // reflected without restarting; cheap (RegQueryValue + two
   // SendMessageW). The class hbrBackground is fixed at RegisterClass
   // time to COLOR_WINDOW, but the tree fully covers it via WM_SIZE.
-  applyTreePopupTheme(popup_, tree_);
-  if (!rootsLoaded_) {
-    populateRoots();
-    rootsLoaded_ = true;
-  }
+  treeController_.applyTheme();
+  InvalidateRect(popup_, nullptr, TRUE);
+  treeController_.ensureRoots();
   RECT r;
   GetWindowRect(anchor, &r);
   const UINT dpi = GetDpiForWindow(owner_);
@@ -275,13 +116,13 @@ void AddressBarPopup::showFor(HWND anchor, const std::wstring& currentPath) {
   installMouseHook();
   SetFocus(tree_);
   pendingPath_ = currentPath;
-  if (!currentPath.empty()) selectPath(currentPath);
+  if (!currentPath.empty()) treeController_.reflectLocation(currentPath);
 }
 
 void AddressBarPopup::reflectCurrentPath(const std::wstring& currentPath) {
   pendingPath_ = currentPath;
   if (popup_ && IsWindowVisible(popup_) && !currentPath.empty()) {
-    selectPath(currentPath);
+    treeController_.reflectLocation(currentPath);
   }
 }
 
@@ -311,250 +152,12 @@ bool AddressBarPopup::containsScreenPoint(POINT pt) const noexcept {
   return GetWindowRect(popup_, &r) && PtInRect(&r, pt);
 }
 
-void AddressBarPopup::populateRoots() {
-  if (!tree_) return;
-  ComPtr<IShellFolder> desktop;
-  if (FAILED(SHGetDesktopFolder(desktop.put())) || !desktop) return;
-  PidlOwner desktopAbs = knownFolderPidl(FOLDERID_Desktop);
-  if (!desktopAbs) return;
-
-  ComPtr<IEnumIDList> en;
-  if (FAILED(desktop->EnumObjects(nullptr, SHCONTF_FOLDERS, en.put())) ||
-      !en) return;
-
-  LPITEMIDLIST relative = nullptr;
-  ULONG fetched = 0;
-  while (en->Next(1, &relative, &fetched) == S_OK && fetched == 1) {
-    PidlOwner relOwner(relative);
-    if (!isRealDirectory(desktop.get(), relOwner.get())) continue;
-    STRRET sr{};
-    if (FAILED(desktop->GetDisplayNameOf(relOwner.get(), SHGDN_NORMAL,
-                                         &sr))) {
-      continue;
-    }
-    std::wstring name = strRetToString(sr, relOwner.get());
-    if (name.empty()) continue;
-    LPITEMIDLIST absRaw = ILCombine(desktopAbs.get(), relOwner.get());
-    if (!absRaw) continue;
-    insertNode(tree_, TVI_ROOT, name, PidlOwner(absRaw), true);
-  }
-
-  PidlOwner computerAbs = knownFolderPidl(FOLDERID_ComputerFolder);
-  if (computerAbs) {
-    for (HTREEITEM r = TreeView_GetRoot(tree_); r;
-         r = TreeView_GetNextSibling(tree_, r)) {
-      LPCITEMIDLIST abs = itemPidl(tree_, r);
-      if (abs && ILIsEqual(abs, computerAbs.get())) {
-        TreeView_Expand(tree_, r, TVE_EXPAND);
-        break;
-      }
-    }
-  }
-
-  // Force-insert the Network root unconditionally. Desktop EnumObjects
-  // skips it on many configs (network discovery off, policy-locked
-  // shells, non-default layouts), and even when it's enumerated it
-  // arrives with a relative PIDL that doesn't ILIsEqual against the
-  // known-folder absolute PIDL — so duplicate detection is brittle.
-  // Inserting it as a separate top-level node guarantees the user
-  // can browse \\server hosts from the popup the same way Win
-  // Explorer does. A possible duplicate is a much smaller paper cut
-  // than a missing root.
-  // Force-insert the Network root at the TOP of the tree (hInsertAfter
-  // = TVI_FIRST) so it's the first thing the user sees when the popup
-  // opens — even if showFor() auto-scrolls to a deeply-nested current
-  // path, the Network root stays in the upper visible portion. Desktop
-  // EnumObjects sometimes skips it on machines with discovery off, so
-  // we add it unconditionally; a possible duplicate is a smaller
-  // paper-cut than a missing root.
-  PidlOwner networkAbs = knownFolderPidl(FOLDERID_NetworkFolder);
-  if (networkAbs) {
-    STRRET sr{};
-    std::wstring name = L"네트워크";
-    if (SUCCEEDED(desktop->GetDisplayNameOf(networkAbs.get(),
-                                             SHGDN_NORMAL, &sr))) {
-      std::wstring shellName = strRetToString(sr, networkAbs.get());
-      if (!shellName.empty()) name = std::move(shellName);
-    }
-    const int icon = systemIconIndexForPidl(networkAbs.get());
-    TVINSERTSTRUCTW ins{};
-    ins.hParent = TVI_ROOT;
-    ins.hInsertAfter = TVI_FIRST;
-    ins.item.mask = TVIF_TEXT | TVIF_PARAM |
-                    ((icon >= 0) ? (TVIF_IMAGE | TVIF_SELECTEDIMAGE) : 0);
-    ins.item.pszText = const_cast<wchar_t*>(name.c_str());
-    ins.item.cchTextMax = static_cast<int>(name.size());
-    ins.item.iImage = icon;
-    ins.item.iSelectedImage = icon;
-    ins.item.lParam = reinterpret_cast<LPARAM>(networkAbs.get());
-    HTREEITEM node = TreeView_InsertItem(tree_, &ins);
-    if (node != nullptr) {
-      (void)networkAbs.release();
-      insertDummyChild(tree_, node);
-    }
-  }
-}
-
-void AddressBarPopup::expandNode(HTREEITEM node) {
-  if (!tree_ || !node) return;
-  LPCITEMIDLIST abs = itemPidl(tree_, node);
-  if (!abs) return;
-
-  ComPtr<IShellFolder> desktop;
-  if (FAILED(SHGetDesktopFolder(desktop.put())) || !desktop) return;
-  ComPtr<IShellFolder> folder = bindFolder(desktop.get(), abs);
-  if (!folder) {
-    HTREEITEM child = TreeView_GetChild(tree_, node);
-    if (child) TreeView_DeleteItem(tree_, child);
-    return;
-  }
-
-  // Detect Network folder expansion. Its children (computers
-  // discovered via the browser service) have SFGAO bits that don't
-  // match an ordinary filesystem folder, so the standard
-  // isRealDirectory gate would drop them — relax it for the
-  // network branch. Local-folder expansion stays strict.
-  //
-  // Note: in practice EnumObjects on the Network folder returns 0
-  // items on many configs because shell network discovery is async
-  // and frequently unresponsive — this matches what Win Explorer's
-  // own Network sidebar shows on the same machine. Users navigate
-  // UNC paths by typing `\\server` directly in the address bar,
-  // which Win32FsBackend's server-only UNC branch (WNetEnumResource)
-  // resolves to the share list correctly.
-  bool isNetworkExpansion = false;
-  {
-    PidlOwner netPidl = knownFolderPidl(FOLDERID_NetworkFolder);
-    if (netPidl && ILIsEqual(abs, netPidl.get())) {
-      isNetworkExpansion = true;
-    }
-  }
-
-  ComPtr<IEnumIDList> en;
-  const SHCONTF enumFlags = isNetworkExpansion
-      ? static_cast<SHCONTF>(SHCONTF_FOLDERS | SHCONTF_NONFOLDERS |
-                              SHCONTF_INCLUDEHIDDEN)
-      : SHCONTF_FOLDERS;
-  if (FAILED(folder->EnumObjects(nullptr, enumFlags, en.put())) ||
-      !en) {
-    HTREEITEM child = TreeView_GetChild(tree_, node);
-    if (child) TreeView_DeleteItem(tree_, child);
-    return;
-  }
-
-  HTREEITEM dummy = TreeView_GetChild(tree_, node);
-  if (dummy) {
-    TVITEMW it{};
-    it.mask = TVIF_PARAM;
-    it.hItem = dummy;
-    if (TreeView_GetItem(tree_, &it) && isDummyItem(it)) {
-      TreeView_DeleteItem(tree_, dummy);
-    }
-  }
-
-  LPITEMIDLIST relative = nullptr;
-  ULONG fetched = 0;
-  int inserted = 0;
-  while (en->Next(1, &relative, &fetched) == S_OK && fetched == 1 &&
-         inserted < kMaxChildrenPerExpand) {
-    PidlOwner relOwner(relative);
-    if (isNetworkExpansion) {
-      // Just require FOLDER bit; ignore STREAM. Network entries are
-      // containers that the user navigates into for shares.
-      LPCITEMIDLIST relRaw = relOwner.get();
-      SFGAOF attrs = SFGAO_FOLDER;
-      if (FAILED(folder->GetAttributesOf(1, &relRaw, &attrs))) continue;
-      if ((attrs & SFGAO_FOLDER) == 0) continue;
-    } else if (!isRealDirectory(folder.get(), relOwner.get())) {
-      continue;
-    }
-    STRRET sr{};
-    if (FAILED(folder->GetDisplayNameOf(relOwner.get(), SHGDN_NORMAL,
-                                        &sr))) {
-      continue;
-    }
-    std::wstring name = strRetToString(sr, relOwner.get());
-    if (name.empty()) continue;
-    LPITEMIDLIST absRaw = ILCombine(abs, relOwner.get());
-    if (!absRaw) continue;
-    insertNode(tree_, node, name, PidlOwner(absRaw), true);
-    ++inserted;
-  }
-}
-
-HTREEITEM AddressBarPopup::findChildByPath(HTREEITEM parent,
-                                            const std::wstring& fsPath) {
-  if (!tree_) return nullptr;
-  const std::wstring target = normalisePath(fsPath);
-  HTREEITEM child = TreeView_GetChild(tree_, parent);
-  while (child) {
-    LPCITEMIDLIST abs = itemPidl(tree_, child);
-    if (abs) {
-      std::wstring p = normalisePath(pidlToFsPath(abs));
-      if (!p.empty() && pathsEqual(p, target)) {
-        return child;
-      }
-    }
-    child = TreeView_GetNextSibling(tree_, child);
-  }
-  return nullptr;
-}
-
-void AddressBarPopup::selectPath(const std::wstring& path) {
-  if (!tree_ || path.empty()) return;
-  if (path.size() < 2 || !iswalpha(path[0]) || path[1] != L':') return;
-
-  PidlOwner computerAbs = knownFolderPidl(FOLDERID_ComputerFolder);
-  if (!computerAbs) return;
-  HTREEITEM computer = nullptr;
-  for (HTREEITEM r = TreeView_GetRoot(tree_); r;
-       r = TreeView_GetNextSibling(tree_, r)) {
-    LPCITEMIDLIST abs = itemPidl(tree_, r);
-    if (abs && ILIsEqual(abs, computerAbs.get())) {
-      computer = r;
-      break;
-    }
-  }
-  if (!computer) return;
-
-  TreeView_Expand(tree_, computer, TVE_EXPAND);
-
-  std::wstring drive;
-  drive.push_back(static_cast<wchar_t>(towupper(path[0])));
-  drive += L":\\";
-  HTREEITEM driveNode = findChildByPath(computer, drive);
-  if (!driveNode) return;
-  TreeView_Expand(tree_, driveNode, TVE_EXPAND);
-
-  std::wstring remainder = path.substr(drive.size());
-  std::wstring cumulative = drive;
-  if (!cumulative.empty() && cumulative.back() == L'\\') cumulative.pop_back();
-  HTREEITEM current = driveNode;
-  size_t pos = 0;
-  while (pos < remainder.size()) {
-    size_t sep = remainder.find(L'\\', pos);
-    size_t end = (sep == std::wstring::npos) ? remainder.size() : sep;
-    std::wstring segment = remainder.substr(pos, end - pos);
-    pos = (sep == std::wstring::npos) ? remainder.size() : end + 1;
-    if (segment.empty()) continue;
-    cumulative += L'\\';
-    cumulative += segment;
-    HTREEITEM child = findChildByPath(current, cumulative);
-    if (!child) break;
-    current = child;
-    TreeView_Expand(tree_, current, TVE_EXPAND);
-  }
-  TreeView_SelectItem(tree_, current);
-  TreeView_EnsureVisible(tree_, current);
-}
-
 void AddressBarPopup::commitSelection(HTREEITEM node) {
   if (!tree_ || !node) return;
-  LPCITEMIDLIST abs = itemPidl(tree_, node);
-  if (!abs) return;
-  std::wstring path = addressLocationForPidl(abs);
-  if (path.empty()) return;
-  auto payload = std::make_unique<std::wstring>(std::move(path));
+  auto selection = treeController_.selectionForItem(node);
+  if (!selection || selection->location.empty()) return;
+  auto payload = std::make_unique<std::wstring>(
+      std::move(selection->location));
   if (PostMessageW(owner_, kWmFeAddressPopupPick,
                    reinterpret_cast<WPARAM>(payload.get()),
                    static_cast<LPARAM>(activePaneIdx_))) {
@@ -671,7 +274,7 @@ LRESULT AddressBarPopup::handlePopupMessage(HWND hwnd, UINT msg,
     }
     case WM_DESTROY: {
       uninstallMouseHook();
-      if (tree_) TreeView_DeleteAllItems(tree_);
+      treeController_.detach();
       return 0;
     }
   }
@@ -680,13 +283,8 @@ LRESULT AddressBarPopup::handlePopupMessage(HWND hwnd, UINT msg,
 
 LRESULT AddressBarPopup::onTreeNotify(NMHDR* hdr) {
   if (!hdr || hdr->hwndFrom != tree_) return 0;
+  treeController_.handleNotify(hdr);
   switch (hdr->code) {
-    case TVN_ITEMEXPANDINGW:
-      onTreeExpanding(hdr);
-      return 0;
-    case TVN_DELETEITEMW:
-      onTreeDeleteItem(hdr);
-      return 0;
     case NM_CLICK:
       onTreeClick();
       return 0;
@@ -698,27 +296,6 @@ LRESULT AddressBarPopup::onTreeNotify(NMHDR* hdr) {
     }
     default:
       return 0;
-  }
-}
-
-void AddressBarPopup::onTreeExpanding(NMHDR* hdr) {
-  auto* nm = reinterpret_cast<NMTREEVIEWW*>(hdr);
-  if (nm->action != TVE_EXPAND) return;
-  HTREEITEM child = TreeView_GetChild(tree_, nm->itemNew.hItem);
-  if (!child) return;
-  TVITEMW it{};
-  it.mask = TVIF_PARAM;
-  it.hItem = child;
-  if (TreeView_GetItem(tree_, &it) && isDummyItem(it)) {
-    expandNode(nm->itemNew.hItem);
-  }
-}
-
-void AddressBarPopup::onTreeDeleteItem(NMHDR* hdr) {
-  auto* nm = reinterpret_cast<NMTREEVIEWW*>(hdr);
-  if (isDummyItem(nm->itemOld)) return;
-  if (auto* p = reinterpret_cast<LPITEMIDLIST>(nm->itemOld.lParam)) {
-    CoTaskMemFree(p);
   }
 }
 

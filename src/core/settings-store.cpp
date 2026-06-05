@@ -25,7 +25,7 @@ constexpr DWORD kMaxSettingsBytes = 64u * 1024u;
 // Pre-allocation hint for the writer. Tracks the v2 footprint
 // (~250 bytes) with headroom; any growth in the schema or a long
 // path triggers std::string's own growth strategy.
-constexpr std::size_t kSerializedReserveHint = 384;
+constexpr std::size_t kSerializedReserveHint = 512;
 
 constexpr const wchar_t* kFileName = L"settings.json";
 // std::string_view (rather than const char*) eliminates the implicit
@@ -45,6 +45,9 @@ constexpr std::string_view kKeyShowHidden    {"view_show_hidden"};
 constexpr std::string_view kKeyShowExtensions{"view_show_extensions"};
 // Schema v6 (v0.7.1): theme override. Int 0/1/2 = system/light/dark.
 constexpr std::string_view kKeyThemeOverride {"theme_override"};
+// Schema v8 (v0.8.1): global left navigation tree state.
+constexpr std::string_view kKeyNavigationTreeVisible {"navigation_tree_visible"};
+constexpr std::string_view kKeyNavigationTreeWidthPx {"navigation_tree_width_px"};
 constexpr std::string_view kLayoutSingle  {"single"};
 constexpr std::string_view kLayoutDual    {"dual"};
 constexpr std::string_view kOrientVertical  {"vertical"};
@@ -65,7 +68,7 @@ constexpr std::string_view kKeyActiveTab     {"active_tab"};
 constexpr std::string_view kKeyPath          {"path"};
 constexpr std::string_view kKeyLocation      {"location"};
 
-constexpr int kSchemaVersionCurrent = 7;
+constexpr int kSchemaVersionCurrent = 8;
 
 constexpr std::string_view presetLabel(LayoutPreset p) noexcept {
   switch (p) {
@@ -558,6 +561,18 @@ class JsonReader {
       state.themeOverride = (raw == 1 || raw == 2) ? raw : 0;
       return true;
     }
+    if (key == kKeyNavigationTreeVisible) {
+      int raw = 0;
+      if (!parseIntInto(raw)) return false;
+      state.navigationTreeVisible = raw != 0;
+      return true;
+    }
+    if (key == kKeyNavigationTreeWidthPx) {
+      int raw = 0;
+      if (!parseIntInto(raw)) return false;
+      state.navigationTreeWidthPx = raw;
+      return true;
+    }
     if (key == kKeySchemaVersion) {
       int v = 0;
       if (!parseIntInto(v)) return false;
@@ -782,6 +797,10 @@ bool saveSessionState(const std::wstring& path, const SessionState& state) {
   appendKeyInt       (out, kKeyShowHidden,    state.showHidden     ? 1 : 0,        false);
   appendKeyInt       (out, kKeyShowExtensions,state.showExtensions ? 1 : 0,        false);
   appendKeyInt       (out, kKeyThemeOverride, state.themeOverride,                 false);
+  appendKeyInt       (out, kKeyNavigationTreeVisible,
+                      state.navigationTreeVisible ? 1 : 0,                         false);
+  appendKeyInt       (out, kKeyNavigationTreeWidthPx,
+                      state.navigationTreeWidthPx,                                  false);
   out.append("\n}\n");
 
   const std::wstring temp = path + L".tmp";

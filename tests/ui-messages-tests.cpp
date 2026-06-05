@@ -15,6 +15,8 @@ using fast_explorer::ui::kWmFeIconBatch;
 using fast_explorer::ui::kWmFeOperationResult;
 using fast_explorer::ui::kWmFePerfEvent;
 using fast_explorer::ui::kWmFeSortComplete;
+using fast_explorer::ui::kAccelToggleNavigationTree;
+using fast_explorer::ui::kMenuToggleNavigationTree;
 using fast_explorer::ui::makePaneWParam;
 using fast_explorer::ui::paneIndexFromWParam;
 
@@ -99,4 +101,13 @@ FE_TEST_CASE(messages_group_by_menu_ids_are_unique) {
   FE_ASSERT_NE(kMenuGroupByName, kMenuGroupByModified);
   FE_ASSERT_NE(kMenuGroupByName, kMenuGroupByType);
   FE_ASSERT_NE(kMenuGroupByModified, kMenuGroupByType);
+}
+
+FE_TEST_CASE(messages_navigation_tree_commands_are_unique) {
+  using namespace fast_explorer::ui;
+  FE_ASSERT_NE(kAccelToggleNavigationTree, kAccelToggleTheme);
+  FE_ASSERT_NE(kMenuToggleNavigationTree, kMenuShowHidden);
+  FE_ASSERT_NE(kMenuToggleNavigationTree, kMenuShowExt);
+  FE_ASSERT_TRUE(kMenuToggleNavigationTree >= 300);
+  FE_ASSERT_TRUE(kMenuToggleNavigationTree < 400);
 }

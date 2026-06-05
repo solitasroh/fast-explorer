@@ -36,9 +36,9 @@ std::wstring parsingNameForPidl(LPCITEMIDLIST absolute) {
   return out;
 }
 
-std::wstring serializeIfKnownShellLocation(const std::wstring& text) {
+std::wstring serializeShellLocation(const std::wstring& text) {
   const auto location = fast_explorer::core::parseLocation(text);
-  if (location.kind == fast_explorer::core::LocationKind::ShellKnownFolder) {
+  if (location.kind != fast_explorer::core::LocationKind::FileSystemPath) {
     return fast_explorer::core::serializeLocation(location);
   }
   return text;
@@ -66,7 +66,7 @@ std::wstring addressLocationForPidl(LPCITEMIDLIST absolute) {
     return std::wstring(path);
   }
 
-  return serializeIfKnownShellLocation(parsingNameForPidl(absolute));
+  return serializeShellLocation(parsingNameForPidl(absolute));
 }
 
 }  // namespace fast_explorer::ui

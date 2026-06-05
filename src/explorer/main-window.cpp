@@ -32,6 +32,7 @@
 #include "explorer/label-edit-controller.h"
 #include "explorer/listview-group-callback.h"
 #include "explorer/messages.h"
+#include "explorer/navigation-tree-pane.h"
 #include "explorer/pane-controller.h"
 #include "winui_lite/chrome/pane-layout.h"
 #include "winui_lite/chrome/pane-splitter.h"
@@ -410,21 +411,47 @@ void MainWindow::relayout() {
   GetClientRect(hwnd_, &client);
   const int clientW = client.right - client.left;
   const int clientH = client.bottom - client.top;
+  const UINT dpi = GetDpiForWindow(hwnd_);
 
   const int statusH = statusBar_.height();
   applyStatusParts(clientW);
 
+  const bool navVisible = navigationTreeVisible_ && navigationTreeAvailable();
+  const int navW = navVisible
+      ? clampNavigationTreeWidthPx(navigationTreeWidthPx_, clientW, dpi)
+      : 0;
+  const int navSplitterW = navVisible ? scaleForDpi(5, dpi) : 0;
+  const int chromeH = std::max(0, clientH - statusH);
+  if (navigationTree_ && navigationTree_->available()) {
+    navigationTree_->setBounds(0, 0, navW, chromeH);
+    navigationTree_->show(navVisible && navW > 0);
+  }
+  if (navigationSplitter_ != nullptr) {
+    if (navVisible && navW > 0 && chromeH > 0) {
+      SetWindowPos(navigationSplitter_, HWND_TOP, navW, 0,
+                   navSplitterW, chromeH, SWP_NOACTIVATE);
+      ShowWindow(navigationSplitter_, SW_SHOWNA);
+      InvalidateRect(navigationSplitter_, nullptr, FALSE);
+    } else {
+      ShowWindow(navigationSplitter_, SW_HIDE);
+    }
+  }
+
+  const int contentLeft = navW + navSplitterW;
+  const int contentW = std::max(0, clientW - contentLeft);
+
   const auto& ratios =
       ratiosPerPreset_[static_cast<std::size_t>(preset_)];
   const auto result = computePaneLayout(preset_, ratios,
-                                        clientW, clientH,
+                                        contentW, clientH,
                                         /*reservedTop*/ 0, statusH);
 
   // Position slot HWNDs. Each slot's RECT contains (top-to-bottom):
   // tab strip (if any), toolbar row, listview.
-  const int rowH = scaleForDpi(42, GetDpiForWindow(hwnd_));
+  const int rowH = scaleForDpi(42, dpi);
   for (std::size_t i = 0; i < listViews_.size(); ++i) {
-    const RECT& r = result.slots[i];
+    RECT r = result.slots[i];
+    OffsetRect(&r, contentLeft, 0);
     const int w = r.right - r.left;
     const int h = r.bottom - r.top;
     const bool active = i < result.slotCount;
@@ -467,7 +494,8 @@ void MainWindow::relayout() {
 
   // Position splitter HWNDs; hide unused ones.
   // Axis math for cursor->ratio mapping must match computePaneLayout:
-  //   * Vertical splitters use `W * ratio`  → origin=0, length=clientW.
+  //   * Vertical splitters use `W * ratio` within the pane-grid area
+  //     → origin=contentLeft, length=contentW.
   //   * Horizontal splitters use `top + totalH * ratio`
   //     → origin=reservedTop (=0 today), length=totalH=clientH-statusH.
   // Using full clientH for horizontal splitters would be off by statusH,
@@ -480,7 +508,9 @@ void MainWindow::relayout() {
       ShowWindow(s, SW_HIDE);
       continue;
     }
-    const auto& sp = result.splitters[i];
+    auto sp = result.splitters[i];
+    OffsetRect(&sp.hitRect, contentLeft, 0);
+    OffsetRect(&sp.visualRect, contentLeft, 0);
     auto* ctx = reinterpret_cast<SplitterContext*>(
         GetWindowLongPtrW(s, GWLP_USERDATA));
     if (ctx) {
@@ -488,8 +518,8 @@ void MainWindow::relayout() {
       ctx->ratioId = sp.ratioId;
       ctx->ratios = &ratiosPerPreset_[static_cast<std::size_t>(preset_)];
       if (sp.orient == SplitterOrientation::Vertical) {
-        ctx->axisOriginInParent = 0;
-        ctx->axisLengthForRatio = clientW;
+        ctx->axisOriginInParent = contentLeft;
+        ctx->axisLengthForRatio = contentW;
         // The ghost line spans this splitter's vertical extent only.
         ctx->perpLow  = sp.visualRect.top;
         ctx->perpHigh = sp.visualRect.bottom;
@@ -794,6 +824,8 @@ void MainWindow::applyInitialState(
   if (hwnd_ == nullptr) {
     return;
   }
+  navigationTreeWidthPx_ = state.navigationTreeWidthPx;
+  setNavigationTreeVisible(state.navigationTreeVisible);
   // All-or-nothing contract: any sentinel in the four placement
   // fields falls back to the system default. The writer always emits
   // all four together, so a partial-sentinel state can only arise
@@ -890,6 +922,7 @@ void MainWindow::restoreLayoutFromSession(
   }
   applyActivePaneAppearance();
   relayout();
+  syncNavigationTreeToActivePane();
 }
 
 const fast_explorer::core::SessionState&
@@ -926,7 +959,11 @@ void MainWindow::syncAddressBar(std::size_t paneIdx) {
   // Popup is shared; only mirror the active pane to avoid stealing
   // the dropdown highlight during an inactive-pane navigation.
   if (addressBarPopup_ && activePane_ == paneIdx) {
-    addressBarPopup_->reflectCurrentPath(path);
+    std::wstring location = activeForPane_[paneIdx]->currentLocation();
+    addressBarPopup_->reflectCurrentPath(location.empty() ? path : location);
+  }
+  if (activePane_ == paneIdx) {
+    syncNavigationTreeToActivePane();
   }
   // currentPath_ just changed — the tab strip derives its label from
   // it, so re-title the active tab here. This is the single chokepoint
@@ -1003,6 +1040,13 @@ void MainWindow::showToolMenuForPane(std::size_t paneIdx) {
   AppendMenuW(menu,
               MF_STRING | (showExtensions_ ? MF_CHECKED : MF_UNCHECKED),
               packCmd(kMenuShowExt, paneIdx), L"확장자 표시(&X)");
+  UINT navTreeFlags = MF_STRING |
+      (navigationTreeVisible_ ? MF_CHECKED : MF_UNCHECKED);
+  if (!navigationTreeAvailable()) {
+    navTreeFlags |= MF_GRAYED;
+  }
+  AppendMenuW(menu, navTreeFlags, packCmd(kMenuToggleNavigationTree, paneIdx),
+              L"Navigation tree(&B)\tCtrl+B");
 
   // Group 4 — manual update check. Distinct from the auto-check loop
   // because that one honours WinSparkle's 24h LastCheckTime debounce
@@ -1239,6 +1283,71 @@ LRESULT CALLBACK MainWindow::addressBarSubclassProc(
           0);
       PostMessageW(root, WM_COMMAND, cmdW, 0);
     }
+  }
+  return DefSubclassProc(hwnd, msg, wParam, lParam);
+}
+
+LRESULT CALLBACK MainWindow::navigationSplitterSubclassProc(
+    HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam,
+    UINT_PTR idSubclass, DWORD_PTR refData) {
+  auto* self = reinterpret_cast<MainWindow*>(refData);
+  switch (msg) {
+    case WM_NCDESTROY:
+      RemoveWindowSubclass(hwnd, &MainWindow::navigationSplitterSubclassProc,
+                           idSubclass);
+      return DefSubclassProc(hwnd, msg, wParam, lParam);
+    case WM_SETCURSOR:
+      SetCursor(LoadCursorW(nullptr, IDC_SIZEWE));
+      return TRUE;
+    case WM_PAINT: {
+      PAINTSTRUCT ps;
+      HDC hdc = BeginPaint(hwnd, &ps);
+      RECT rc{};
+      GetClientRect(hwnd, &rc);
+      const RowTheme theme = currentRowTheme();
+      HBRUSH bg = CreateSolidBrush(theme.background);
+      FillRect(hdc, &rc, bg);
+      DeleteObject(bg);
+      const int midX = (rc.right - rc.left) / 2;
+      RECT line{midX, rc.top, midX + 1, rc.bottom};
+      const COLORREF lineColor = isAppInDarkMode()
+          ? RGB(66, 66, 66)
+          : GetSysColor(COLOR_3DSHADOW);
+      HBRUSH lineBrush = CreateSolidBrush(lineColor);
+      FillRect(hdc, &line, lineBrush);
+      DeleteObject(lineBrush);
+      EndPaint(hwnd, &ps);
+      return 0;
+    }
+    case WM_LBUTTONDOWN:
+      if (self != nullptr) {
+        self->navigationSplitterDragging_ = true;
+        SetCapture(hwnd);
+      }
+      return 0;
+    case WM_MOUSEMOVE:
+      if (self != nullptr && self->navigationSplitterDragging_) {
+        POINT pt{GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam)};
+        ClientToScreen(hwnd, &pt);
+        ScreenToClient(self->hwnd_, &pt);
+        self->updateNavigationTreeWidthFromClientX(pt.x);
+      }
+      return 0;
+    case WM_LBUTTONUP:
+      if (self != nullptr && self->navigationSplitterDragging_) {
+        POINT pt{GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam)};
+        ClientToScreen(hwnd, &pt);
+        ScreenToClient(self->hwnd_, &pt);
+        self->updateNavigationTreeWidthFromClientX(pt.x);
+        self->navigationSplitterDragging_ = false;
+        ReleaseCapture();
+      }
+      return 0;
+    case WM_CAPTURECHANGED:
+      if (self != nullptr) {
+        self->navigationSplitterDragging_ = false;
+      }
+      return 0;
   }
   return DefSubclassProc(hwnd, msg, wParam, lParam);
 }
@@ -1541,10 +1650,13 @@ LRESULT MainWindow::handleMessage(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPa
       capturedState_->showHidden = showHidden_;
       capturedState_->showExtensions = showExtensions_;
       capturedState_->themeOverride = static_cast<int>(themeMode());
+      capturedState_->navigationTreeVisible = navigationTreeVisible_;
+      capturedState_->navigationTreeWidthPx = navigationTreeWidthPx_;
       if (addressBarPopup_) {
         addressBarPopup_->hide();
         addressBarPopup_.reset();
       }
+      navigationTree_.reset();
       for (std::size_t i = 0; i < dropTargets_.size(); ++i) {
         if (dropTargets_[i] != nullptr && listViews_[i] != nullptr) {
           RevokeDragDrop(listViews_[i]);
@@ -1598,6 +1710,24 @@ LRESULT MainWindow::onCreate(HWND hwnd) {
   // at the top. The wrapper owns the subclass state (heap allocated,
   // freed at WM_NCDESTROY) so this call site stays one line.
   statusBar_.create(hwnd, instance_);
+  navigationTree_ = std::make_unique<NavigationTreePane>();
+  if (navigationTree_->create(hwnd, instance_)) {
+    navigationTree_->setNavigateCallback([this](const std::wstring& loc) {
+      navigateActivePaneFromTree(loc);
+    });
+  } else {
+    navigationTree_.reset();
+    navigationTreeVisible_ = false;
+  }
+  navigationSplitter_ = CreateWindowExW(
+      0, WC_STATICW, L"",
+      WS_CHILD | WS_CLIPSIBLINGS | SS_NOTIFY,
+      0, 0, 0, 0, hwnd, nullptr, instance_, nullptr);
+  if (navigationSplitter_ != nullptr) {
+    SetWindowSubclass(navigationSplitter_,
+                      &MainWindow::navigationSplitterSubclassProc, 0,
+                      reinterpret_cast<DWORD_PTR>(this));
+  }
   // dropTargets_[0] is registered after paneTabHosts_[0] is created; see below.
   paneToolbarRows_[0] = std::make_unique<PaneToolbarRow>();
   if (!paneToolbarRows_[0]->create(hwnd, instance_, 0,
@@ -1841,6 +1971,60 @@ void MainWindow::toggleTheme() {
   applyActivePaneAppearance(); // listview rows + group headers
 }
 
+void MainWindow::toggleNavigationTree() {
+  setNavigationTreeVisible(!navigationTreeVisible_);
+}
+
+bool MainWindow::navigationTreeAvailable() const noexcept {
+  return navigationTree_ != nullptr && navigationTree_->available();
+}
+
+void MainWindow::setNavigationTreeVisible(bool visible) {
+  navigationTreeVisible_ = visible && navigationTreeAvailable();
+  relayout();
+  if (navigationTreeVisible_) {
+    syncNavigationTreeToActivePane();
+  }
+}
+
+std::wstring MainWindow::activeNavigationLocation() const {
+  const PaneController* pane =
+      (activePane_ < paneCount_) ? activeForPane_[activePane_] : nullptr;
+  if (pane == nullptr) return {};
+  std::wstring location = pane->currentLocation();
+  return location.empty() ? pane->currentPath() : location;
+}
+
+void MainWindow::syncNavigationTreeToActivePane() {
+  if (!navigationTreeVisible_ || !navigationTreeAvailable()) return;
+  const std::wstring location = activeNavigationLocation();
+  if (!location.empty()) {
+    navigationTree_->reflectLocation(location);
+  }
+}
+
+void MainWindow::navigateActivePaneFromTree(const std::wstring& location) {
+  if (location.empty() || activePane_ >= paneCount_) return;
+  pane_ = activeForPane_[activePane_];
+  if (pane_ == nullptr) return;
+  const std::size_t idx = activePane_;
+  if (openFolder(location)) {
+    updateNavButtonStates(idx);
+  }
+}
+
+void MainWindow::updateNavigationTreeWidthFromClientX(int clientX) {
+  if (hwnd_ == nullptr || !navigationTreeAvailable()) return;
+  RECT client{};
+  GetClientRect(hwnd_, &client);
+  const int clientW = client.right - client.left;
+  const int next = clampNavigationTreeWidthPx(
+      clientX, clientW, GetDpiForWindow(hwnd_));
+  if (next <= 0 || next == navigationTreeWidthPx_) return;
+  navigationTreeWidthPx_ = next;
+  relayout();
+}
+
 LRESULT MainWindow::onDpiChanged(HWND hwnd, WPARAM wParam, LPARAM lParam) {
   const auto* rect = reinterpret_cast<const RECT*>(lParam);
   SetWindowPos(hwnd, nullptr, rect->left, rect->top,
@@ -1857,6 +2041,9 @@ LRESULT MainWindow::onDpiChanged(HWND hwnd, WPARAM wParam, LPARAM lParam) {
   // the old DPI's pixel size and look wrong on the new monitor.
   for (auto& row : paneToolbarRows_) {
     if (row) row->onDpiChanged(newDpi);
+  }
+  if (navigationTree_) {
+    navigationTree_->applyTheme();
   }
   return 0;
 }
@@ -2996,6 +3183,9 @@ void MainWindow::bindListViewToActiveTab(std::size_t paneIdx) {
   PaneController* pane = (paneIdx < paneCount_) ? activeForPane_[paneIdx]
                                                  : nullptr;
   if (!pane) return;
+  if (paneIdx == activePane_) {
+    pane_ = pane;
+  }
   HWND lv = (paneIdx < listViews_.size()) ? listViews_[paneIdx] : nullptr;
   if (!lv) return;
   const std::size_t n = pane->store().displayedCount();
@@ -3007,11 +3197,19 @@ void MainWindow::refreshPaneChrome(std::size_t paneIdx) {
   PaneController* pane = (paneIdx < paneCount_) ? activeForPane_[paneIdx]
                                                  : nullptr;
   if (!pane) return;
+  if (paneIdx == activePane_) {
+    pane_ = pane;
+  }
   if (paneIdx < addressBars_.size() && addressBars_[paneIdx]) {
     SetWindowTextW(addressBars_[paneIdx], pane->currentPath().c_str());
     if (addressBarPopup_ && activePane_ == paneIdx) {
-      addressBarPopup_->reflectCurrentPath(pane->currentPath());
+      std::wstring location = pane->currentLocation();
+      addressBarPopup_->reflectCurrentPath(
+          location.empty() ? pane->currentPath() : location);
     }
+  }
+  if (activePane_ == paneIdx) {
+    syncNavigationTreeToActivePane();
   }
   updateNavButtonStates(paneIdx);
   refreshSelectionSummary(paneIdx);

@@ -31,6 +31,7 @@ class AddressBarPopup;
 class DispInfoHistogram;
 class LabelEditController;
 class ListViewGroupCallback;
+class NavigationTreePane;
 class PaneController;
 
 namespace adapters {
@@ -163,6 +164,7 @@ class MainWindow : public WindowBase {
   // re-read isAppInDarkMode() — the system only auto-broadcasts that
   // on a real OS theme flip, not on our programmatic override.
   void toggleTheme();
+  void toggleNavigationTree();
   LRESULT onSize(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam);
   LRESULT onCommand(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam);
   LRESULT onTimer(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam);
@@ -209,6 +211,12 @@ class MainWindow : public WindowBase {
   // misleading WM_SIZE lParam=0 that the prior implementation
   // posted.
   void relayout();
+  void syncNavigationTreeToActivePane();
+  void navigateActivePaneFromTree(const std::wstring& location);
+  [[nodiscard]] std::wstring activeNavigationLocation() const;
+  [[nodiscard]] bool navigationTreeAvailable() const noexcept;
+  void setNavigationTreeVisible(bool visible);
+  void updateNavigationTreeWidthFromClientX(int clientX);
   LRESULT handleListViewNotify(NMHDR* hdr);
   bool isStaleGeneration(WPARAM wParam) const;
   // Decodes the pane index from `wParam` (packed via makePaneWParam)
@@ -269,6 +277,8 @@ class MainWindow : public WindowBase {
   void deleteFocusedItem();
   static LRESULT CALLBACK addressBarSubclassProc(HWND, UINT, WPARAM, LPARAM,
                                                  UINT_PTR, DWORD_PTR);
+  static LRESULT CALLBACK navigationSplitterSubclassProc(
+      HWND, UINT, WPARAM, LPARAM, UINT_PTR, DWORD_PTR);
 
   static constexpr const wchar_t* kClassName = L"FastExplorer.MainWindow";
   static constexpr int kDefaultWidth = 1280;
@@ -321,6 +331,11 @@ class MainWindow : public WindowBase {
   std::array<IDropTarget*, 4> dropTargets_{nullptr, nullptr, nullptr, nullptr};
   CutStateTracker cutState_;
   std::unique_ptr<AddressBarPopup> addressBarPopup_;
+  std::unique_ptr<NavigationTreePane> navigationTree_;
+  HWND navigationSplitter_ = nullptr;
+  bool navigationSplitterDragging_ = false;
+  bool navigationTreeVisible_ = true;
+  int navigationTreeWidthPx_ = 260;
   std::array<bool, 4> firstBatchSeen_{false, false, false, false};
   // OLE drag deferral: true while DragEnter..Drop/DragLeave is in flight.
   std::array<bool, 4> oleDragInProgress_{};
